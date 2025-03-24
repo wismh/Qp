@@ -1,0 +1,14 @@
+/build/
+/out/
+/gen/
+/_snapshot/
+/.vs/
+/.idea/
+/.cache/
+/CMakeUserPresets.json
+*.user
+*.suo
+cmake-build-*/
+compile_commands.json
+.DS_Store
+Thumbs.db
