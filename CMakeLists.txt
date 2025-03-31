@@ -17,3 +17,9 @@ set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 set(SPDLOG_INSTALL OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/spdlog)
+
+add_library(qplus_compiler
+    src/compiler/source.cpp
+)
+target_include_directories(qplus_compiler PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(qplus_compiler PUBLIC spdlog::spdlog)
