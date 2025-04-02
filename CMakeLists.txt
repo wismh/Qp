@@ -21,6 +21,7 @@ add_subdirectory(third_party/spdlog)
 add_library(qplus_compiler
     src/compiler/source.cpp
     src/compiler/diagnostic.cpp
+    src/compiler/lexer.cpp
 )
 target_include_directories(qplus_compiler PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(qplus_compiler PUBLIC spdlog::spdlog)
