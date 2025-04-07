@@ -24,6 +24,7 @@ add_library(qplus_compiler
     src/compiler/lexer.cpp
     src/compiler/parser.cpp
     src/compiler/lower.cpp
+    src/compiler/typeck.cpp
 )
 target_include_directories(qplus_compiler PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(qplus_compiler PUBLIC spdlog::spdlog)
