@@ -26,6 +26,10 @@ add_library(qplus_compiler
     src/compiler/lower.cpp
     src/compiler/typeck.cpp
     src/compiler/cpp_backend.cpp
+    src/compiler/compile.cpp
 )
 target_include_directories(qplus_compiler PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(qplus_compiler PUBLIC spdlog::spdlog)
+
+add_executable(qpc src/qpc/main.cpp)
+target_link_libraries(qpc PRIVATE qplus_compiler)
