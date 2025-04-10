@@ -11,3 +11,25 @@ if(MSVC)
 else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
+
+set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(SPDLOG_INSTALL OFF CACHE BOOL "" FORCE)
+add_subdirectory(third_party/spdlog)
+
+add_library(qplus_compiler
+    src/compiler/source.cpp
+    src/compiler/diagnostic.cpp
+    src/compiler/lexer.cpp
+    src/compiler/parser.cpp
+    src/compiler/lower.cpp
+    src/compiler/typeck.cpp
+    src/compiler/cpp_backend.cpp
+    src/compiler/compile.cpp
+)
+target_include_directories(qplus_compiler PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(qplus_compiler PUBLIC spdlog::spdlog)
+
+add_executable(qpc src/qpc/main.cpp)
+target_link_libraries(qpc PRIVATE qplus_compiler)
