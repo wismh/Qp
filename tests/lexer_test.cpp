@@ -1,0 +1,65 @@
+#include "compiler/diagnostic.hpp"
+#include "compiler/lexer.hpp"
+#include "compiler/source.hpp"
+#include "compiler/token.hpp"
+
+#include <gtest/gtest.h>
+#include <string_view>
+
+using qpc::DiagnosticEngine;
+using qpc::lex;
+using qpc::Source;
+using qpc::TokenKind;
+
+TEST(Lexer, AddExpressionTokens) {
+    auto src = Source::from_string("t.qp", "a + b");
+    DiagnosticEngine diags;
+    const auto tokens = lex(src, diags);
+    ASSERT_FALSE(diags.has_errors());
+    ASSERT_EQ(tokens.size(), 4u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::Ident);
+    EXPECT_EQ(tokens[0].text(src.view()), "a");
+    EXPECT_EQ(tokens[1].kind, TokenKind::Plus);
+    EXPECT_EQ(tokens[2].kind, TokenKind::Ident);
+    EXPECT_EQ(tokens[2].text(src.view()), "b");
+    EXPECT_EQ(tokens[3].kind, TokenKind::Eof);
+}
+
+TEST(Lexer, KeywordsArrowAndComments) {
+    auto src = Source::from_string("t.qp", "pub fn add() -> i32 { /* c */ 1 // hi\n }");
+    DiagnosticEngine diags;
+    const auto tokens = lex(src, diags);
+    ASSERT_FALSE(diags.has_errors());
+    ASSERT_GE(tokens.size(), 10u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::KwPub);
+    EXPECT_EQ(tokens[1].kind, TokenKind::KwFn);
+    EXPECT_EQ(tokens[2].kind, TokenKind::Ident);
+    EXPECT_EQ(tokens[3].kind, TokenKind::LParen);
+    EXPECT_EQ(tokens[4].kind, TokenKind::RParen);
+    EXPECT_EQ(tokens[5].kind, TokenKind::Arrow);
+    EXPECT_EQ(tokens[6].kind, TokenKind::Ident);
+    EXPECT_EQ(tokens[6].text(src.view()), "i32");
+}
+
+TEST(Lexer, IntegerAndFloatLiterals) {
+    auto src = Source::from_string("t.qp", "10 10_000 3.14");
+    DiagnosticEngine diags;
+    const auto tokens = lex(src, diags);
+    ASSERT_FALSE(diags.has_errors());
+    ASSERT_EQ(tokens.size(), 4u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::Int);
+    EXPECT_EQ(tokens[0].text(src.view()), "10");
+    EXPECT_EQ(tokens[1].kind, TokenKind::Int);
+    EXPECT_EQ(tokens[1].text(src.view()), "10_000");
+    EXPECT_EQ(tokens[2].kind, TokenKind::Float);
+    EXPECT_EQ(tokens[2].text(src.view()), "3.14");
+    EXPECT_EQ(tokens[3].kind, TokenKind::Eof);
+}
+
+TEST(Lexer, UnexpectedCharacter) {
+    auto src = Source::from_string("t.qp", "@");
+    DiagnosticEngine diags;
+    lex(src, diags);
+    ASSERT_TRUE(diags.has_errors());
+    EXPECT_NE(diags.all().front().message.find("unexpected character"), std::string::npos);
+}
