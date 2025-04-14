@@ -66,3 +66,24 @@ gtest_discover_tests(qplus_tests DISCOVERY_MODE PRE_TEST)
 add_executable(qplus_bench bench/compile_bench.cpp)
 target_link_libraries(qplus_bench PRIVATE qplus_compiler benchmark::benchmark)
 target_compile_definitions(qplus_bench PRIVATE QPLUS_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+set(ADD_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen)
+set(ADD_GEN_H ${ADD_GEN_DIR}/add.h)
+set(ADD_GEN_CPP ${ADD_GEN_DIR}/add.cpp)
+
+add_custom_command(
+    OUTPUT ${ADD_GEN_H} ${ADD_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${ADD_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/add.qp -o ${ADD_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/add.qp
+    COMMENT "qpc compile examples/add.qp"
+    VERBATIM
+)
+
+add_executable(add_host
+    examples/host/main.cpp
+    ${ADD_GEN_CPP}
+)
+target_include_directories(add_host PRIVATE ${ADD_GEN_DIR})
+
+add_test(NAME add_host COMMAND add_host)
