@@ -50,6 +50,7 @@ add_executable(qplus_tests
     tests/parser_test.cpp
     tests/typeck_test.cpp
     tests/codegen_test.cpp
+    tests/e2e_test.cpp
 )
 target_link_libraries(qplus_tests PRIVATE qplus_compiler GTest::gtest_main)
 target_include_directories(qplus_tests PRIVATE ${CMAKE_SOURCE_DIR}/tests)
