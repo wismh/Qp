@@ -37,6 +37,15 @@ namespace {
     if (text == "pub") {
         return TokenKind::KwPub;
     }
+    if (text == "struct") {
+        return TokenKind::KwStruct;
+    }
+    if (text == "impl") {
+        return TokenKind::KwImpl;
+    }
+    if (text == "self") {
+        return TokenKind::KwSelf;
+    }
     return TokenKind::Ident;
 }
 
@@ -50,6 +59,8 @@ namespace {
             return TokenKind::LBrace;
         case '}':
             return TokenKind::RBrace;
+        case '.':
+            return TokenKind::Dot;
         case ':':
             return TokenKind::Colon;
         case ',':

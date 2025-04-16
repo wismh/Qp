@@ -16,10 +16,14 @@ enum class TokenKind {
     KwMut,
     KwReturn,
     KwPub,
+    KwStruct,
+    KwImpl,
+    KwSelf,
     LParen,
     RParen,
     LBrace,
     RBrace,
+    Dot,
     Colon,
     Comma,
     Semicolon,
@@ -79,6 +83,12 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'return'";
         case TokenKind::KwPub:
             return "'pub'";
+        case TokenKind::KwStruct:
+            return "'struct'";
+        case TokenKind::KwImpl:
+            return "'impl'";
+        case TokenKind::KwSelf:
+            return "'self'";
         case TokenKind::LParen:
             return "'('";
         case TokenKind::RParen:
@@ -87,7 +97,9 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'{'";
         case TokenKind::RBrace:
             return "'}'";
-        case TokenKind::Colon:
+        case TokenKind::Dot:
+            return "'.'";
+        case TokenKind::Colon,
             return "':'";
         case TokenKind::Comma:
             return "','";
