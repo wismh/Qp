@@ -33,10 +33,13 @@ public:
         AstFile file;
 
         while (!at(TokenKind::Eof)) {
-            if (auto fn = parse_fn()) {
-                file.functions.push_back(std::move(*fn));
-            } else {
-                recover_to_fn();
+            if (parse_item(file)) {
+                continue;
+            }
+            const std::size_t before = pos_;
+            recover_to_item();
+            if (pos_ == before) {
+                advance();
             }
         }
 
@@ -50,6 +53,11 @@ private:
     std::size_t pos_ = 0;
 
     const Token& peek() const { return tokens_[pos_]; }
+
+    const Token& peek_n(std::size_t n) const {
+        const std::size_t i = pos_ + n;
+        return i < tokens_.size() ? tokens_[i] : tokens_.back();
+    }
 
     bool at(TokenKind kind) const { return peek().kind == kind; }
 
@@ -83,10 +91,44 @@ private:
         diags_.error(src_, tok.offset, std::move(message));
     }
 
-    void recover_to_fn() {
-        while (!at(TokenKind::Eof) && !at(TokenKind::KwFn) && !at(TokenKind::KwPub)) {
+    void recover_to_item() {
+        while (!at(TokenKind::Eof) && !at(TokenKind::KwFn) && !at(TokenKind::KwPub) &&
+               !at(TokenKind::KwStruct) && !at(TokenKind::KwImpl)) {
             advance();
         }
+    }
+
+    bool parse_item(AstFile& file) {
+        if (at(TokenKind::KwImpl)) {
+            auto impl = parse_impl();
+            if (!impl) {
+                return false;
+            }
+            file.impls.push_back(std::move(*impl));
+            return true;
+        }
+
+        if (at(TokenKind::KwStruct) ||
+            (at(TokenKind::KwPub) && peek_n(1).kind == TokenKind::KwStruct)) {
+            auto st = parse_struct();
+            if (!st) {
+                return false;
+            }
+            file.structs.push_back(std::move(*st));
+            return true;
+        }
+
+        if (at(TokenKind::KwFn) || (at(TokenKind::KwPub) && peek_n(1).kind == TokenKind::KwFn)) {
+            auto fn = parse_fn(false);
+            if (!fn) {
+                return false;
+            }
+            file.functions.push_back(std::move(*fn));
+            return true;
+        }
+
+        error(peek(), std::string("expected item, found ") + token_kind_name(peek().kind));
+        return false;
     }
 
     std::optional<std::string> take_ident(const char* what) {
@@ -100,7 +142,99 @@ private:
         return name;
     }
 
-    std::optional<FnDecl> parse_fn() {
+    std::optional<StructDecl> parse_struct() {
+        StructDecl st;
+        st.offset = peek().offset;
+        st.pub = consume(TokenKind::KwPub);
+
+        if (!expect(TokenKind::KwStruct, "'struct'")) {
+            return std::nullopt;
+        }
+
+        const std::size_t name_off = peek().offset;
+        auto name = take_ident("struct name");
+        if (!name) {
+            return std::nullopt;
+        }
+        st.name = std::move(*name);
+        st.offset = name_off;
+
+        if (!expect(TokenKind::LBrace, "'{'")) {
+            return std::nullopt;
+        }
+
+        while (!at(TokenKind::Eof) && !at(TokenKind::RBrace)) {
+            auto field = parse_field();
+            if (!field) {
+                return std::nullopt;
+            }
+            st.fields.push_back(std::move(*field));
+            consume(TokenKind::Comma);
+        }
+
+        if (!expect(TokenKind::RBrace, "'}'")) {
+            return std::nullopt;
+        }
+        return st;
+    }
+
+    std::optional<FieldDecl> parse_field() {
+        FieldDecl field;
+        field.offset = peek().offset;
+        field.pub = consume(TokenKind::KwPub);
+        field.mut = consume(TokenKind::KwMut);
+
+        auto name = take_ident("field name");
+        if (!name) {
+            return std::nullopt;
+        }
+        field.name = std::move(*name);
+
+        if (!expect(TokenKind::Colon, "':'")) {
+            return std::nullopt;
+        }
+
+        auto ty = parse_type_name();
+        if (!ty) {
+            return std::nullopt;
+        }
+        field.ty = std::move(*ty);
+        return field;
+    }
+
+    std::optional<ImplDecl> parse_impl() {
+        ImplDecl impl;
+        impl.offset = peek().offset;
+
+        if (!expect(TokenKind::KwImpl, "'impl'")) {
+            return std::nullopt;
+        }
+
+        auto name = take_ident("type name");
+        if (!name) {
+            return std::nullopt;
+        }
+        impl.type_name = std::move(*name);
+
+        if (!expect(TokenKind::LBrace, "'{'")) {
+            return std::nullopt;
+        }
+
+        while (!at(TokenKind::Eof) && !at(TokenKind::RBrace)) {
+            auto method = parse_fn(true);
+            if (!method) {
+                return std::nullopt;
+            }
+            impl.methods.push_back(std::move(*method));
+        }
+
+        if (!expect(TokenKind::RBrace, "'}'")) {
+            return std::nullopt;
+        }
+        return impl;
+    }
+
+    std::optional<FnDecl> parse_fn(bool in_impl) {
         FnDecl fn;
         fn.offset = peek().offset;
         fn.pub = consume(TokenKind::KwPub);
@@ -116,7 +250,7 @@ private:
         }
         fn.name = std::move(*name);
 
-        auto params = parse_params();
+        auto params = parse_params(fn, in_impl);
         if (!params) {
             return std::nullopt;
         }
@@ -138,7 +272,22 @@ private:
         return fn;
     }
 
-    std::optional<std::vector<Param>> parse_params() {
+    bool consume_self_param(FnDecl& fn) {
+        if (at(TokenKind::KwMut) && peek_n(1).kind == TokenKind::KwSelf) {
+            fn.self_param = SelfParam::Mut;
+            advance();
+            advance();
+            return true;
+        }
+        if (at(TokenKind::KwSelf)) {
+            fn.self_param = SelfParam::Value;
+            advance();
+            return true;
+        }
+        return false;
+    }
+
+    std::optional<std::vector<Param>> parse_params(FnDecl& fn, bool in_impl) {
         if (!expect(TokenKind::LParen, "'('")) {
             return std::nullopt;
         }
@@ -147,6 +296,20 @@ private:
         if (at(TokenKind::RParen)) {
             advance();
             return params;
+        }
+
+        if (in_impl && consume_self_param(fn)) {
+            if (at(TokenKind::RParen)) {
+                advance();
+                return params;
+            }
+            if (!expect(TokenKind::Comma, "',' after self")) {
+                return std::nullopt;
+            }
+            if (at(TokenKind::RParen)) {
+                advance();
+                return params;
+            }
         }
 
         while (true) {
@@ -389,13 +552,35 @@ private:
             return std::nullopt;
         }
 
-        while (at(TokenKind::LParen)) {
-            expr = parse_call(std::move(*expr));
-            if (!expr) {
-                return std::nullopt;
+        while (true) {
+            if (at(TokenKind::LParen)) {
+                expr = parse_call(std::move(*expr));
+                if (!expr) {
+                    return std::nullopt;
+                }
+                continue;
             }
+            if (at(TokenKind::Dot)) {
+                expr = parse_field(std::move(*expr));
+                if (!expr) {
+                    return std::nullopt;
+                }
+                continue;
+            }
+            break;
         }
         return expr;
+    }
+
+    std::optional<ExprPtr> parse_field(ExprPtr base) {
+        const std::size_t off = peek().offset;
+        advance();
+
+        auto name = take_ident("field name");
+        if (!name) {
+            return std::nullopt;
+        }
+        return make_expr(off, ExprField{std::move(base), std::move(*name)});
     }
 
     std::optional<ExprPtr> parse_call(ExprPtr callee) {
@@ -407,6 +592,34 @@ private:
             return std::nullopt;
         }
         return make_expr(off, ExprCall{std::move(callee), std::move(*args)});
+    }
+
+    std::optional<ExprPtr> parse_struct_lit(std::size_t off, std::string name) {
+        advance();
+
+        std::vector<StructLitField> fields;
+        while (!at(TokenKind::Eof) && !at(TokenKind::RBrace)) {
+            auto field_name = take_ident("field name");
+            if (!field_name) {
+                return std::nullopt;
+            }
+            if (!expect(TokenKind::Colon, "':'")) {
+                return std::nullopt;
+            }
+            auto value = parse_expr();
+            if (!value) {
+                return std::nullopt;
+            }
+            fields.push_back(StructLitField{std::move(*field_name), std::move(*value)});
+            if (!consume(TokenKind::Comma)) {
+                break;
+            }
+        }
+
+        if (!expect(TokenKind::RBrace, "'}'")) {
+            return std::nullopt;
+        }
+        return make_expr(off, ExprStructLit{std::move(name), std::move(fields)});
     }
 
     std::optional<std::vector<ExprPtr>> parse_arg_list() {
@@ -450,10 +663,19 @@ private:
             return make_expr(off, LitInt{raw});
         }
 
+        if (at(TokenKind::KwSelf)) {
+            const std::size_t off = peek().offset;
+            advance();
+            return make_expr(off, ExprIdent{"self"});
+        }
+
         if (at(TokenKind::Ident)) {
             const std::size_t off = peek().offset;
             std::string name(peek_text());
             advance();
+            if (at(TokenKind::LBrace)) {
+                return parse_struct_lit(off, std::move(name));
+            }
             return make_expr(off, ExprIdent{std::move(name)});
         }
 
