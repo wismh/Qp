@@ -95,7 +95,7 @@ HirStmtPtr lower_stmt(const Source& src, StmtPtr stmt, DiagnosticEngine& diags) 
                 let.name = std::move(kind.name);
                 if (kind.ty) {
                     let.ty = type_from_name(*kind.ty);
-                    if (let.ty == Type::Error) {
+                    if (let.ty == Type::error()) {
                         diags.error(src, stmt->offset, "unknown type '" + *kind.ty + "'");
                     }
                 }
@@ -138,10 +138,10 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
         [&](auto&& kind) {
             using K = std::decay_t<decltype(kind)>;
             if constexpr (std::is_same_v<K, LitInt>) {
-                out->ty = Type::I32;
+                out->ty = Type::i32();
                 out->kind = HirLitInt{parse_i32(kind.raw, src, expr->offset, diags)};
             } else if constexpr (std::is_same_v<K, LitFloat>) {
-                out->ty = Type::F32;
+                out->ty = Type::f32();
                 out->kind = HirLitFloat{parse_f32(kind.raw, src, expr->offset, diags)};
             } else if constexpr (std::is_same_v<K, ExprIdent>) {
                 out->kind = HirVar{std::move(kind.name)};
@@ -175,13 +175,13 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
 
 Type parse_return_ty(const Source& src, const FnDecl& fn, DiagnosticEngine& diags) {
     if (!fn.return_ty) {
-        return Type::Unit;
+        return Type::unit();
     }
 
     const Type ty = type_from_name(*fn.return_ty);
-    if (ty == Type::Error) {
+    if (ty == Type::error()) {
         diags.error(src, fn.offset, "unknown return type '" + *fn.return_ty + "'");
-        return Type::Error;
+        return Type::error();
     }
     return ty;
 }
@@ -199,7 +199,7 @@ HirFn lower_fn(const Source& src, FnDecl& fn, DiagnosticEngine& diags) {
         hp.name = std::move(p.name);
         hp.offset = p.offset;
         hp.ty = type_from_name(p.ty);
-        if (hp.ty == Type::Error) {
+        if (hp.ty == Type::error()) {
             diags.error(src, p.offset, "unknown type '" + p.ty + "'");
         }
         hfn.params.push_back(std::move(hp));

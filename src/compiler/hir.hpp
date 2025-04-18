@@ -52,7 +52,7 @@ struct HirAssign {
 };
 
 struct HirExpr {
-    Type ty = Type::Unknown;
+    Type ty;
     std::size_t offset = 0;
     std::variant<HirLitInt, HirLitFloat, HirVar, HirBinary, HirUnary, HirCall, HirAssign> kind;
 };
@@ -60,7 +60,7 @@ struct HirExpr {
 struct HirLet {
     bool mut = false;
     std::string name;
-    Type ty = Type::Unknown;
+    Type ty;
     HirExprPtr init;
 };
 
@@ -85,7 +85,7 @@ struct HirBlock {
 
 struct HirParam {
     std::string name;
-    Type ty = Type::Unknown;
+    Type ty;
     std::size_t offset = 0;
 };
 
@@ -93,7 +93,7 @@ struct HirFn {
     bool pub = false;
     std::string name;
     std::vector<HirParam> params;
-    Type return_ty = Type::Unit;
+    Type return_ty = Type::unit();
     HirBlock body;
     std::size_t offset = 0;
 };
