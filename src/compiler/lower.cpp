@@ -3,6 +3,8 @@
 #include "compiler/token.hpp"
 #include "compiler/type.hpp"
 
+#include "compiler/ast.hpp"
+
 #include <charconv>
 #include <string>
 #include <string_view>
@@ -82,6 +84,18 @@ std::string assign_target(const Source& src, const Expr& lhs, DiagnosticEngine& 
     return "<error>";
 }
 
+SelfKind self_kind_from(SelfParam param) {
+    switch (param) {
+        case SelfParam::Value:
+            return SelfKind::Value;
+        case SelfParam::Mut:
+            return SelfKind::Mut;
+        case SelfParam::None:
+            return SelfKind::None;
+    }
+    return SelfKind::None;
+}
+
 HirStmtPtr lower_stmt(const Source& src, StmtPtr stmt, DiagnosticEngine& diags) {
     auto out = std::make_unique<HirStmt>();
     out->offset = stmt->offset;
@@ -154,18 +168,53 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
             } else if constexpr (std::is_same_v<K, ExprUnary>) {
                 out->kind = HirUnary{UnOp::Neg, lower_expr(src, std::move(kind.operand), diags)};
             } else if constexpr (std::is_same_v<K, ExprCall>) {
-                HirCall call;
-                call.callee = callee_name(src, *kind.callee, diags);
-                call.args.reserve(kind.args.size());
-                for (auto& arg : kind.args) {
-                    call.args.push_back(lower_expr(src, std::move(arg), diags));
+                if (const auto* field = std::get_if<ExprField>(&kind.callee->kind)) {
+                    HirMethodCall call;
+                    call.receiver = lower_expr(src, std::move(field->base), diags);
+                    call.method = field->name;
+                    call.args.reserve(kind.args.size());
+                    for (auto& arg : kind.args) {
+                        call.args.push_back(lower_expr(src, std::move(arg), diags));
+                    }
+                    out->kind = std::move(call);
+                } else {
+                    HirCall call;
+                    call.callee = callee_name(src, *kind.callee, diags);
+                    call.args.reserve(kind.args.size());
+                    for (auto& arg : kind.args) {
+                        call.args.push_back(lower_expr(src, std::move(arg), diags));
+                    }
+                    out->kind = std::move(call);
                 }
-                out->kind = std::move(call);
             } else if constexpr (std::is_same_v<K, ExprAssign>) {
-                out->kind = HirAssign{
-                    assign_target(src, *kind.lhs, diags),
-                    lower_expr(src, std::move(kind.rhs), diags),
+                if (const auto* field = std::get_if<ExprField>(&kind.lhs->kind)) {
+                    out->kind = HirFieldAssign{
+                        lower_expr(src, std::move(field->base), diags),
+                        field->name,
+                        lower_expr(src, std::move(kind.rhs), diags),
+                    };
+                } else {
+                    out->kind = HirAssign{
+                        assign_target(src, *kind.lhs, diags),
+                        lower_expr(src, std::move(kind.rhs), diags),
+                    };
+                }
+            } else if constexpr (std::is_same_v<K, ExprField>) {
+                out->kind = HirFieldAccess{
+                    lower_expr(src, std::move(kind.base), diags),
+                    std::move(kind.name),
                 };
+            } else if constexpr (std::is_same_v<K, ExprStructLit>) {
+                HirStructLit lit;
+                lit.name = std::move(kind.name);
+                lit.fields.reserve(kind.fields.size());
+                for (auto& field : kind.fields) {
+                    lit.fields.push_back(HirStructLitField{
+                        std::move(field.name),
+                        lower_expr(src, std::move(field.value), diags),
+                    });
+                }
+                out->kind = std::move(lit);
             }
         },
         expr->kind);
@@ -186,9 +235,11 @@ Type parse_return_ty(const Source& src, const FnDecl& fn, DiagnosticEngine& diag
     return ty;
 }
 
-HirFn lower_fn(const Source& src, FnDecl& fn, DiagnosticEngine& diags) {
+HirFn lower_fn(const Source& src, FnDecl& fn, DiagnosticEngine& diags, std::string self_ty = {}) {
     HirFn hfn;
     hfn.pub = fn.pub;
+    hfn.self_kind = self_kind_from(fn.self_param);
+    hfn.self_ty = std::move(self_ty);
     hfn.name = std::move(fn.name);
     hfn.offset = fn.offset;
     hfn.return_ty = parse_return_ty(src, fn, diags);
@@ -209,12 +260,53 @@ HirFn lower_fn(const Source& src, FnDecl& fn, DiagnosticEngine& diags) {
     return hfn;
 }
 
+HirStruct lower_struct(const Source& src, StructDecl& st, DiagnosticEngine& diags) {
+    HirStruct out;
+    out.pub = st.pub;
+    out.name = std::move(st.name);
+    out.offset = st.offset;
+    out.fields.reserve(st.fields.size());
+
+    for (auto& field : st.fields) {
+        HirField hf;
+        hf.mut = field.mut;
+        hf.name = std::move(field.name);
+        hf.offset = field.offset;
+        hf.ty = type_from_name(field.ty);
+        if (hf.ty == Type::error()) {
+            diags.error(src, field.offset, "unknown type '" + field.ty + "'");
+        }
+        out.fields.push_back(std::move(hf));
+    }
+    return out;
+}
+
+HirImpl lower_impl(const Source& src, ImplDecl& impl, DiagnosticEngine& diags) {
+    HirImpl out;
+    out.type_name = impl.type_name;
+    out.offset = impl.offset;
+    out.methods.reserve(impl.methods.size());
+
+    for (auto& method : impl.methods) {
+        out.methods.push_back(lower_fn(src, method, diags, impl.type_name));
+    }
+    return out;
+}
+
 }  // namespace
 
 HirModule lower(const Source& src, AstFile ast, DiagnosticEngine& diags) {
     HirModule mod;
+    mod.structs.reserve(ast.structs.size());
+    mod.impls.reserve(ast.impls.size());
     mod.functions.reserve(ast.functions.size());
 
+    for (auto& st : ast.structs) {
+        mod.structs.push_back(lower_struct(src, st, diags));
+    }
+    for (auto& impl : ast.impls) {
+        mod.impls.push_back(lower_impl(src, impl, diags));
+    }
     for (auto& fn : ast.functions) {
         mod.functions.push_back(lower_fn(src, fn, diags));
     }

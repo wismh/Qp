@@ -76,7 +76,7 @@ inline Type type_from_name(std::string_view name) {
     if (name == "()" || name.empty()) {
         return Type::unit();
     }
-    return Type::error();
+    return Type::named(std::string(name));
 }
 
 }  // namespace qpc
