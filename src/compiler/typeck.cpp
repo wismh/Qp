@@ -11,13 +11,13 @@ namespace qpc {
 namespace {
 
 struct Binding {
-    Type ty = Type::Unknown;
+    Type ty;
     bool mut = false;
 };
 
 struct FnSig {
     std::vector<Type> params;
-    Type ret = Type::Unit;
+    Type ret = Type::unit();
     std::size_t offset = 0;
 };
 
@@ -43,7 +43,7 @@ private:
     DiagnosticEngine& diags_;
     std::unordered_map<std::string, FnSig> sigs_;
     std::vector<std::unordered_map<std::string, Binding>> scopes_;
-    Type current_ret_ = Type::Unit;
+    Type current_ret_ = Type::unit();
 
     void error(std::size_t offset, std::string message) {
         diags_.error(src_, offset, std::move(message));
@@ -105,7 +105,7 @@ private:
         if (fn.body.tail) {
             const Type tail_ty = check_expr(*fn.body.tail);
             expect_type(tail_ty, fn.return_ty, fn.body.tail->offset, "function body");
-        } else if (fn.return_ty != Type::Unit && !ends_with_return(fn.body)) {
+        } else if (fn.return_ty != Type::unit() && !ends_with_return(fn.body)) {
             error(fn.offset, "missing return value in function '" + fn.name + "'");
         }
 
@@ -133,7 +133,7 @@ private:
 
     void check_let(std::size_t offset, HirLet& let) {
         const Type init_ty = check_expr(*let.init);
-        if (let.ty == Type::Unknown) {
+        if (let.ty == Type::unknown()) {
             let.ty = init_ty;
         } else {
             expect_type(init_ty, let.ty, let.init->offset, "let initializer");
@@ -146,20 +146,20 @@ private:
             expect_type(check_expr(*ret.value), current_ret_, ret.value->offset, "return value");
             return;
         }
-        if (current_ret_ != Type::Unit) {
+        if (current_ret_ != Type::unit()) {
             error(offset, "missing return value");
         }
     }
 
     Type check_expr(HirExpr& expr) {
-        Type ty = Type::Error;
+        Type ty = Type::error();
         std::visit(
             [&](auto&& kind) {
                 using K = std::decay_t<decltype(kind)>;
                 if constexpr (std::is_same_v<K, HirLitInt>) {
-                    ty = Type::I32;
+                    ty = Type::i32();
                 } else if constexpr (std::is_same_v<K, HirLitFloat>) {
-                    ty = Type::F32;
+                    ty = Type::f32();
                 } else if constexpr (std::is_same_v<K, HirVar>) {
                     ty = check_var(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirBinary>) {
@@ -182,39 +182,39 @@ private:
             return b->ty;
         }
         error(offset, "unknown identifier '" + var.name + "'");
-        return Type::Error;
+        return Type::error();
     }
 
     Type check_unary(HirUnary& un, std::size_t offset) {
         const Type inner = check_expr(*un.operand);
-        if (inner == Type::I32 || inner == Type::F32) {
+        if (inner == Type::i32() || inner == Type::f32()) {
             return inner;
         }
-        if (inner != Type::Error) {
+        if (inner != Type::error()) {
             error(offset, "unary '-' requires i32 or f32");
         }
-        return Type::Error;
+        return Type::error();
     }
 
     Type check_binop(BinOp op, Type lhs, Type rhs, std::size_t offset) {
-        if (lhs == Type::Error || rhs == Type::Error) {
-            return Type::Error;
+        if (lhs == Type::error() || rhs == Type::error()) {
+            return Type::error();
         }
         if (lhs != rhs) {
             error(offset, "cannot apply operator to '" + std::string(type_name(lhs)) + "' and '" +
                               std::string(type_name(rhs)) + "'");
-            return Type::Error;
+            return Type::error();
         }
         if (op == BinOp::Mod) {
-            if (lhs != Type::I32) {
+            if (lhs != Type::i32()) {
                 error(offset, "'%' requires i32 operands");
-                return Type::Error;
+                return Type::error();
             }
-            return Type::I32;
+            return Type::i32();
         }
-        if (lhs != Type::I32 && lhs != Type::F32) {
+        if (lhs != Type::i32() && lhs != Type::f32()) {
             error(offset, "arithmetic requires i32 or f32");
-            return Type::Error;
+            return Type::error();
         }
         return lhs;
     }
@@ -226,7 +226,7 @@ private:
             for (auto& arg : call.args) {
                 check_expr(*arg);
             }
-            return Type::Error;
+            return Type::error();
         }
 
         const FnSig& sig = it->second;
@@ -251,7 +251,7 @@ private:
 
         if (!b) {
             error(offset, "unknown identifier '" + as.name + "'");
-            return Type::Error;
+            return Type::error();
         }
         if (!b->mut) {
             error(offset, "cannot assign to immutable variable '" + as.name + "'");
@@ -262,7 +262,7 @@ private:
     }
 
     void expect_type(Type got, Type expected, std::size_t offset, const char* what) {
-        if (got == Type::Error || expected == Type::Error || got == expected) {
+        if (got == Type::error() || expected == Type::error() || got == expected) {
             return;
         }
         error(offset, std::string(what) + " has type '" + std::string(type_name(got)) + "', expected '" +
