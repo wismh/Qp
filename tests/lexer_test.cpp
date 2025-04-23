@@ -63,3 +63,18 @@ TEST(Lexer, UnexpectedCharacter) {
     ASSERT_TRUE(diags.has_errors());
     EXPECT_NE(diags.all().front().message.find("unexpected character"), std::string::npos);
 }
+
+TEST(Lexer, StructImplSelfAndDot) {
+    auto src = Source::from_string("t.qp", "struct Vec2 impl self.x");
+    DiagnosticEngine diags;
+    const auto tokens = lex(src, diags);
+    ASSERT_FALSE(diags.has_errors());
+    ASSERT_EQ(tokens.size(), 7u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::KwStruct);
+    EXPECT_EQ(tokens[1].kind, TokenKind::Ident);
+    EXPECT_EQ(tokens[2].kind, TokenKind::KwImpl);
+    EXPECT_EQ(tokens[3].kind, TokenKind::KwSelf);
+    EXPECT_EQ(tokens[4].kind, TokenKind::Dot);
+    EXPECT_EQ(tokens[5].kind, TokenKind::Ident);
+    EXPECT_EQ(tokens[6].kind, TokenKind::Eof);
+}

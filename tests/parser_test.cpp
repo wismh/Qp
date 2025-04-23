@@ -44,3 +44,23 @@ TEST(Parser, MissingParenIsError) {
     auto parsed = qpc::test::parse_string("fn add(a: i32 -> i32 { a }");
     EXPECT_TRUE(parsed.diags.has_errors());
 }
+
+TEST(Parser, StructImplAndFieldAccess) {
+    auto parsed = qpc::test::parse_string(R"(
+        struct Vec2 { mut x: f32, mut y: f32 }
+        impl Vec2 {
+            fn add(self, other: Vec2) -> Vec2 {
+                Vec2 { x: self.x + other.x, y: self.y + other.y }
+            }
+        }
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.structs.size(), 1u);
+    EXPECT_EQ(parsed.ast.structs[0].name, "Vec2");
+    ASSERT_EQ(parsed.ast.structs[0].fields.size(), 2u);
+    EXPECT_TRUE(parsed.ast.structs[0].fields[0].mut);
+    ASSERT_EQ(parsed.ast.impls.size(), 1u);
+    ASSERT_EQ(parsed.ast.impls[0].methods.size(), 1u);
+    EXPECT_EQ(parsed.ast.impls[0].methods[0].self_param, qpc::SelfParam::Value);
+    ASSERT_TRUE(parsed.ast.impls[0].methods[0].body.tail);
+}
