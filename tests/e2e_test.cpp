@@ -36,3 +36,25 @@ TEST(E2E, CompileAddExampleToFiles) {
     EXPECT_NE(source_text.find("#include \"add.h\""), std::string::npos);
     EXPECT_NE(source_text.find("a + b"), std::string::npos);
 }
+
+TEST(E2E, CompileVec2ExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_vec2";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input = std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "vec2.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "vec2.h";
+    const auto source = out_dir / "vec2.cpp";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    ASSERT_TRUE(std::filesystem::exists(source));
+
+    std::ifstream header_in(header);
+    const std::string header_text((std::istreambuf_iterator<char>(header_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("struct Vec2"), std::string::npos);
+    EXPECT_NE(header_text.find("Vec2 add(Vec2 other) const;"), std::string::npos);
+    EXPECT_NE(header_text.find("float add_x(Vec2 a, Vec2 b);"), std::string::npos);
+}
