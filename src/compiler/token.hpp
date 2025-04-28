@@ -99,7 +99,7 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'}'";
         case TokenKind::Dot:
             return "'.'";
-        case TokenKind::Colon,
+        case TokenKind::Colon:
             return "':'";
         case TokenKind::Comma:
             return "','";
