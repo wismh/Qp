@@ -168,10 +168,12 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
             } else if constexpr (std::is_same_v<K, ExprUnary>) {
                 out->kind = HirUnary{UnOp::Neg, lower_expr(src, std::move(kind.operand), diags)};
             } else if constexpr (std::is_same_v<K, ExprCall>) {
-                if (const auto* field = std::get_if<ExprField>(&kind.callee->kind)) {
+                if (auto* field = std::get_if<ExprField>(&kind.callee->kind)) {
+                    std::string method = std::move(field->name);
+                    HirExprPtr receiver = lower_expr(src, std::move(field->base), diags);
                     HirMethodCall call;
-                    call.receiver = lower_expr(src, std::move(field->base), diags);
-                    call.method = field->name;
+                    call.receiver = std::move(receiver);
+                    call.method = std::move(method);
                     call.args.reserve(kind.args.size());
                     for (auto& arg : kind.args) {
                         call.args.push_back(lower_expr(src, std::move(arg), diags));
@@ -187,12 +189,11 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                     out->kind = std::move(call);
                 }
             } else if constexpr (std::is_same_v<K, ExprAssign>) {
-                if (const auto* field = std::get_if<ExprField>(&kind.lhs->kind)) {
-                    out->kind = HirFieldAssign{
-                        lower_expr(src, std::move(field->base), diags),
-                        field->name,
-                        lower_expr(src, std::move(kind.rhs), diags),
-                    };
+                if (auto* field = std::get_if<ExprField>(&kind.lhs->kind)) {
+                    std::string name = std::move(field->name);
+                    HirExprPtr base = lower_expr(src, std::move(field->base), diags);
+                    HirExprPtr value = lower_expr(src, std::move(kind.rhs), diags);
+                    out->kind = HirFieldAssign{std::move(base), std::move(name), std::move(value)};
                 } else {
                     out->kind = HirAssign{
                         assign_target(src, *kind.lhs, diags),
