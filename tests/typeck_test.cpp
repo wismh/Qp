@@ -47,3 +47,37 @@ TEST(Typeck, ImmutableAssignIsError) {
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("immutable"), std::string::npos);
 }
+
+TEST(Typeck, StructLiteralAndMethodCall) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { mut x: i32, mut y: i32 }
+        impl Point {
+            fn add(self, other: Point) -> Point {
+                Point { x: self.x + other.x, y: self.y + other.y }
+            }
+        }
+        fn sum_x(a: Point, b: Point) -> i32 { a.add(b).x }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, MissingStructFieldIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { x: i32, y: i32 }
+        fn f() -> Point { Point { x: 1 } }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("missing field"), std::string::npos);
+}
+
+TEST(Typeck, ImmutableFieldAssignIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { x: i32 }
+        impl Point {
+            fn set(mut self, v: i32) { self.x = v; }
+        }
+        fn f() { let mut p = Point { x: 1 }; p.set(2); }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("immutable field"), std::string::npos);
+}

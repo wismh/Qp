@@ -11,13 +11,31 @@ namespace qpc {
 namespace {
 
 struct Binding {
-    Type ty = Type::Unknown;
+    Type ty;
     bool mut = false;
 };
 
 struct FnSig {
     std::vector<Type> params;
-    Type ret = Type::Unit;
+    Type ret = Type::unit();
+    std::size_t offset = 0;
+};
+
+struct MethodSig {
+    SelfKind self_kind = SelfKind::None;
+    std::vector<Type> params;
+    Type ret = Type::unit();
+    std::size_t offset = 0;
+};
+
+struct FieldInfo {
+    bool mut = false;
+    Type ty;
+    std::size_t offset = 0;
+};
+
+struct StructInfo {
+    std::vector<std::pair<std::string, FieldInfo>> fields;
     std::size_t offset = 0;
 };
 
@@ -27,7 +45,9 @@ public:
         : src_(src), mod_(mod), diags_(diags) {}
 
     void run() {
+        collect_structs();
         collect_sigs();
+        collect_methods();
         if (diags_.has_errors()) {
             return;
         }
@@ -35,35 +55,132 @@ public:
         for (auto& fn : mod_.functions) {
             check_fn(fn);
         }
+        for (auto& impl : mod_.impls) {
+            for (auto& method : impl.methods) {
+                check_fn(method);
+            }
+        }
     }
 
 private:
     const Source& src_;
     HirModule& mod_;
     DiagnosticEngine& diags_;
+    std::unordered_map<std::string, StructInfo> structs_;
     std::unordered_map<std::string, FnSig> sigs_;
+    std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> methods_;
     std::vector<std::unordered_map<std::string, Binding>> scopes_;
-    Type current_ret_ = Type::Unit;
+    Type current_ret_ = Type::unit();
 
     void error(std::size_t offset, std::string message) {
         diags_.error(src_, offset, std::move(message));
     }
 
+    bool resolve_type(Type& ty, std::size_t offset) {
+        if (ty.kind != TypeKind::Named) {
+            return ty != Type::error();
+        }
+        if (!structs_.contains(ty.name)) {
+            error(offset, "unknown type '" + ty.name + "'");
+            ty = Type::error();
+            return false;
+        }
+        return true;
+    }
+
+    const FieldInfo* find_field(const StructInfo& st, const std::string& name) const {
+        for (const auto& [fname, info] : st.fields) {
+            if (fname == name) {
+                return &info;
+            }
+        }
+        return nullptr;
+    }
+
+    const StructInfo* struct_of(const Type& ty) const {
+        if (ty.kind != TypeKind::Named) {
+            return nullptr;
+        }
+        auto it = structs_.find(ty.name);
+        return it == structs_.end() ? nullptr : &it->second;
+    }
+
+    void collect_structs() {
+        for (auto& st : mod_.structs) {
+            if (structs_.contains(st.name)) {
+                error(st.offset, "duplicate struct '" + st.name + "'");
+                continue;
+            }
+            structs_.emplace(st.name, StructInfo{{}, st.offset});
+        }
+
+        for (auto& st : mod_.structs) {
+            auto it = structs_.find(st.name);
+            if (it == structs_.end() || it->second.offset != st.offset) {
+                continue;
+            }
+
+            StructInfo& info = it->second;
+            for (auto& field : st.fields) {
+                if (find_field(info, field.name)) {
+                    error(field.offset, "duplicate field '" + field.name + "'");
+                    continue;
+                }
+                resolve_type(field.ty, field.offset);
+                info.fields.emplace_back(field.name, FieldInfo{field.mut, field.ty, field.offset});
+            }
+        }
+    }
+
     void collect_sigs() {
-        for (const auto& fn : mod_.functions) {
+        for (auto& fn : mod_.functions) {
             if (sigs_.contains(fn.name)) {
                 error(fn.offset, "duplicate function '" + fn.name + "'");
                 continue;
             }
 
+            resolve_type(fn.return_ty, fn.offset);
             FnSig sig;
             sig.ret = fn.return_ty;
             sig.offset = fn.offset;
             sig.params.reserve(fn.params.size());
-            for (const auto& p : fn.params) {
+            for (auto& p : fn.params) {
+                resolve_type(p.ty, p.offset);
                 sig.params.push_back(p.ty);
             }
             sigs_.emplace(fn.name, std::move(sig));
+        }
+    }
+
+    void collect_methods() {
+        for (auto& impl : mod_.impls) {
+            if (!structs_.contains(impl.type_name)) {
+                error(impl.offset, "impl for unknown type '" + impl.type_name + "'");
+                continue;
+            }
+
+            auto& table = methods_[impl.type_name];
+            for (auto& method : impl.methods) {
+                if (table.contains(method.name)) {
+                    error(method.offset, "duplicate method '" + method.name + "'");
+                    continue;
+                }
+                if (method.self_kind == SelfKind::None) {
+                    error(method.offset, "method '" + method.name + "' needs self");
+                }
+
+                resolve_type(method.return_ty, method.offset);
+                MethodSig sig;
+                sig.self_kind = method.self_kind;
+                sig.ret = method.return_ty;
+                sig.offset = method.offset;
+                sig.params.reserve(method.params.size());
+                for (auto& p : method.params) {
+                    resolve_type(p.ty, p.offset);
+                    sig.params.push_back(p.ty);
+                }
+                table.emplace(method.name, std::move(sig));
+            }
         }
     }
 
@@ -94,6 +211,10 @@ private:
         current_ret_ = fn.return_ty;
         push_scope();
 
+        if (fn.self_kind != SelfKind::None) {
+            declare("self", Binding{Type::named(fn.self_ty), fn.self_kind == SelfKind::Mut}, fn.offset);
+        }
+
         for (const auto& p : fn.params) {
             declare(p.name, Binding{p.ty, true}, p.offset);
         }
@@ -105,7 +226,7 @@ private:
         if (fn.body.tail) {
             const Type tail_ty = check_expr(*fn.body.tail);
             expect_type(tail_ty, fn.return_ty, fn.body.tail->offset, "function body");
-        } else if (fn.return_ty != Type::Unit && !ends_with_return(fn.body)) {
+        } else if (fn.return_ty != Type::unit() && !ends_with_return(fn.body)) {
             error(fn.offset, "missing return value in function '" + fn.name + "'");
         }
 
@@ -133,9 +254,10 @@ private:
 
     void check_let(std::size_t offset, HirLet& let) {
         const Type init_ty = check_expr(*let.init);
-        if (let.ty == Type::Unknown) {
+        if (let.ty.kind == TypeKind::Unknown) {
             let.ty = init_ty;
         } else {
+            resolve_type(let.ty, offset);
             expect_type(init_ty, let.ty, let.init->offset, "let initializer");
         }
         declare(let.name, Binding{let.ty, let.mut}, offset);
@@ -146,20 +268,20 @@ private:
             expect_type(check_expr(*ret.value), current_ret_, ret.value->offset, "return value");
             return;
         }
-        if (current_ret_ != Type::Unit) {
+        if (current_ret_ != Type::unit()) {
             error(offset, "missing return value");
         }
     }
 
     Type check_expr(HirExpr& expr) {
-        Type ty = Type::Error;
+        Type ty = Type::error();
         std::visit(
             [&](auto&& kind) {
                 using K = std::decay_t<decltype(kind)>;
                 if constexpr (std::is_same_v<K, HirLitInt>) {
-                    ty = Type::I32;
+                    ty = Type::i32();
                 } else if constexpr (std::is_same_v<K, HirLitFloat>) {
-                    ty = Type::F32;
+                    ty = Type::f32();
                 } else if constexpr (std::is_same_v<K, HirVar>) {
                     ty = check_var(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirBinary>) {
@@ -170,6 +292,14 @@ private:
                     ty = check_call(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirAssign>) {
                     ty = check_assign(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirFieldAccess>) {
+                    ty = check_field(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirStructLit>) {
+                    ty = check_struct_lit(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirMethodCall>) {
+                    ty = check_method_call(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirFieldAssign>) {
+                    ty = check_field_assign(kind, expr.offset);
                 }
             },
             expr.kind);
@@ -182,39 +312,38 @@ private:
             return b->ty;
         }
         error(offset, "unknown identifier '" + var.name + "'");
-        return Type::Error;
+        return Type::error();
     }
 
     Type check_unary(HirUnary& un, std::size_t offset) {
         const Type inner = check_expr(*un.operand);
-        if (inner == Type::I32 || inner == Type::F32) {
+        if (inner == Type::i32() || inner == Type::f32()) {
             return inner;
         }
-        if (inner != Type::Error) {
+        if (inner != Type::error()) {
             error(offset, "unary '-' requires i32 or f32");
         }
-        return Type::Error;
+        return Type::error();
     }
 
     Type check_binop(BinOp op, Type lhs, Type rhs, std::size_t offset) {
-        if (lhs == Type::Error || rhs == Type::Error) {
-            return Type::Error;
+        if (lhs == Type::error() || rhs == Type::error()) {
+            return Type::error();
         }
         if (lhs != rhs) {
-            error(offset, "cannot apply operator to '" + std::string(type_name(lhs)) + "' and '" +
-                              std::string(type_name(rhs)) + "'");
-            return Type::Error;
+            error(offset, "cannot apply operator to '" + type_name(lhs) + "' and '" + type_name(rhs) + "'");
+            return Type::error();
         }
         if (op == BinOp::Mod) {
-            if (lhs != Type::I32) {
+            if (lhs != Type::i32()) {
                 error(offset, "'%' requires i32 operands");
-                return Type::Error;
+                return Type::error();
             }
-            return Type::I32;
+            return Type::i32();
         }
-        if (lhs != Type::I32 && lhs != Type::F32) {
+        if (lhs != Type::i32() && lhs != Type::f32()) {
             error(offset, "arithmetic requires i32 or f32");
-            return Type::Error;
+            return Type::error();
         }
         return lhs;
     }
@@ -226,7 +355,7 @@ private:
             for (auto& arg : call.args) {
                 check_expr(*arg);
             }
-            return Type::Error;
+            return Type::error();
         }
 
         const FnSig& sig = it->second;
@@ -251,7 +380,7 @@ private:
 
         if (!b) {
             error(offset, "unknown identifier '" + as.name + "'");
-            return Type::Error;
+            return Type::error();
         }
         if (!b->mut) {
             error(offset, "cannot assign to immutable variable '" + as.name + "'");
@@ -261,12 +390,163 @@ private:
         return b->ty;
     }
 
+    bool is_mut_place(const HirExpr& expr) {
+        if (const auto* var = std::get_if<HirVar>(&expr.kind)) {
+            if (auto* b = lookup(var->name)) {
+                return b->mut;
+            }
+            return false;
+        }
+        if (const auto* field = std::get_if<HirFieldAccess>(&expr.kind)) {
+            return is_mut_place(*field->base);
+        }
+        return false;
+    }
+
+    Type check_field(HirFieldAccess& field, std::size_t offset) {
+        const Type base_ty = check_expr(*field.base);
+        const StructInfo* st = struct_of(base_ty);
+        if (!st) {
+            if (base_ty != Type::error()) {
+                error(offset, "field access requires a struct, found '" + type_name(base_ty) + "'");
+            }
+            return Type::error();
+        }
+
+        const FieldInfo* info = find_field(*st, field.name);
+        if (!info) {
+            error(offset, "unknown field '" + field.name + "' on '" + type_name(base_ty) + "'");
+            return Type::error();
+        }
+        return info->ty;
+    }
+
+    Type check_struct_lit(HirStructLit& lit, std::size_t offset) {
+        auto it = structs_.find(lit.name);
+        if (it == structs_.end()) {
+            error(offset, "unknown struct '" + lit.name + "'");
+            for (auto& field : lit.fields) {
+                check_expr(*field.value);
+            }
+            return Type::error();
+        }
+
+        const StructInfo& st = it->second;
+        std::vector<bool> seen(st.fields.size(), false);
+
+        for (auto& field : lit.fields) {
+            const Type value_ty = check_expr(*field.value);
+            std::size_t index = st.fields.size();
+            for (std::size_t i = 0; i < st.fields.size(); ++i) {
+                if (st.fields[i].first == field.name) {
+                    index = i;
+                    break;
+                }
+            }
+            if (index == st.fields.size()) {
+                error(field.value->offset, "unknown field '" + field.name + "' on '" + lit.name + "'");
+                continue;
+            }
+            if (seen[index]) {
+                error(field.value->offset, "duplicate field '" + field.name + "'");
+                continue;
+            }
+            seen[index] = true;
+            expect_type(value_ty, st.fields[index].second.ty, field.value->offset, "field");
+        }
+
+        for (std::size_t i = 0; i < st.fields.size(); ++i) {
+            if (!seen[i]) {
+                error(offset, "missing field '" + st.fields[i].first + "' in '" + lit.name + "'");
+            }
+        }
+
+        return Type::named(lit.name);
+    }
+
+    Type check_method_call(HirMethodCall& call, std::size_t offset) {
+        const Type recv_ty = check_expr(*call.receiver);
+        if (recv_ty.kind != TypeKind::Named) {
+            if (recv_ty != Type::error()) {
+                error(offset, "method call requires a struct, found '" + type_name(recv_ty) + "'");
+            }
+            for (auto& arg : call.args) {
+                check_expr(*arg);
+            }
+            return Type::error();
+        }
+
+        auto type_it = methods_.find(recv_ty.name);
+        if (type_it == methods_.end()) {
+            error(offset, "unknown method '" + call.method + "' on '" + recv_ty.name + "'");
+            for (auto& arg : call.args) {
+                check_expr(*arg);
+            }
+            return Type::error();
+        }
+
+        auto method_it = type_it->second.find(call.method);
+        if (method_it == type_it->second.end()) {
+            error(offset, "unknown method '" + call.method + "' on '" + recv_ty.name + "'");
+            for (auto& arg : call.args) {
+                check_expr(*arg);
+            }
+            return Type::error();
+        }
+
+        const MethodSig& sig = method_it->second;
+        if (sig.self_kind == SelfKind::Mut && !is_mut_place(*call.receiver)) {
+            error(offset, "cannot call '" + call.method + "' on an immutable receiver");
+        }
+
+        if (call.args.size() != sig.params.size()) {
+            error(offset, "method '" + call.method + "' expects " + std::to_string(sig.params.size()) +
+                              " argument(s), got " + std::to_string(call.args.size()));
+        }
+
+        const std::size_t n = std::min(call.args.size(), sig.params.size());
+        for (std::size_t i = 0; i < call.args.size(); ++i) {
+            const Type arg_ty = check_expr(*call.args[i]);
+            if (i < n) {
+                expect_type(arg_ty, sig.params[i], call.args[i]->offset, "argument");
+            }
+        }
+        return sig.ret;
+    }
+
+    Type check_field_assign(HirFieldAssign& as, std::size_t offset) {
+        const Type base_ty = check_expr(*as.base);
+        const Type value_ty = check_expr(*as.value);
+        const StructInfo* st = struct_of(base_ty);
+        if (!st) {
+            if (base_ty != Type::error()) {
+                error(offset, "field assignment requires a struct, found '" + type_name(base_ty) + "'");
+            }
+            return Type::error();
+        }
+
+        const FieldInfo* info = find_field(*st, as.field);
+        if (!info) {
+            error(offset, "unknown field '" + as.field + "' on '" + type_name(base_ty) + "'");
+            return Type::error();
+        }
+        if (!info->mut) {
+            error(offset, "cannot assign to immutable field '" + as.field + "'");
+        }
+        if (!is_mut_place(*as.base)) {
+            error(offset, "cannot assign to field '" + as.field + "' through an immutable value");
+        }
+
+        expect_type(value_ty, info->ty, as.value->offset, "assignment");
+        return info->ty;
+    }
+
     void expect_type(Type got, Type expected, std::size_t offset, const char* what) {
-        if (got == Type::Error || expected == Type::Error || got == expected) {
+        if (got == Type::error() || expected == Type::error() || got == expected) {
             return;
         }
-        error(offset, std::string(what) + " has type '" + std::string(type_name(got)) + "', expected '" +
-                          std::string(type_name(expected)) + "'");
+        error(offset, std::string(what) + " has type '" + type_name(got) + "', expected '" +
+                          type_name(expected) + "'");
     }
 };
 

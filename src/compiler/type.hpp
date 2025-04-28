@@ -1,43 +1,66 @@
 #pragma once
 
-#include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace qpc {
 
-enum class Type {
+enum class TypeKind {
     Unknown,
     Error,
     Unit,
     I32,
     F32,
+    Named,
 };
 
-inline std::string_view type_name(Type ty) {
-    switch (ty) {
-        case Type::Unknown:
+struct Type {
+    TypeKind kind = TypeKind::Unknown;
+    std::string name;
+
+    static Type unknown() { return {}; }
+    static Type error() { return {TypeKind::Error, {}}; }
+    static Type unit() { return {TypeKind::Unit, {}}; }
+    static Type i32() { return {TypeKind::I32, {}}; }
+    static Type f32() { return {TypeKind::F32, {}}; }
+    static Type named(std::string n) { return {TypeKind::Named, std::move(n)}; }
+
+    friend bool operator==(const Type& a, const Type& b) {
+        return a.kind == b.kind && a.name == b.name;
+    }
+
+    friend bool operator!=(const Type& a, const Type& b) { return !(a == b); }
+};
+
+inline std::string type_name(const Type& ty) {
+    switch (ty.kind) {
+        case TypeKind::Unknown:
             return "<unknown>";
-        case Type::Error:
+        case TypeKind::Error:
             return "<error>";
-        case Type::Unit:
+        case TypeKind::Unit:
             return "()";
-        case Type::I32:
+        case TypeKind::I32:
             return "i32";
-        case Type::F32:
+        case TypeKind::F32:
             return "f32";
+        case TypeKind::Named:
+            return ty.name;
     }
     return "<invalid>";
 }
 
-inline const char* cpp_type_name(Type ty) {
-    switch (ty) {
-        case Type::Unit:
+inline std::string cpp_type_name(const Type& ty) {
+    switch (ty.kind) {
+        case TypeKind::Unit:
             return "void";
-        case Type::I32:
+        case TypeKind::I32:
             return "std::int32_t";
-        case Type::F32:
+        case TypeKind::F32:
             return "float";
+        case TypeKind::Named:
+            return ty.name;
         default:
             return "void";
     }
@@ -45,15 +68,15 @@ inline const char* cpp_type_name(Type ty) {
 
 inline Type type_from_name(std::string_view name) {
     if (name == "i32") {
-        return Type::I32;
+        return Type::i32();
     }
     if (name == "f32") {
-        return Type::F32;
+        return Type::f32();
     }
     if (name == "()" || name.empty()) {
-        return Type::Unit;
+        return Type::unit();
     }
-    return Type::Error;
+    return Type::named(std::string(name));
 }
 
 }  // namespace qpc

@@ -87,3 +87,24 @@ add_executable(add_host
 target_include_directories(add_host PRIVATE ${ADD_GEN_DIR})
 
 add_test(NAME add_host COMMAND add_host)
+
+set(VEC2_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_vec2)
+set(VEC2_GEN_H ${VEC2_GEN_DIR}/vec2.h)
+set(VEC2_GEN_CPP ${VEC2_GEN_DIR}/vec2.cpp)
+
+add_custom_command(
+    OUTPUT ${VEC2_GEN_H} ${VEC2_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${VEC2_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/vec2.qp -o ${VEC2_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/vec2.qp
+    COMMENT "qpc compile examples/vec2.qp"
+    VERBATIM
+)
+
+add_executable(vec2_host
+    examples/vec2_host/main.cpp
+    ${VEC2_GEN_CPP}
+)
+target_include_directories(vec2_host PRIVATE ${VEC2_GEN_DIR})
+
+add_test(NAME vec2_host COMMAND vec2_host)
