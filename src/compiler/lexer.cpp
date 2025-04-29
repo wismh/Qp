@@ -46,6 +46,24 @@ namespace {
     if (text == "self") {
         return TokenKind::KwSelf;
     }
+    if (text == "enum") {
+        return TokenKind::KwEnum;
+    }
+    if (text == "variant") {
+        return TokenKind::KwVariant;
+    }
+    if (text == "match") {
+        return TokenKind::KwMatch;
+    }
+    if (text == "for") {
+        return TokenKind::KwFor;
+    }
+    if (text == "true") {
+        return TokenKind::KwTrue;
+    }
+    if (text == "false") {
+        return TokenKind::KwFalse;
+    }
     return TokenKind::Ident;
 }
 
@@ -175,9 +193,69 @@ struct Lexer {
         push(TokenKind::Int, begin, i);
     }
 
+    void scan_string() {
+        const std::size_t begin = i;
+        ++i;
+        while (!eof() && text[i] != '"' && text[i] != '\n') {
+            if (text[i] == '\\') {
+                ++i;
+                if (eof()) {
+                    break;
+                }
+            }
+            ++i;
+        }
+        if (eof() || text[i] != '"') {
+            diags.error(src, begin, "unterminated string literal");
+            i = text.size();
+            return;
+        }
+        ++i;
+        push(TokenKind::String, begin, i);
+    }
+
+    void scan_char() {
+        const std::size_t begin = i;
+        ++i;
+        if (eof() || text[i] == '\n') {
+            diags.error(src, begin, "unterminated char literal");
+            return;
+        }
+        if (text[i] == '\\') {
+            ++i;
+            if (!eof()) {
+                ++i;
+            }
+        } else {
+            ++i;
+        }
+        if (eof() || text[i] != '\'') {
+            diags.error(src, begin, "unterminated char literal");
+            while (!eof() && text[i] != '\n' && text[i] != '\'') {
+                ++i;
+            }
+            if (!eof() && text[i] == '\'') {
+                ++i;
+            }
+            return;
+        }
+        ++i;
+        push(TokenKind::Char, begin, i);
+    }
+
     void scan_punct() {
         if (ahead() == '-' && ahead(1) == '>') {
             push(TokenKind::Arrow, i, i + 2);
+            i += 2;
+            return;
+        }
+        if (ahead() == '=' && ahead(1) == '>') {
+            push(TokenKind::FatArrow, i, i + 2);
+            i += 2;
+            return;
+        }
+        if (ahead() == ':' && ahead(1) == ':') {
+            push(TokenKind::ColonColon, i, i + 2);
             i += 2;
             return;
         }
@@ -210,6 +288,14 @@ struct Lexer {
             }
             if (is_digit(c)) {
                 scan_number();
+                continue;
+            }
+            if (c == '"') {
+                scan_string();
+                continue;
+            }
+            if (c == '\'') {
+                scan_char();
                 continue;
             }
 
