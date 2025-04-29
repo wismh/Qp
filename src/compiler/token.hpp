@@ -11,6 +11,8 @@ enum class TokenKind {
     Ident,
     Int,
     Float,
+    String,
+    Char,
     KwFn,
     KwLet,
     KwMut,
@@ -19,16 +21,24 @@ enum class TokenKind {
     KwStruct,
     KwImpl,
     KwSelf,
+    KwEnum,
+    KwVariant,
+    KwMatch,
+    KwFor,
+    KwTrue,
+    KwFalse,
     LParen,
     RParen,
     LBrace,
     RBrace,
     Dot,
     Colon,
+    ColonColon,
     Comma,
     Semicolon,
     Equal,
     Arrow,
+    FatArrow,
     Plus,
     Minus,
     Star,
@@ -73,6 +83,10 @@ inline const char* token_kind_name(TokenKind kind) {
             return "integer";
         case TokenKind::Float:
             return "float";
+        case TokenKind::String:
+            return "string";
+        case TokenKind::Char:
+            return "char";
         case TokenKind::KwFn:
             return "'fn'";
         case TokenKind::KwLet:
@@ -89,6 +103,18 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'impl'";
         case TokenKind::KwSelf:
             return "'self'";
+        case TokenKind::KwEnum:
+            return "'enum'";
+        case TokenKind::KwVariant:
+            return "'variant'";
+        case TokenKind::KwMatch:
+            return "'match'";
+        case TokenKind::KwFor:
+            return "'for'";
+        case TokenKind::KwTrue:
+            return "'true'";
+        case TokenKind::KwFalse:
+            return "'false'";
         case TokenKind::LParen:
             return "'('";
         case TokenKind::RParen:
@@ -101,6 +127,8 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'.'";
         case TokenKind::Colon:
             return "':'";
+        case TokenKind::ColonColon:
+            return "'::'";
         case TokenKind::Comma:
             return "','";
         case TokenKind::Semicolon:
@@ -109,6 +137,8 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'='";
         case TokenKind::Arrow:
             return "'->'";
+        case TokenKind::FatArrow:
+            return "'=>'";
         case TokenKind::Plus:
             return "'+'";
         case TokenKind::Minus:
