@@ -12,8 +12,10 @@ namespace qpc {
 
 struct Expr;
 struct Stmt;
+struct Pat;
 using ExprPtr = std::unique_ptr<Expr>;
 using StmtPtr = std::unique_ptr<Stmt>;
+using PatPtr = std::unique_ptr<Pat>;
 
 enum class SelfParam {
     None,
@@ -23,14 +25,32 @@ enum class SelfParam {
 
 struct LitInt {
     std::string raw;
+    std::optional<std::string> suffix;
 };
 
 struct LitFloat {
+    std::string raw;
+    std::optional<std::string> suffix;
+};
+
+struct LitBool {
+    bool value = false;
+};
+
+struct LitChar {
+    std::string raw;
+};
+
+struct LitString {
     std::string raw;
 };
 
 struct ExprIdent {
     std::string name;
+};
+
+struct ExprPath {
+    std::vector<std::string> segments;
 };
 
 struct ExprBinary {
@@ -66,14 +86,43 @@ struct StructLitField {
 
 struct ExprStructLit {
     std::string name;
+    std::vector<std::string> path;
     std::vector<StructLitField> fields;
+};
+
+struct MatchArm {
+    PatPtr pat;
+    ExprPtr body;
+};
+
+struct ExprMatch {
+    ExprPtr scrutinee;
+    std::vector<MatchArm> arms;
 };
 
 struct Expr {
     std::size_t offset = 0;
-    std::variant<LitInt, LitFloat, ExprIdent, ExprBinary, ExprUnary, ExprCall, ExprAssign,
-                 ExprField, ExprStructLit>
+    std::variant<LitInt, LitFloat, LitBool, LitChar, LitString, ExprIdent, ExprPath, ExprBinary,
+                 ExprUnary, ExprCall, ExprAssign, ExprField, ExprStructLit, ExprMatch>
         kind;
+};
+
+struct PatWild {};
+
+struct PatIdent {
+    std::string name;
+};
+
+struct PatVariant {
+    std::vector<std::string> path;
+    std::vector<std::string> fields;
+    std::vector<PatPtr> args;
+    bool tuple = false;
+};
+
+struct Pat {
+    std::size_t offset = 0;
+    std::variant<PatWild, PatIdent, PatVariant> kind;
 };
 
 struct StmtLet {
@@ -133,7 +182,22 @@ struct StructDecl {
     std::size_t offset = 0;
 };
 
+struct VariantDecl {
+    std::string name;
+    std::vector<FieldDecl> fields;
+    bool tuple = false;
+    std::size_t offset = 0;
+};
+
+struct EnumDecl {
+    bool pub = false;
+    std::string name;
+    std::vector<VariantDecl> variants;
+    std::size_t offset = 0;
+};
+
 struct ImplDecl {
+    std::optional<std::string> trait_name;
     std::string type_name;
     std::vector<FnDecl> methods;
     std::size_t offset = 0;
@@ -141,6 +205,7 @@ struct ImplDecl {
 
 struct AstFile {
     std::vector<StructDecl> structs;
+    std::vector<EnumDecl> enums;
     std::vector<ImplDecl> impls;
     std::vector<FnDecl> functions;
 };
