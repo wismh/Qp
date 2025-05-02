@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -13,19 +14,37 @@ namespace qpc {
 
 struct HirExpr;
 struct HirStmt;
+struct HirPat;
 using HirExprPtr = std::unique_ptr<HirExpr>;
 using HirStmtPtr = std::unique_ptr<HirStmt>;
+using HirPatPtr = std::unique_ptr<HirPat>;
 
 enum class BinOp { Add, Sub, Mul, Div, Mod };
 enum class UnOp { Neg };
 enum class SelfKind { None, Value, Mut };
 
 struct HirLitInt {
-    std::int32_t value = 0;
+    std::int64_t value = 0;
+    bool unsuffixed = true;
+    Type ty = Type::i32();
 };
 
 struct HirLitFloat {
-    float value = 0.0f;
+    double value = 0.0;
+    bool unsuffixed = true;
+    Type ty = Type::f32();
+};
+
+struct HirLitBool {
+    bool value = false;
+};
+
+struct HirLitChar {
+    char32_t value = 0;
+};
+
+struct HirLitString {
+    std::string value;
 };
 
 struct HirVar {
@@ -68,6 +87,14 @@ struct HirStructLit {
     std::vector<HirStructLitField> fields;
 };
 
+struct HirEnumLit {
+    std::string enum_name;
+    std::string variant;
+    bool tuple = false;
+    std::vector<HirStructLitField> fields;
+    std::vector<HirExprPtr> args;
+};
+
 struct HirMethodCall {
     HirExprPtr receiver;
     std::string method;
@@ -80,11 +107,41 @@ struct HirFieldAssign {
     HirExprPtr value;
 };
 
+struct HirPatWild {};
+
+struct HirPatBinding {
+    std::string name;
+};
+
+struct HirPatVariant {
+    std::string enum_name;
+    std::string variant;
+    bool tuple = false;
+    std::vector<std::string> fields;
+    std::vector<HirPatPtr> args;
+};
+
+struct HirPat {
+    std::size_t offset = 0;
+    std::variant<HirPatWild, HirPatBinding, HirPatVariant> kind;
+};
+
+struct HirMatchArm {
+    HirPatPtr pat;
+    HirExprPtr body;
+};
+
+struct HirMatch {
+    HirExprPtr scrutinee;
+    std::vector<HirMatchArm> arms;
+};
+
 struct HirExpr {
     Type ty;
     std::size_t offset = 0;
-    std::variant<HirLitInt, HirLitFloat, HirVar, HirBinary, HirUnary, HirCall, HirAssign,
-                 HirFieldAccess, HirStructLit, HirMethodCall, HirFieldAssign>
+    std::variant<HirLitInt, HirLitFloat, HirLitBool, HirLitChar, HirLitString, HirVar, HirBinary,
+                 HirUnary, HirCall, HirAssign, HirFieldAccess, HirStructLit, HirEnumLit,
+                 HirMethodCall, HirFieldAssign, HirMatch>
         kind;
 };
 
@@ -145,7 +202,22 @@ struct HirStruct {
     std::size_t offset = 0;
 };
 
+struct HirEnumVariant {
+    std::string name;
+    std::vector<HirField> fields;
+    bool tuple = false;
+    std::size_t offset = 0;
+};
+
+struct HirEnum {
+    bool pub = false;
+    std::string name;
+    std::vector<HirEnumVariant> variants;
+    std::size_t offset = 0;
+};
+
 struct HirImpl {
+    std::optional<std::string> trait_name;
     std::string type_name;
     std::vector<HirFn> methods;
     std::size_t offset = 0;
@@ -153,6 +225,7 @@ struct HirImpl {
 
 struct HirModule {
     std::vector<HirStruct> structs;
+    std::vector<HirEnum> enums;
     std::vector<HirImpl> impls;
     std::vector<HirFn> functions;
 };
