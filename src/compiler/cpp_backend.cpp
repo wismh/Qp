@@ -148,11 +148,15 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
             if constexpr (std::is_same_v<K, HirLitInt>) {
                 emit_int_lit(out, kind);
             } else if constexpr (std::is_same_v<K, HirLitFloat>) {
-                if (kind.ty.kind == TypeKind::F64) {
-                    out << std::format("{}", kind.value);
-                } else {
-                    out << std::format("{}f", kind.value);
+                std::string text = std::format("{}", kind.value);
+                if (text.find('.') == std::string::npos && text.find('e') == std::string::npos &&
+                    text.find('E') == std::string::npos) {
+                    text += ".0";
                 }
+                if (kind.ty.kind != TypeKind::F64) {
+                    text += 'f';
+                }
+                out << text;
             } else if constexpr (std::is_same_v<K, HirLitBool>) {
                 out << (kind.value ? "true" : "false");
             } else if constexpr (std::is_same_v<K, HirLitChar>) {
