@@ -39,13 +39,64 @@ struct StructInfo {
     std::size_t offset = 0;
 };
 
+struct VariantInfo {
+    std::vector<std::pair<std::string, FieldInfo>> fields;
+    bool tuple = false;
+    std::size_t index = 0;
+    std::size_t offset = 0;
+};
+
+struct EnumInfo {
+    std::vector<std::pair<std::string, VariantInfo>> variants;
+    std::size_t offset = 0;
+};
+
+static const char* binop_trait(BinOp op) {
+    switch (op) {
+        case BinOp::Add:
+            return "Add";
+        case BinOp::Sub:
+            return "Sub";
+        case BinOp::Mul:
+            return "Mul";
+        case BinOp::Div:
+            return "Div";
+        case BinOp::Mod:
+            return "Rem";
+    }
+    return "Add";
+}
+
+static const char* binop_method(BinOp op) {
+    switch (op) {
+        case BinOp::Add:
+            return "add";
+        case BinOp::Sub:
+            return "sub";
+        case BinOp::Mul:
+            return "mul";
+        case BinOp::Div:
+            return "div";
+        case BinOp::Mod:
+            return "rem";
+    }
+    return "add";
+}
+
+static bool is_op_trait(std::string_view name) {
+    return name == "Add" || name == "Sub" || name == "Mul" || name == "Div" || name == "Rem" ||
+           name == "Neg";
+}
+
 class TypeChecker {
 public:
     TypeChecker(const Source& src, HirModule& mod, DiagnosticEngine& diags)
         : src_(src), mod_(mod), diags_(diags) {}
 
     void run() {
+        collect_enum_names();
         collect_structs();
+        collect_enums();
         collect_sigs();
         collect_methods();
         if (diags_.has_errors()) {
@@ -67,8 +118,10 @@ private:
     HirModule& mod_;
     DiagnosticEngine& diags_;
     std::unordered_map<std::string, StructInfo> structs_;
+    std::unordered_map<std::string, EnumInfo> enums_;
     std::unordered_map<std::string, FnSig> sigs_;
     std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> methods_;
+    std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> op_impls_;
     std::vector<std::unordered_map<std::string, Binding>> scopes_;
     Type current_ret_ = Type::unit();
 
@@ -80,7 +133,7 @@ private:
         if (ty.kind != TypeKind::Named) {
             return ty != Type::error();
         }
-        if (!structs_.contains(ty.name)) {
+        if (!structs_.contains(ty.name) && !enums_.contains(ty.name)) {
             error(offset, "unknown type '" + ty.name + "'");
             ty = Type::error();
             return false;
@@ -132,6 +185,55 @@ private:
         }
     }
 
+    void collect_enum_names() {
+        for (auto& en : mod_.enums) {
+            if (enums_.contains(en.name)) {
+                error(en.offset, "duplicate type '" + en.name + "'");
+                continue;
+            }
+            enums_.emplace(en.name, EnumInfo{{}, en.offset});
+        }
+    }
+
+    const VariantInfo* find_variant(const EnumInfo& en, const std::string& name) const {
+        for (const auto& [vname, info] : en.variants) {
+            if (vname == name) {
+                return &info;
+            }
+        }
+        return nullptr;
+    }
+
+    void collect_enums() {
+        for (auto& en : mod_.enums) {
+            auto it = enums_.find(en.name);
+            if (it == enums_.end() || it->second.offset != en.offset) {
+                continue;
+            }
+            if (structs_.contains(en.name)) {
+                error(en.offset, "duplicate type '" + en.name + "'");
+                continue;
+            }
+            EnumInfo& info = it->second;
+            for (std::size_t i = 0; i < en.variants.size(); ++i) {
+                auto& variant = en.variants[i];
+                if (find_variant(info, variant.name)) {
+                    error(variant.offset, "duplicate variant '" + variant.name + "'");
+                    continue;
+                }
+                VariantInfo vi;
+                vi.tuple = variant.tuple;
+                vi.index = i;
+                vi.offset = variant.offset;
+                for (auto& field : variant.fields) {
+                    resolve_type(field.ty, field.offset);
+                    vi.fields.emplace_back(field.name, FieldInfo{field.mut, field.ty, field.offset});
+                }
+                info.variants.emplace_back(variant.name, std::move(vi));
+            }
+        }
+    }
+
     void collect_sigs() {
         for (auto& fn : mod_.functions) {
             if (sigs_.contains(fn.name)) {
@@ -154,8 +256,42 @@ private:
 
     void collect_methods() {
         for (auto& impl : mod_.impls) {
-            if (!structs_.contains(impl.type_name)) {
+            const bool known = structs_.contains(impl.type_name) || enums_.contains(impl.type_name);
+            if (!known) {
                 error(impl.offset, "impl for unknown type '" + impl.type_name + "'");
+                continue;
+            }
+
+            if (impl.trait_name) {
+                if (!is_op_trait(*impl.trait_name)) {
+                    error(impl.offset, "unknown operator trait '" + *impl.trait_name + "'");
+                    continue;
+                }
+                if (impl.methods.size() != 1) {
+                    error(impl.offset, "operator impl '" + *impl.trait_name + "' needs one method");
+                    continue;
+                }
+                auto& method = impl.methods[0];
+                const char* expected =
+                    *impl.trait_name == "Neg" ? "neg" : binop_method_from_trait(*impl.trait_name);
+                if (method.name != expected) {
+                    error(method.offset, "operator impl '" + *impl.trait_name + "' needs fn " + expected);
+                }
+                resolve_type(method.return_ty, method.offset);
+                MethodSig sig;
+                sig.self_kind = method.self_kind;
+                sig.ret = method.return_ty;
+                sig.offset = method.offset;
+                for (auto& p : method.params) {
+                    resolve_type(p.ty, p.offset);
+                    sig.params.push_back(p.ty);
+                }
+                auto& table = op_impls_[impl.type_name];
+                if (table.contains(*impl.trait_name)) {
+                    error(impl.offset, "duplicate impl " + *impl.trait_name + " for '" + impl.type_name + "'");
+                    continue;
+                }
+                table.emplace(*impl.trait_name, std::move(sig));
                 continue;
             }
 
@@ -182,6 +318,25 @@ private:
                 table.emplace(method.name, std::move(sig));
             }
         }
+    }
+
+    static const char* binop_method_from_trait(const std::string& trait) {
+        if (trait == "Add") {
+            return "add";
+        }
+        if (trait == "Sub") {
+            return "sub";
+        }
+        if (trait == "Mul") {
+            return "mul";
+        }
+        if (trait == "Div") {
+            return "div";
+        }
+        if (trait == "Rem") {
+            return "rem";
+        }
+        return "add";
     }
 
     void push_scope() { scopes_.emplace_back(); }
@@ -224,8 +379,7 @@ private:
         }
 
         if (fn.body.tail) {
-            const Type tail_ty = check_expr(*fn.body.tail);
-            expect_type(tail_ty, fn.return_ty, fn.body.tail->offset, "function body");
+            expect_expr(*fn.body.tail, fn.return_ty, fn.body.tail->offset, "function body");
         } else if (fn.return_ty != Type::unit() && !ends_with_return(fn.body)) {
             error(fn.offset, "missing return value in function '" + fn.name + "'");
         }
@@ -258,14 +412,14 @@ private:
             let.ty = init_ty;
         } else {
             resolve_type(let.ty, offset);
-            expect_type(init_ty, let.ty, let.init->offset, "let initializer");
+            expect_expr(*let.init, let.ty, let.init->offset, "let initializer");
         }
         declare(let.name, Binding{let.ty, let.mut}, offset);
     }
 
     void check_return(std::size_t offset, HirReturn& ret) {
         if (ret.value) {
-            expect_type(check_expr(*ret.value), current_ret_, ret.value->offset, "return value");
+            expect_expr(*ret.value, current_ret_, ret.value->offset, "return value");
             return;
         }
         if (current_ret_ != Type::unit()) {
@@ -279,13 +433,21 @@ private:
             [&](auto&& kind) {
                 using K = std::decay_t<decltype(kind)>;
                 if constexpr (std::is_same_v<K, HirLitInt>) {
-                    ty = Type::i32();
+                    ty = kind.unsuffixed ? Type::i32() : kind.ty;
+                    kind.ty = ty;
                 } else if constexpr (std::is_same_v<K, HirLitFloat>) {
-                    ty = Type::f32();
+                    ty = kind.unsuffixed ? Type::f32() : kind.ty;
+                    kind.ty = ty;
+                } else if constexpr (std::is_same_v<K, HirLitBool>) {
+                    ty = Type::boolean();
+                } else if constexpr (std::is_same_v<K, HirLitChar>) {
+                    ty = Type::char_();
+                } else if constexpr (std::is_same_v<K, HirLitString>) {
+                    ty = Type::string();
                 } else if constexpr (std::is_same_v<K, HirVar>) {
                     ty = check_var(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirBinary>) {
-                    ty = check_binop(kind.op, check_expr(*kind.lhs), check_expr(*kind.rhs), expr.offset);
+                    ty = check_binop(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirUnary>) {
                     ty = check_unary(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirCall>) {
@@ -296,10 +458,14 @@ private:
                     ty = check_field(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirStructLit>) {
                     ty = check_struct_lit(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirEnumLit>) {
+                    ty = check_enum_lit(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirMethodCall>) {
                     ty = check_method_call(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirFieldAssign>) {
                     ty = check_field_assign(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirMatch>) {
+                    ty = check_match(kind, expr.offset);
                 }
             },
             expr.kind);
@@ -317,32 +483,94 @@ private:
 
     Type check_unary(HirUnary& un, std::size_t offset) {
         const Type inner = check_expr(*un.operand);
-        if (inner == Type::i32() || inner == Type::f32()) {
+        if (is_signed_int(inner) || is_float(inner)) {
             return inner;
         }
+        if (inner.kind == TypeKind::Named) {
+            auto type_it = op_impls_.find(inner.name);
+            if (type_it != op_impls_.end()) {
+                auto trait_it = type_it->second.find("Neg");
+                if (trait_it != type_it->second.end()) {
+                    return trait_it->second.ret;
+                }
+            }
+            error(offset, "type '" + inner.name + "' does not implement Neg");
+            return Type::error();
+        }
         if (inner != Type::error()) {
-            error(offset, "unary '-' requires i32 or f32");
+            error(offset, "unary '-' requires a signed integer, float, or Neg impl");
         }
         return Type::error();
     }
 
-    Type check_binop(BinOp op, Type lhs, Type rhs, std::size_t offset) {
+    bool coerce_lit(HirExpr& expr, Type expected) {
+        if (auto* lit = std::get_if<HirLitInt>(&expr.kind)) {
+            if (lit->unsuffixed && is_int(expected) && int_fits(lit->value, expected)) {
+                lit->ty = expected;
+                expr.ty = expected;
+                return true;
+            }
+        }
+        if (auto* lit = std::get_if<HirLitFloat>(&expr.kind)) {
+            if (lit->unsuffixed && is_float(expected)) {
+                lit->ty = expected;
+                expr.ty = expected;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    Type check_binop(HirBinary& bin, std::size_t offset) {
+        Type lhs = check_expr(*bin.lhs);
+        Type rhs = check_expr(*bin.rhs);
         if (lhs == Type::error() || rhs == Type::error()) {
             return Type::error();
         }
+
+        if (lhs != rhs) {
+            if (coerce_lit(*bin.lhs, rhs)) {
+                lhs = rhs;
+            } else if (coerce_lit(*bin.rhs, lhs)) {
+                rhs = lhs;
+            }
+        }
+
+        if (bin.op == BinOp::Add && lhs == Type::string() && rhs == Type::string()) {
+            return Type::string();
+        }
+
+        if (lhs.kind == TypeKind::Named) {
+            auto type_it = op_impls_.find(lhs.name);
+            if (type_it != op_impls_.end()) {
+                auto trait_it = type_it->second.find(binop_trait(bin.op));
+                if (trait_it != type_it->second.end()) {
+                    const MethodSig& sig = trait_it->second;
+                    if (sig.params.size() != 1) {
+                        error(offset, "operator impl expects one rhs argument");
+                        return Type::error();
+                    }
+                    expect_type(rhs, sig.params[0], bin.rhs->offset, "operand");
+                    return sig.ret;
+                }
+            }
+            error(offset, "type '" + lhs.name + "' does not implement " + binop_trait(bin.op));
+            return Type::error();
+        }
+
         if (lhs != rhs) {
             error(offset, "cannot apply operator to '" + type_name(lhs) + "' and '" + type_name(rhs) + "'");
             return Type::error();
         }
-        if (op == BinOp::Mod) {
-            if (lhs != Type::i32()) {
-                error(offset, "'%' requires i32 operands");
+        if (bin.op == BinOp::Mod) {
+            if (!is_int(lhs)) {
+                error(offset, "'%' requires integer operands");
                 return Type::error();
             }
-            return Type::i32();
+            return lhs;
         }
-        if (lhs != Type::i32() && lhs != Type::f32()) {
-            error(offset, "arithmetic requires i32 or f32");
+        if (!is_numeric(lhs)) {
+            error(offset, "arithmetic requires a numeric type");
             return Type::error();
         }
         return lhs;
@@ -368,7 +596,7 @@ private:
         for (std::size_t i = 0; i < call.args.size(); ++i) {
             const Type arg_ty = check_expr(*call.args[i]);
             if (i < n) {
-                expect_type(arg_ty, sig.params[i], call.args[i]->offset, "argument");
+            expect_expr(*call.args[i], sig.params[i], call.args[i]->offset, "argument");
             }
         }
         return sig.ret;
@@ -386,7 +614,7 @@ private:
             error(offset, "cannot assign to immutable variable '" + as.name + "'");
         }
 
-        expect_type(value_ty, b->ty, as.value->offset, "assignment");
+        expect_expr(*as.value, b->ty, as.value->offset, "assignment");
         return b->ty;
     }
 
@@ -452,7 +680,7 @@ private:
                 continue;
             }
             seen[index] = true;
-            expect_type(value_ty, st.fields[index].second.ty, field.value->offset, "field");
+            expect_expr(*field.value, st.fields[index].second.ty, field.value->offset, "field");
         }
 
         for (std::size_t i = 0; i < st.fields.size(); ++i) {
@@ -508,7 +736,7 @@ private:
         for (std::size_t i = 0; i < call.args.size(); ++i) {
             const Type arg_ty = check_expr(*call.args[i]);
             if (i < n) {
-                expect_type(arg_ty, sig.params[i], call.args[i]->offset, "argument");
+            expect_expr(*call.args[i], sig.params[i], call.args[i]->offset, "argument");
             }
         }
         return sig.ret;
@@ -537,8 +765,197 @@ private:
             error(offset, "cannot assign to field '" + as.field + "' through an immutable value");
         }
 
-        expect_type(value_ty, info->ty, as.value->offset, "assignment");
+        expect_expr(*as.value, info->ty, as.value->offset, "assignment");
         return info->ty;
+    }
+
+    Type check_enum_lit(HirEnumLit& lit, std::size_t offset) {
+        auto it = enums_.find(lit.enum_name);
+        if (it == enums_.end()) {
+            error(offset, "unknown enum '" + lit.enum_name + "'");
+            return Type::error();
+        }
+        const VariantInfo* v = find_variant(it->second, lit.variant);
+        if (!v) {
+            error(offset, "unknown variant '" + lit.variant + "' on '" + lit.enum_name + "'");
+            return Type::error();
+        }
+        if (lit.tuple != v->tuple) {
+            error(offset, "variant '" + lit.variant + "' has a different shape");
+            return Type::named(lit.enum_name);
+        }
+        if (lit.tuple) {
+            if (lit.args.size() != v->fields.size()) {
+                error(offset, "variant '" + lit.variant + "' expects " +
+                                  std::to_string(v->fields.size()) + " argument(s)");
+            }
+            const std::size_t n = std::min(lit.args.size(), v->fields.size());
+            for (std::size_t i = 0; i < lit.args.size(); ++i) {
+                check_expr(*lit.args[i]);
+                if (i < n) {
+                    expect_expr(*lit.args[i], v->fields[i].second.ty, lit.args[i]->offset, "argument");
+                }
+            }
+        } else {
+            std::vector<bool> seen(v->fields.size(), false);
+            for (auto& field : lit.fields) {
+                check_expr(*field.value);
+                std::size_t index = v->fields.size();
+                for (std::size_t i = 0; i < v->fields.size(); ++i) {
+                    if (v->fields[i].first == field.name) {
+                        index = i;
+                        break;
+                    }
+                }
+                if (index == v->fields.size()) {
+                    error(field.value->offset,
+                          "unknown field '" + field.name + "' on '" + lit.variant + "'");
+                    continue;
+                }
+                seen[index] = true;
+                expect_expr(*field.value, v->fields[index].second.ty, field.value->offset, "field");
+            }
+            for (std::size_t i = 0; i < v->fields.size(); ++i) {
+                if (!seen[i]) {
+                    error(offset, "missing field '" + v->fields[i].first + "' in '" + lit.variant + "'");
+                }
+            }
+        }
+        return Type::named(lit.enum_name);
+    }
+
+    Type check_match(HirMatch& match, std::size_t offset) {
+        const Type scrut = check_expr(*match.scrutinee);
+        if (match.arms.empty()) {
+            error(offset, "match needs at least one arm");
+            return Type::error();
+        }
+
+        Type result;
+        bool first = true;
+        std::vector<bool> covered;
+        const EnumInfo* en = nullptr;
+        if (scrut.kind == TypeKind::Named) {
+            auto it = enums_.find(scrut.name);
+            if (it != enums_.end()) {
+                en = &it->second;
+                covered.assign(en->variants.size(), false);
+            }
+        }
+
+        for (auto& arm : match.arms) {
+            push_scope();
+            check_pat(*arm.pat, scrut, en, covered);
+            check_expr(*arm.body);
+            if (first) {
+                result = arm.body->ty;
+                first = false;
+            } else {
+                expect_expr(*arm.body, result, arm.body->offset, "match arm");
+            }
+            pop_scope();
+        }
+
+        if (en) {
+            for (std::size_t i = 0; i < covered.size(); ++i) {
+                if (!covered[i]) {
+                    error(offset, "non-exhaustive match, missing '" + en->variants[i].first + "'");
+                }
+            }
+        }
+        return result;
+    }
+
+    void check_pat(HirPat& pat, const Type& scrut, const EnumInfo* en, std::vector<bool>& covered) {
+        std::visit(
+            [&](auto&& kind) {
+                using K = std::decay_t<decltype(kind)>;
+                if constexpr (std::is_same_v<K, HirPatWild>) {
+                    for (std::size_t i = 0; i < covered.size(); ++i) {
+                        covered[i] = true;
+                    }
+                } else if constexpr (std::is_same_v<K, HirPatBinding>) {
+                    if (en) {
+                        const VariantInfo* v = find_variant(*en, kind.name);
+                        if (v && !lookup(kind.name)) {
+                            covered[v->index] = true;
+                            return;
+                        }
+                    }
+                    declare(kind.name, Binding{scrut, false}, pat.offset);
+                } else if constexpr (std::is_same_v<K, HirPatVariant>) {
+                    const EnumInfo* used = en;
+                    if (!kind.enum_name.empty()) {
+                        auto it = enums_.find(kind.enum_name);
+                        if (it == enums_.end()) {
+                            error(pat.offset, "unknown enum '" + kind.enum_name + "'");
+                            return;
+                        }
+                        used = &it->second;
+                        if (scrut.kind == TypeKind::Named && scrut.name != kind.enum_name) {
+                            error(pat.offset, "pattern has type '" + kind.enum_name + "', expected '" +
+                                                  type_name(scrut) + "'");
+                        }
+                    }
+                    if (!used) {
+                        error(pat.offset, "variant pattern requires an enum");
+                        return;
+                    }
+                    const VariantInfo* v = find_variant(*used, kind.variant);
+                    if (!v) {
+                        error(pat.offset, "unknown variant '" + kind.variant + "'");
+                        return;
+                    }
+                    if (v->index < covered.size()) {
+                        covered[v->index] = true;
+                    }
+                    if (kind.tuple) {
+                        if (kind.args.size() != v->fields.size()) {
+                            error(pat.offset, "variant '" + kind.variant + "' expects " +
+                                                  std::to_string(v->fields.size()) + " binding(s)");
+                        }
+                        const std::size_t n = std::min(kind.args.size(), v->fields.size());
+                        for (std::size_t i = 0; i < n; ++i) {
+                            if (auto* bind = std::get_if<HirPatBinding>(&kind.args[i]->kind)) {
+                                declare(bind->name, Binding{v->fields[i].second.ty, false},
+                                        kind.args[i]->offset);
+                            } else if (!std::holds_alternative<HirPatWild>(kind.args[i]->kind)) {
+                                error(kind.args[i]->offset, "nested patterns are not supported yet");
+                            }
+                        }
+                    } else {
+                        for (const auto& fname : kind.fields) {
+                            const FieldInfo* f = nullptr;
+                            for (const auto& [name, info] : v->fields) {
+                                if (name == fname) {
+                                    f = &info;
+                                    break;
+                                }
+                            }
+                            if (!f) {
+                                error(pat.offset, "unknown field '" + fname + "' in '" + kind.variant + "'");
+                                continue;
+                            }
+                            declare(fname, Binding{f->ty, false}, pat.offset);
+                        }
+                    }
+                }
+            },
+            pat.kind);
+    }
+
+    void expect_expr(HirExpr& expr, Type expected, std::size_t offset, const char* what) {
+        const Type got = (expr.ty.kind == TypeKind::Unknown || expr.ty.kind == TypeKind::Error)
+                             ? check_expr(expr)
+                             : expr.ty;
+        if (got == expected || got == Type::error() || expected == Type::error()) {
+            return;
+        }
+        if (coerce_lit(expr, expected)) {
+            return;
+        }
+        error(offset, std::string(what) + " has type '" + type_name(got) + "', expected '" +
+                          type_name(expected) + "'");
     }
 
     void expect_type(Type got, Type expected, std::size_t offset, const char* what) {
