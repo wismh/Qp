@@ -67,22 +67,6 @@ static const char* binop_trait(BinOp op) {
     return "Add";
 }
 
-static const char* binop_method(BinOp op) {
-    switch (op) {
-        case BinOp::Add:
-            return "add";
-        case BinOp::Sub:
-            return "sub";
-        case BinOp::Mul:
-            return "mul";
-        case BinOp::Div:
-            return "div";
-        case BinOp::Mod:
-            return "rem";
-    }
-    return "add";
-}
-
 static bool is_op_trait(std::string_view name) {
     return name == "Add" || name == "Sub" || name == "Mul" || name == "Div" || name == "Rem" ||
            name == "Neg";
@@ -867,6 +851,7 @@ private:
     }
 
     void check_pat(HirPat& pat, const Type& scrut, const EnumInfo* en, std::vector<bool>& covered) {
+        std::string unit_variant;
         std::visit(
             [&](auto&& kind) {
                 using K = std::decay_t<decltype(kind)>;
@@ -879,6 +864,7 @@ private:
                         const VariantInfo* v = find_variant(*en, kind.name);
                         if (v && !lookup(kind.name)) {
                             covered[v->index] = true;
+                            unit_variant = kind.name;
                             return;
                         }
                     }
@@ -942,6 +928,9 @@ private:
                 }
             },
             pat.kind);
+        if (!unit_variant.empty()) {
+            pat.kind = HirPatVariant{scrut.name, std::move(unit_variant), false, {}, {}};
+        }
     }
 
     void expect_expr(HirExpr& expr, Type expected, std::size_t offset, const char* what) {
