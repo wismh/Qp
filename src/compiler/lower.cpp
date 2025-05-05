@@ -307,7 +307,8 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                 } else {
                     diags.error(src, expr->offset, "expected Type::Variant");
                     out->kind = HirVar{"<error>"};
-                } else if constexpr (std::is_same_v<K, ExprBinary>) {
+                }
+            } else if constexpr (std::is_same_v<K, ExprBinary>) {
                 out->kind = HirBinary{
                     binop_from_token(kind.op),
                     lower_expr(src, std::move(kind.lhs), diags),

@@ -586,7 +586,7 @@ private:
         return make_stmt(off, std::move(ret));
     }
 
-    std::optional<ExprPtr> parse_expr() { return parse_prec(1); }
+    std::optional<ExprPtr> parse_expr(bool allow_struct = true) { return parse_prec(1, allow_struct); }
 
     static int binding_power(TokenKind kind) {
         switch (kind) {
@@ -604,8 +604,8 @@ private:
         }
     }
 
-    std::optional<ExprPtr> parse_prec(int min_bp) {
-        auto left = parse_unary();
+    std::optional<ExprPtr> parse_prec(int min_bp, bool allow_struct = true) {
+        auto left = parse_unary(allow_struct);
         if (!left) {
             return std::nullopt;
         }
@@ -621,7 +621,7 @@ private:
             advance();
 
             if (op == TokenKind::Equal) {
-                auto rhs = parse_prec(bp);
+                auto rhs = parse_prec(bp, allow_struct);
                 if (!rhs) {
                     return std::nullopt;
                 }
@@ -629,7 +629,7 @@ private:
                 continue;
             }
 
-            auto rhs = parse_prec(bp + 1);
+            auto rhs = parse_prec(bp + 1, allow_struct);
             if (!rhs) {
                 return std::nullopt;
             }
@@ -639,23 +639,23 @@ private:
         return left;
     }
 
-    std::optional<ExprPtr> parse_unary() {
+    std::optional<ExprPtr> parse_unary(bool allow_struct = true) {
         if (!at(TokenKind::Minus)) {
-            return parse_postfix();
+            return parse_postfix(allow_struct);
         }
 
         const std::size_t off = peek().offset;
         advance();
 
-        auto operand = parse_unary();
+        auto operand = parse_unary(allow_struct);
         if (!operand) {
             return std::nullopt;
         }
         return make_expr(off, ExprUnary{TokenKind::Minus, std::move(*operand)});
     }
 
-    std::optional<ExprPtr> parse_postfix() {
-        auto expr = parse_primary();
+    std::optional<ExprPtr> parse_postfix(bool allow_struct = true) {
+        auto expr = parse_primary(allow_struct);
         if (!expr) {
             return std::nullopt;
         }
@@ -830,7 +830,7 @@ private:
         const std::size_t off = peek().offset;
         advance();
 
-        auto scrutinee = parse_expr();
+        auto scrutinee = parse_expr(false);
         if (!scrutinee) {
             return std::nullopt;
         }
@@ -891,7 +891,7 @@ private:
         return args;
     }
 
-    std::optional<ExprPtr> parse_primary() {
+    std::optional<ExprPtr> parse_primary(bool allow_struct = true) {
         if (at(TokenKind::KwMatch)) {
             return parse_match();
         }
@@ -947,7 +947,7 @@ private:
                 }
                 path.push_back(std::move(*part));
             }
-            if (at(TokenKind::LBrace)) {
+            if (allow_struct && at(TokenKind::LBrace)) {
                 return parse_struct_lit(off, std::move(path));
             }
             if (path.size() == 1) {

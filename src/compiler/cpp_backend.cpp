@@ -1,5 +1,6 @@
 #include "compiler/cpp_backend.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <format>
 #include <sstream>
@@ -37,6 +38,56 @@ const char* binop_spelling(BinOp op) {
     return "+";
 }
 
+const char* trait_operator(const std::string& trait) {
+    if (trait == "Add") {
+        return "+";
+    }
+    if (trait == "Sub" || trait == "Neg") {
+        return "-";
+    }
+    if (trait == "Mul") {
+        return "*";
+    }
+    if (trait == "Div") {
+        return "/";
+    }
+    if (trait == "Rem") {
+        return "%";
+    }
+    return "+";
+}
+
+std::string cpp_escape(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (unsigned char c : text) {
+        switch (c) {
+            case '\\':
+                out += "\\\\";
+                break;
+            case '"':
+                out += "\\\"";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\0':
+                out += "\\0";
+                break;
+            default:
+                out.push_back(static_cast<char>(c));
+                break;
+        }
+    }
+    return out;
+}
+
 void emit_expr(std::ostringstream& out, const HirExpr& expr);
 
 void emit_comma_list(std::ostringstream& out, const std::vector<HirExprPtr>& args) {
@@ -68,14 +119,50 @@ void emit_params(std::ostringstream& out, const std::vector<HirParam>& params) {
     }
 }
 
+void emit_int_lit(std::ostringstream& out, const HirLitInt& lit) {
+    switch (lit.ty.kind) {
+        case TypeKind::U8:
+        case TypeKind::U16:
+        case TypeKind::U32:
+        case TypeKind::U64:
+            out << "static_cast<" << cpp_type_name(lit.ty) << ">(" << static_cast<unsigned long long>(lit.value)
+                << "ull)";
+            break;
+        case TypeKind::I64:
+            out << lit.value << "ll";
+            break;
+        case TypeKind::I8:
+        case TypeKind::I16:
+            out << "static_cast<" << cpp_type_name(lit.ty) << ">(" << lit.value << ")";
+            break;
+        default:
+            out << lit.value;
+            break;
+    }
+}
+
 void emit_expr(std::ostringstream& out, const HirExpr& expr) {
     std::visit(
         [&](auto&& kind) {
             using K = std::decay_t<decltype(kind)>;
             if constexpr (std::is_same_v<K, HirLitInt>) {
-                out << kind.value;
+                emit_int_lit(out, kind);
             } else if constexpr (std::is_same_v<K, HirLitFloat>) {
-                out << std::format("{}f", kind.value);
+                std::string text = std::format("{}", kind.value);
+                if (text.find('.') == std::string::npos && text.find('e') == std::string::npos &&
+                    text.find('E') == std::string::npos) {
+                    text += ".0";
+                }
+                if (kind.ty.kind != TypeKind::F64) {
+                    text += 'f';
+                }
+                out << text;
+            } else if constexpr (std::is_same_v<K, HirLitBool>) {
+                out << (kind.value ? "true" : "false");
+            } else if constexpr (std::is_same_v<K, HirLitChar>) {
+                out << "char32_t(" << static_cast<std::uint32_t>(kind.value) << ")";
+            } else if constexpr (std::is_same_v<K, HirLitString>) {
+                out << "String(\"" << cpp_escape(kind.value) << "\")";
             } else if constexpr (std::is_same_v<K, HirVar>) {
                 out << kind.name;
             } else if constexpr (std::is_same_v<K, HirBinary>) {
@@ -109,6 +196,26 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                     emit_expr(out, *kind.fields[i].value);
                 }
                 out << '}';
+            } else if constexpr (std::is_same_v<K, HirEnumLit>) {
+                out << kind.enum_name << '{' << kind.enum_name << "::" << kind.variant << '{';
+                if (kind.tuple) {
+                    for (std::size_t i = 0; i < kind.args.size(); ++i) {
+                        if (i != 0) {
+                            out << ", ";
+                        }
+                        out << "._" << i << " = ";
+                        emit_expr(out, *kind.args[i]);
+                    }
+                } else {
+                    for (std::size_t i = 0; i < kind.fields.size(); ++i) {
+                        if (i != 0) {
+                            out << ", ";
+                        }
+                        out << '.' << kind.fields[i].name << " = ";
+                        emit_expr(out, *kind.fields[i].value);
+                    }
+                }
+                out << "}}";
             } else if constexpr (std::is_same_v<K, HirMethodCall>) {
                 emit_receiver(out, *kind.receiver);
                 out << '.' << kind.method << '(';
@@ -120,6 +227,48 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 out << '.' << kind.field << " = ";
                 emit_expr(out, *kind.value);
                 out << ')';
+            } else if constexpr (std::is_same_v<K, HirMatch>) {
+                const std::string scrut_ty =
+                    kind.scrutinee->ty.kind == TypeKind::Named ? kind.scrutinee->ty.name : std::string{};
+                out << "([&]() {\n";
+                out << "        auto __s = ";
+                emit_expr(out, *kind.scrutinee);
+                out << ";\n";
+                for (const auto& arm : kind.arms) {
+                    if (const auto* var = std::get_if<HirPatVariant>(&arm.pat->kind)) {
+                        const std::string en = var->enum_name.empty() ? scrut_ty : var->enum_name;
+                        const bool binds = !var->fields.empty() || !var->args.empty();
+                        if (binds) {
+                            out << "        if (auto* __v = std::get_if<" << en << "::" << var->variant
+                                << ">(&__s.data)) {\n";
+                            for (const auto& field : var->fields) {
+                                out << "            const auto " << field << " = __v->" << field << ";\n";
+                            }
+                            for (std::size_t a = 0; a < var->args.size(); ++a) {
+                                if (const auto* bind = std::get_if<HirPatBinding>(&var->args[a]->kind)) {
+                                    out << "            const auto " << bind->name << " = __v->_" << a
+                                        << ";\n";
+                                }
+                            }
+                        } else {
+                            out << "        if (std::holds_alternative<" << en << "::" << var->variant
+                                << ">(__s.data)) {\n";
+                        }
+                        out << "            return ";
+                        emit_expr(out, *arm.body);
+                        out << ";\n        }\n";
+                    } else if (const auto* bind = std::get_if<HirPatBinding>(&arm.pat->kind)) {
+                        out << "        const auto " << bind->name << " = __s;\n";
+                        out << "        return ";
+                        emit_expr(out, *arm.body);
+                        out << ";\n";
+                    } else {
+                        out << "        return ";
+                        emit_expr(out, *arm.body);
+                        out << ";\n";
+                    }
+                }
+                out << "        std::abort();\n    }())";
             }
         },
         expr.kind);
@@ -149,12 +298,14 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
         stmt.kind);
 }
 
-void emit_fn_body(std::ostringstream& out, const HirFn& fn) {
+void emit_fn_body(std::ostringstream& out, const HirFn& fn, bool operator_self = false) {
     out << " {\n";
-    if (fn.self_kind == SelfKind::Value) {
-        out << "    " << cpp_type_name(Type::named(fn.self_ty)) << " self = *this;\n";
-    } else if (fn.self_kind == SelfKind::Mut) {
-        out << "    " << cpp_type_name(Type::named(fn.self_ty)) << "& self = *this;\n";
+    if (!operator_self) {
+        if (fn.self_kind == SelfKind::Value) {
+            out << "    " << cpp_type_name(Type::named(fn.self_ty)) << " self = *this;\n";
+        } else if (fn.self_kind == SelfKind::Mut) {
+            out << "    " << cpp_type_name(Type::named(fn.self_ty)) << "& self = *this;\n";
+        }
     }
     for (const auto& stmt : fn.body.stmts) {
         emit_stmt(out, *stmt);
@@ -186,9 +337,21 @@ void emit_method_signature(std::ostringstream& out, const HirFn& fn, bool qualif
     }
 }
 
+void emit_operator_signature(std::ostringstream& out, const HirImpl& impl, const HirFn& fn) {
+    out << cpp_type_name(fn.return_ty) << " operator" << trait_operator(*impl.trait_name) << '(';
+    out << impl.type_name << " self";
+    for (const auto& p : fn.params) {
+        out << ", " << cpp_type_name(p.ty) << ' ' << p.name;
+    }
+    out << ')';
+}
+
 std::unordered_map<std::string, std::vector<const HirFn*>> methods_by_type(const HirModule& mod) {
     std::unordered_map<std::string, std::vector<const HirFn*>> out;
     for (const auto& impl : mod.impls) {
+        if (impl.trait_name) {
+            continue;
+        }
         for (const auto& method : impl.methods) {
             out[impl.type_name].push_back(&method);
         }
@@ -196,12 +359,45 @@ std::unordered_map<std::string, std::vector<const HirFn*>> methods_by_type(const
     return out;
 }
 
+void emit_enum(std::ostringstream& header, const HirEnum& en) {
+    header << "struct " << en.name << " {\n";
+    for (const auto& variant : en.variants) {
+        header << "    struct " << variant.name << " {";
+        if (variant.fields.empty()) {
+            header << "};\n";
+            continue;
+        }
+        header << "\n";
+        for (const auto& field : variant.fields) {
+            header << "        " << cpp_type_name(field.ty) << ' ' << field.name << ";\n";
+        }
+        header << "    };\n";
+    }
+    header << "    std::variant<";
+    for (std::size_t i = 0; i < en.variants.size(); ++i) {
+        if (i != 0) {
+            header << ", ";
+        }
+        header << en.variants[i].name;
+    }
+    header << "> data;\n";
+    header << "};\n\n";
+}
+
 std::string emit_header(const HirModule& mod) {
     const auto methods = methods_by_type(mod);
     std::ostringstream header;
     header << "#pragma once\n\n";
-    header << "#include <cstdint>\n\n";
+    header << "#include <cstdint>\n";
+    header << "#include <cstdlib>\n";
+    header << "#include <string>\n";
+    header << "#include <variant>\n\n";
     header << "namespace qplus {\n\n";
+    header << "using String = std::string;\n\n";
+
+    for (const auto& en : mod.enums) {
+        emit_enum(header, en);
+    }
 
     for (const auto& st : mod.structs) {
         header << "struct " << st.name << " {\n";
@@ -220,6 +416,16 @@ std::string emit_header(const HirModule& mod) {
             }
         }
         header << "};\n\n";
+    }
+
+    for (const auto& impl : mod.impls) {
+        if (!impl.trait_name) {
+            continue;
+        }
+        for (const auto& method : impl.methods) {
+            emit_operator_signature(header, impl, method);
+            header << ";\n";
+        }
     }
 
     for (const auto& fn : mod.functions) {
@@ -243,8 +449,13 @@ std::string emit_source(const Source& src, const HirModule& mod, std::string_vie
         for (const auto& method : impl.methods) {
             const auto loc = src.location(method.offset);
             source << "#line " << loc.line << " \"" << qp_path << "\"\n";
-            emit_method_signature(source, method, true);
-            emit_fn_body(source, method);
+            if (impl.trait_name) {
+                emit_operator_signature(source, impl, method);
+                emit_fn_body(source, method, true);
+            } else {
+                emit_method_signature(source, method, true);
+                emit_fn_body(source, method);
+            }
         }
     }
 
