@@ -1,0 +1,32 @@
+pub enum Shape {
+    None,
+    Circle { r: f32 },
+    Rect { w: f32, h: f32 },
+}
+
+pub fn area(s: Shape) -> f32 {
+    match s {
+        None => 0.0,
+        Circle { r } => 3.141592 * r * r,
+        Rect { w, h } => w * h,
+    }
+}
+
+pub fn greet(name: string) -> string {
+    "hello, " + name
+}
+
+pub struct Point {
+    mut x: i32,
+    mut y: i32,
+}
+
+impl Add for Point {
+    fn add(self, other: Point) -> Point {
+        Point { x: self.x + other.x, y: self.y + other.y }
+    }
+}
+
+pub fn add_x(a: Point, b: Point) -> i32 {
+    (a + b).x
+}
