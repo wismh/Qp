@@ -78,3 +78,24 @@ TEST(Lexer, StructImplSelfAndDot) {
     EXPECT_EQ(tokens[5].kind, TokenKind::Ident);
     EXPECT_EQ(tokens[6].kind, TokenKind::Eof);
 }
+
+TEST(Lexer, StringsCharsBoolsAndMatchTokens) {
+    auto src = Source::from_string("t.qp", "enum variant match for true false :: => \"hi\" 'x'");
+    DiagnosticEngine diags;
+    const auto tokens = lex(src, diags);
+    ASSERT_FALSE(diags.has_errors()) << diags.all().front().message;
+    ASSERT_EQ(tokens.size(), 11u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::KwEnum);
+    EXPECT_EQ(tokens[1].kind, TokenKind::KwVariant);
+    EXPECT_EQ(tokens[2].kind, TokenKind::KwMatch);
+    EXPECT_EQ(tokens[3].kind, TokenKind::KwFor);
+    EXPECT_EQ(tokens[4].kind, TokenKind::KwTrue);
+    EXPECT_EQ(tokens[5].kind, TokenKind::KwFalse);
+    EXPECT_EQ(tokens[6].kind, TokenKind::ColonColon);
+    EXPECT_EQ(tokens[7].kind, TokenKind::FatArrow);
+    EXPECT_EQ(tokens[8].kind, TokenKind::String);
+    EXPECT_EQ(tokens[8].text(src.view()), "\"hi\"");
+    EXPECT_EQ(tokens[9].kind, TokenKind::Char);
+    EXPECT_EQ(tokens[9].text(src.view()), "'x'");
+    EXPECT_EQ(tokens[10].kind, TokenKind::Eof);
+}
