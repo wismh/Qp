@@ -64,3 +64,38 @@ TEST(Parser, StructImplAndFieldAccess) {
     EXPECT_EQ(parsed.ast.impls[0].methods[0].self_param, qpc::SelfParam::Value);
     ASSERT_TRUE(parsed.ast.impls[0].methods[0].body.tail);
 }
+
+TEST(Parser, EnumMatchAndTraitImpl) {
+    auto parsed = qpc::test::parse_string(R"(
+        enum Shape { None, Circle { r: f32 }, Rect { w: f32, h: f32 } }
+        variant Opt { None, Some(i32) }
+        impl Add for Point {
+            fn add(self, other: Point) -> Point { other }
+        }
+        fn area(s: Shape) -> f32 {
+            match s {
+                None => 0.0,
+                Circle { r } => r,
+                Some(x) => 1.0,
+            }
+        }
+        fn hi() -> string { "ok" }
+        fn flag() -> bool { true }
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.enums.size(), 2u);
+    EXPECT_EQ(parsed.ast.enums[0].name, "Shape");
+    ASSERT_EQ(parsed.ast.enums[0].variants.size(), 3u);
+    EXPECT_EQ(parsed.ast.enums[0].variants[0].name, "None");
+    EXPECT_EQ(parsed.ast.enums[0].variants[1].name, "Circle");
+    ASSERT_EQ(parsed.ast.enums[0].variants[1].fields.size(), 1u);
+    EXPECT_EQ(parsed.ast.enums[1].name, "Opt");
+    ASSERT_EQ(parsed.ast.enums[1].variants.size(), 2u);
+    EXPECT_TRUE(parsed.ast.enums[1].variants[1].tuple);
+    ASSERT_EQ(parsed.ast.impls.size(), 1u);
+    ASSERT_TRUE(parsed.ast.impls[0].trait_name);
+    EXPECT_EQ(*parsed.ast.impls[0].trait_name, "Add");
+    EXPECT_EQ(parsed.ast.impls[0].type_name, "Point");
+    ASSERT_EQ(parsed.ast.functions.size(), 3u);
+    ASSERT_TRUE(parsed.ast.functions[0].body.tail);
+}

@@ -50,3 +50,39 @@ TEST(Codegen, StructAndMethod) {
     EXPECT_NE(compiled.result.output.source.find("Point& self = *this;"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find(".x = "), std::string::npos);
 }
+
+TEST(Codegen, EnumMatchStringAndOperator) {
+    auto compiled = qpc::test::compile_string(R"(
+        enum Shape { None, Circle { r: f32 } }
+        fn area(s: Shape) -> f32 {
+            match s {
+                None => 0.0,
+                Circle { r } => r,
+            }
+        }
+        fn hi(name: string) -> string { "hello, " + name }
+        struct Point { x: i32, y: i32 }
+        impl Add for Point {
+            fn add(self, other: Point) -> Point {
+                Point { x: self.x + other.x, y: self.y + other.y }
+            }
+        }
+        fn add_x(a: Point, b: Point) -> i32 { (a + b).x }
+        fn flag(b: bool) -> bool { true }
+        fn as_byte(x: byte) -> u8 { x }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("struct Shape"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("std::variant<None, Circle>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("using String = std::string;"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("Point operator+(Point self, Point other);"),
+              std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("String hi(String name);"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("bool flag(bool b);"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("std::uint8_t as_byte(std::uint8_t x);"),
+              std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("std::holds_alternative<Shape::None>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("std::get_if<Shape::Circle>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("String(\"hello, \")"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("operator+(Point self, Point other)"), std::string::npos);
+}
