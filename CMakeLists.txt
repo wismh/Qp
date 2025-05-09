@@ -108,3 +108,24 @@ add_executable(vec2_host
 target_include_directories(vec2_host PRIVATE ${VEC2_GEN_DIR})
 
 add_test(NAME vec2_host COMMAND vec2_host)
+
+set(SHAPE_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_shape)
+set(SHAPE_GEN_H ${SHAPE_GEN_DIR}/shape.h)
+set(SHAPE_GEN_CPP ${SHAPE_GEN_DIR}/shape.cpp)
+
+add_custom_command(
+    OUTPUT ${SHAPE_GEN_H} ${SHAPE_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${SHAPE_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/shape.qp -o ${SHAPE_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/shape.qp
+    COMMENT "qpc compile examples/shape.qp"
+    VERBATIM
+)
+
+add_executable(shape_host
+    examples/shape_host/main.cpp
+    ${SHAPE_GEN_CPP}
+)
+target_include_directories(shape_host PRIVATE ${SHAPE_GEN_DIR})
+
+add_test(NAME shape_host COMMAND shape_host)
