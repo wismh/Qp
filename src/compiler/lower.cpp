@@ -40,13 +40,90 @@ T parse_number(std::string_view raw, const Source& src, std::size_t offset, Diag
     return value;
 }
 
-std::int32_t parse_i32(std::string_view raw, const Source& src, std::size_t offset,
+std::int64_t parse_i64(std::string_view raw, const Source& src, std::size_t offset,
                        DiagnosticEngine& diags) {
-    return parse_number<std::int32_t>(raw, src, offset, diags, "invalid i32 literal");
+    return parse_number<std::int64_t>(raw, src, offset, diags, "invalid integer literal");
 }
 
-float parse_f32(std::string_view raw, const Source& src, std::size_t offset, DiagnosticEngine& diags) {
-    return parse_number<float>(raw, src, offset, diags, "invalid f32 literal");
+double parse_f64(std::string_view raw, const Source& src, std::size_t offset, DiagnosticEngine& diags) {
+    return parse_number<double>(raw, src, offset, diags, "invalid float literal");
+}
+
+char32_t unescape_char(std::string_view raw, const Source& src, std::size_t offset,
+                       DiagnosticEngine& diags) {
+    if (raw.size() < 3 || raw.front() != '\'' || raw.back() != '\'') {
+        diags.error(src, offset, "invalid char literal");
+        return 0;
+    }
+    if (raw[1] == '\\') {
+        if (raw.size() < 4) {
+            diags.error(src, offset, "invalid char literal");
+            return 0;
+        }
+        switch (raw[2]) {
+            case 'n':
+                return U'\n';
+            case 't':
+                return U'\t';
+            case 'r':
+                return U'\r';
+            case '\\':
+                return U'\\';
+            case '\'':
+                return U'\'';
+            case '0':
+                return U'\0';
+            default:
+                diags.error(src, offset, "unknown char escape");
+                return 0;
+        }
+    }
+    return static_cast<unsigned char>(raw[1]);
+}
+
+std::string unescape_string(std::string_view raw, const Source& src, std::size_t offset,
+                            DiagnosticEngine& diags) {
+    if (raw.size() < 2 || raw.front() != '"' || raw.back() != '"') {
+        diags.error(src, offset, "invalid string literal");
+        return {};
+    }
+    std::string out;
+    out.reserve(raw.size());
+    for (std::size_t i = 1; i + 1 < raw.size(); ++i) {
+        if (raw[i] != '\\') {
+            out.push_back(raw[i]);
+            continue;
+        }
+        ++i;
+        if (i + 1 >= raw.size()) {
+            diags.error(src, offset, "unterminated string escape");
+            break;
+        }
+        switch (raw[i]) {
+            case 'n':
+                out.push_back('\n');
+                break;
+            case 't':
+                out.push_back('\t');
+                break;
+            case 'r':
+                out.push_back('\r');
+                break;
+            case '\\':
+                out.push_back('\\');
+                break;
+            case '"':
+                out.push_back('"');
+                break;
+            case '0':
+                out.push_back('\0');
+                break;
+            default:
+                diags.error(src, offset, "unknown string escape");
+                break;
+        }
+    }
+    return out;
 }
 
 BinOp binop_from_token(TokenKind kind) {
@@ -95,6 +172,39 @@ SelfKind self_kind_from(SelfParam param) {
     }
     return SelfKind::None;
 }
+
+HirPatPtr lower_pat(const Source& src, PatPtr pat, DiagnosticEngine& diags) {
+    auto out = std::make_unique<HirPat>();
+    out->offset = pat->offset;
+    std::visit(
+        [&](auto&& kind) {
+            using K = std::decay_t<decltype(kind)>;
+            if constexpr (std::is_same_v<K, PatWild>) {
+                out->kind = HirPatWild{};
+            } else if constexpr (std::is_same_v<K, PatIdent>) {
+                out->kind = HirPatBinding{std::move(kind.name)};
+            } else if constexpr (std::is_same_v<K, PatVariant>) {
+                HirPatVariant v;
+                if (kind.path.size() == 1) {
+                    v.variant = kind.path[0];
+                } else if (kind.path.size() >= 2) {
+                    v.enum_name = kind.path[0];
+                    v.variant = kind.path[1];
+                }
+                v.tuple = kind.tuple;
+                v.fields = std::move(kind.fields);
+                v.args.reserve(kind.args.size());
+                for (auto& arg : kind.args) {
+                    v.args.push_back(lower_pat(src, std::move(arg), diags));
+                }
+                out->kind = std::move(v);
+            }
+        },
+        pat->kind);
+    return out;
+}
+
+HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags);
 
 HirStmtPtr lower_stmt(const Source& src, StmtPtr stmt, DiagnosticEngine& diags) {
     auto out = std::make_unique<HirStmt>();
@@ -152,13 +262,52 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
         [&](auto&& kind) {
             using K = std::decay_t<decltype(kind)>;
             if constexpr (std::is_same_v<K, LitInt>) {
-                out->ty = Type::i32();
-                out->kind = HirLitInt{parse_i32(kind.raw, src, expr->offset, diags)};
+                HirLitInt lit;
+                lit.value = parse_i64(kind.raw, src, expr->offset, diags);
+                if (kind.suffix) {
+                    lit.ty = type_from_suffix(*kind.suffix);
+                    lit.unsuffixed = false;
+                    if (!is_int(lit.ty)) {
+                        diags.error(src, expr->offset, "integer suffix must be an integer type");
+                        lit.ty = Type::error();
+                    }
+                }
+                out->ty = lit.ty;
+                out->kind = std::move(lit);
             } else if constexpr (std::is_same_v<K, LitFloat>) {
-                out->ty = Type::f32();
-                out->kind = HirLitFloat{parse_f32(kind.raw, src, expr->offset, diags)};
+                HirLitFloat lit;
+                lit.value = parse_f64(kind.raw, src, expr->offset, diags);
+                if (kind.suffix) {
+                    lit.ty = type_from_suffix(*kind.suffix);
+                    lit.unsuffixed = false;
+                    if (!is_float(lit.ty)) {
+                        diags.error(src, expr->offset, "float suffix must be f32 or f64");
+                        lit.ty = Type::error();
+                    }
+                }
+                out->ty = lit.ty;
+                out->kind = std::move(lit);
+            } else if constexpr (std::is_same_v<K, LitBool>) {
+                out->ty = Type::boolean();
+                out->kind = HirLitBool{kind.value};
+            } else if constexpr (std::is_same_v<K, LitChar>) {
+                out->ty = Type::char_();
+                out->kind = HirLitChar{unescape_char(kind.raw, src, expr->offset, diags)};
+            } else if constexpr (std::is_same_v<K, LitString>) {
+                out->ty = Type::string();
+                out->kind = HirLitString{unescape_string(kind.raw, src, expr->offset, diags)};
             } else if constexpr (std::is_same_v<K, ExprIdent>) {
                 out->kind = HirVar{std::move(kind.name)};
+            } else if constexpr (std::is_same_v<K, ExprPath>) {
+                if (kind.segments.size() == 2) {
+                    HirEnumLit lit;
+                    lit.enum_name = kind.segments[0];
+                    lit.variant = kind.segments[1];
+                    out->kind = std::move(lit);
+                } else {
+                    diags.error(src, expr->offset, "expected Type::Variant");
+                    out->kind = HirVar{"<error>"};
+                }
             } else if constexpr (std::is_same_v<K, ExprBinary>) {
                 out->kind = HirBinary{
                     binop_from_token(kind.op),
@@ -179,6 +328,17 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                         call.args.push_back(lower_expr(src, std::move(arg), diags));
                     }
                     out->kind = std::move(call);
+                } else if (auto* path = std::get_if<ExprPath>(&kind.callee->kind);
+                           path && path->segments.size() == 2) {
+                    HirEnumLit lit;
+                    lit.enum_name = path->segments[0];
+                    lit.variant = path->segments[1];
+                    lit.tuple = true;
+                    lit.args.reserve(kind.args.size());
+                    for (auto& arg : kind.args) {
+                        lit.args.push_back(lower_expr(src, std::move(arg), diags));
+                    }
+                    out->kind = std::move(lit);
                 } else {
                     HirCall call;
                     call.callee = callee_name(src, *kind.callee, diags);
@@ -206,16 +366,41 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                     std::move(kind.name),
                 };
             } else if constexpr (std::is_same_v<K, ExprStructLit>) {
-                HirStructLit lit;
-                lit.name = std::move(kind.name);
-                lit.fields.reserve(kind.fields.size());
-                for (auto& field : kind.fields) {
-                    lit.fields.push_back(HirStructLitField{
-                        std::move(field.name),
-                        lower_expr(src, std::move(field.value), diags),
-                    });
+                if (kind.path.size() >= 2) {
+                    HirEnumLit lit;
+                    lit.enum_name = kind.path[0];
+                    lit.variant = kind.path[1];
+                    lit.fields.reserve(kind.fields.size());
+                    for (auto& field : kind.fields) {
+                        lit.fields.push_back(HirStructLitField{
+                            std::move(field.name),
+                            lower_expr(src, std::move(field.value), diags),
+                        });
+                    }
+                    out->kind = std::move(lit);
+                } else {
+                    HirStructLit lit;
+                    lit.name = kind.name.empty() && !kind.path.empty() ? kind.path[0] : std::move(kind.name);
+                    lit.fields.reserve(kind.fields.size());
+                    for (auto& field : kind.fields) {
+                        lit.fields.push_back(HirStructLitField{
+                            std::move(field.name),
+                            lower_expr(src, std::move(field.value), diags),
+                        });
+                    }
+                    out->kind = std::move(lit);
                 }
-                out->kind = std::move(lit);
+            } else if constexpr (std::is_same_v<K, ExprMatch>) {
+                HirMatch match;
+                match.scrutinee = lower_expr(src, std::move(kind.scrutinee), diags);
+                match.arms.reserve(kind.arms.size());
+                for (auto& arm : kind.arms) {
+                    HirMatchArm hir_arm;
+                    hir_arm.pat = lower_pat(src, std::move(arm.pat), diags);
+                    hir_arm.body = lower_expr(src, std::move(arm.body), diags);
+                    match.arms.push_back(std::move(hir_arm));
+                }
+                out->kind = std::move(match);
             }
         },
         expr->kind);
@@ -284,6 +469,7 @@ HirStruct lower_struct(const Source& src, StructDecl& st, DiagnosticEngine& diag
 
 HirImpl lower_impl(const Source& src, ImplDecl& impl, DiagnosticEngine& diags) {
     HirImpl out;
+    out.trait_name = impl.trait_name;
     out.type_name = impl.type_name;
     out.offset = impl.offset;
     out.methods.reserve(impl.methods.size());
@@ -294,16 +480,46 @@ HirImpl lower_impl(const Source& src, ImplDecl& impl, DiagnosticEngine& diags) {
     return out;
 }
 
+HirEnum lower_enum(const Source& src, EnumDecl& en, DiagnosticEngine& diags) {
+    HirEnum out;
+    out.pub = en.pub;
+    out.name = std::move(en.name);
+    out.offset = en.offset;
+    out.variants.reserve(en.variants.size());
+
+    for (auto& variant : en.variants) {
+        HirEnumVariant hv;
+        hv.name = std::move(variant.name);
+        hv.tuple = variant.tuple;
+        hv.offset = variant.offset;
+        hv.fields.reserve(variant.fields.size());
+        for (auto& field : variant.fields) {
+            HirField hf;
+            hf.mut = field.mut;
+            hf.name = std::move(field.name);
+            hf.offset = field.offset;
+            hf.ty = type_from_name(field.ty);
+            hv.fields.push_back(std::move(hf));
+        }
+        out.variants.push_back(std::move(hv));
+    }
+    return out;
+}
+
 }  // namespace
 
 HirModule lower(const Source& src, AstFile ast, DiagnosticEngine& diags) {
     HirModule mod;
     mod.structs.reserve(ast.structs.size());
+    mod.enums.reserve(ast.enums.size());
     mod.impls.reserve(ast.impls.size());
     mod.functions.reserve(ast.functions.size());
 
     for (auto& st : ast.structs) {
         mod.structs.push_back(lower_struct(src, st, diags));
+    }
+    for (auto& en : ast.enums) {
+        mod.enums.push_back(lower_enum(src, en, diags));
     }
     for (auto& impl : ast.impls) {
         mod.impls.push_back(lower_impl(src, impl, diags));

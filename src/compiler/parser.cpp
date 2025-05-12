@@ -93,7 +93,8 @@ private:
 
     void recover_to_item() {
         while (!at(TokenKind::Eof) && !at(TokenKind::KwFn) && !at(TokenKind::KwPub) &&
-               !at(TokenKind::KwStruct) && !at(TokenKind::KwImpl)) {
+               !at(TokenKind::KwStruct) && !at(TokenKind::KwImpl) && !at(TokenKind::KwEnum) &&
+               !at(TokenKind::KwVariant)) {
             advance();
         }
     }
@@ -105,6 +106,17 @@ private:
                 return false;
             }
             file.impls.push_back(std::move(*impl));
+            return true;
+        }
+
+        if (at(TokenKind::KwEnum) || at(TokenKind::KwVariant) ||
+            (at(TokenKind::KwPub) &&
+             (peek_n(1).kind == TokenKind::KwEnum || peek_n(1).kind == TokenKind::KwVariant))) {
+            auto en = parse_enum();
+            if (!en) {
+                return false;
+            }
+            file.enums.push_back(std::move(*en));
             return true;
         }
 
@@ -202,6 +214,92 @@ private:
         return field;
     }
 
+    std::optional<EnumDecl> parse_enum() {
+        EnumDecl en;
+        en.offset = peek().offset;
+        en.pub = consume(TokenKind::KwPub);
+
+        if (!at(TokenKind::KwEnum) && !at(TokenKind::KwVariant)) {
+            error(peek(), "expected 'enum' or 'variant'");
+            return std::nullopt;
+        }
+        advance();
+
+        const std::size_t name_off = peek().offset;
+        auto name = take_ident("enum name");
+        if (!name) {
+            return std::nullopt;
+        }
+        en.name = std::move(*name);
+        en.offset = name_off;
+
+        if (!expect(TokenKind::LBrace, "'{'")) {
+            return std::nullopt;
+        }
+
+        while (!at(TokenKind::Eof) && !at(TokenKind::RBrace)) {
+            auto variant = parse_variant();
+            if (!variant) {
+                return std::nullopt;
+            }
+            en.variants.push_back(std::move(*variant));
+            consume(TokenKind::Comma);
+        }
+
+        if (!expect(TokenKind::RBrace, "'}'")) {
+            return std::nullopt;
+        }
+        return en;
+    }
+
+    std::optional<VariantDecl> parse_variant() {
+        VariantDecl v;
+        v.offset = peek().offset;
+        auto name = take_ident("variant name");
+        if (!name) {
+            return std::nullopt;
+        }
+        v.name = std::move(*name);
+
+        if (consume(TokenKind::LBrace)) {
+            while (!at(TokenKind::Eof) && !at(TokenKind::RBrace)) {
+                auto field = parse_field();
+                if (!field) {
+                    return std::nullopt;
+                }
+                v.fields.push_back(std::move(*field));
+                consume(TokenKind::Comma);
+            }
+            if (!expect(TokenKind::RBrace, "'}'")) {
+                return std::nullopt;
+            }
+            return v;
+        }
+
+        if (consume(TokenKind::LParen)) {
+            v.tuple = true;
+            std::size_t index = 0;
+            while (!at(TokenKind::Eof) && !at(TokenKind::RParen)) {
+                FieldDecl field;
+                field.offset = peek().offset;
+                field.name = "_" + std::to_string(index++);
+                auto ty = parse_type_name();
+                if (!ty) {
+                    return std::nullopt;
+                }
+                field.ty = std::move(*ty);
+                v.fields.push_back(std::move(field));
+                if (!consume(TokenKind::Comma)) {
+                    break;
+                }
+            }
+            if (!expect(TokenKind::RParen, "')'")) {
+                return std::nullopt;
+            }
+        }
+        return v;
+    }
+
     std::optional<ImplDecl> parse_impl() {
         ImplDecl impl;
         impl.offset = peek().offset;
@@ -210,11 +308,21 @@ private:
             return std::nullopt;
         }
 
-        auto name = take_ident("type name");
+        auto name = take_ident("type or trait name");
         if (!name) {
             return std::nullopt;
         }
-        impl.type_name = std::move(*name);
+
+        if (consume(TokenKind::KwFor)) {
+            impl.trait_name = std::move(*name);
+            auto type_name = take_ident("type name");
+            if (!type_name) {
+                return std::nullopt;
+            }
+            impl.type_name = std::move(*type_name);
+        } else {
+            impl.type_name = std::move(*name);
+        }
 
         if (!expect(TokenKind::LBrace, "'{'")) {
             return std::nullopt;
@@ -478,7 +586,7 @@ private:
         return make_stmt(off, std::move(ret));
     }
 
-    std::optional<ExprPtr> parse_expr() { return parse_prec(1); }
+    std::optional<ExprPtr> parse_expr(bool allow_struct = true) { return parse_prec(1, allow_struct); }
 
     static int binding_power(TokenKind kind) {
         switch (kind) {
@@ -496,8 +604,8 @@ private:
         }
     }
 
-    std::optional<ExprPtr> parse_prec(int min_bp) {
-        auto left = parse_unary();
+    std::optional<ExprPtr> parse_prec(int min_bp, bool allow_struct = true) {
+        auto left = parse_unary(allow_struct);
         if (!left) {
             return std::nullopt;
         }
@@ -513,7 +621,7 @@ private:
             advance();
 
             if (op == TokenKind::Equal) {
-                auto rhs = parse_prec(bp);
+                auto rhs = parse_prec(bp, allow_struct);
                 if (!rhs) {
                     return std::nullopt;
                 }
@@ -521,7 +629,7 @@ private:
                 continue;
             }
 
-            auto rhs = parse_prec(bp + 1);
+            auto rhs = parse_prec(bp + 1, allow_struct);
             if (!rhs) {
                 return std::nullopt;
             }
@@ -531,23 +639,23 @@ private:
         return left;
     }
 
-    std::optional<ExprPtr> parse_unary() {
+    std::optional<ExprPtr> parse_unary(bool allow_struct = true) {
         if (!at(TokenKind::Minus)) {
-            return parse_postfix();
+            return parse_postfix(allow_struct);
         }
 
         const std::size_t off = peek().offset;
         advance();
 
-        auto operand = parse_unary();
+        auto operand = parse_unary(allow_struct);
         if (!operand) {
             return std::nullopt;
         }
         return make_expr(off, ExprUnary{TokenKind::Minus, std::move(*operand)});
     }
 
-    std::optional<ExprPtr> parse_postfix() {
-        auto expr = parse_primary();
+    std::optional<ExprPtr> parse_postfix(bool allow_struct = true) {
+        auto expr = parse_primary(allow_struct);
         if (!expr) {
             return std::nullopt;
         }
@@ -594,7 +702,7 @@ private:
         return make_expr(off, ExprCall{std::move(callee), std::move(*args)});
     }
 
-    std::optional<ExprPtr> parse_struct_lit(std::size_t off, std::string name) {
+    std::optional<ExprPtr> parse_struct_lit(std::size_t off, std::vector<std::string> path) {
         advance();
 
         std::vector<StructLitField> fields;
@@ -619,7 +727,139 @@ private:
         if (!expect(TokenKind::RBrace, "'}'")) {
             return std::nullopt;
         }
-        return make_expr(off, ExprStructLit{std::move(name), std::move(fields)});
+        ExprStructLit lit;
+        if (!path.empty()) {
+            lit.name = path.size() == 1 ? path[0] : path[0];
+        }
+        lit.path = std::move(path);
+        lit.fields = std::move(fields);
+        return make_expr(off, std::move(lit));
+    }
+
+    static bool is_type_suffix(std::string_view text) {
+        return text == "i8" || text == "i16" || text == "i32" || text == "i64" || text == "u8" ||
+               text == "u16" || text == "u32" || text == "u64" || text == "f32" || text == "f64" ||
+               text == "byte";
+    }
+
+    std::optional<std::string> take_suffix() {
+        if (!at(TokenKind::Ident) || !is_type_suffix(peek_text())) {
+            return std::nullopt;
+        }
+        std::string suffix(peek_text());
+        advance();
+        return suffix;
+    }
+
+    std::optional<PatPtr> parse_pat() {
+        auto pat = std::make_unique<Pat>();
+        pat->offset = peek().offset;
+
+        if (at(TokenKind::Ident) && peek_text() == "_") {
+            advance();
+            pat->kind = PatWild{};
+            return pat;
+        }
+
+        if (!at(TokenKind::Ident)) {
+            error(peek(), "expected pattern");
+            return std::nullopt;
+        }
+
+        std::vector<std::string> path;
+        path.emplace_back(peek_text());
+        advance();
+        while (consume(TokenKind::ColonColon)) {
+            auto part = take_ident("path segment");
+            if (!part) {
+                return std::nullopt;
+            }
+            path.push_back(std::move(*part));
+        }
+
+        if (consume(TokenKind::LBrace)) {
+            PatVariant v;
+            v.path = std::move(path);
+            while (!at(TokenKind::Eof) && !at(TokenKind::RBrace)) {
+                auto field = take_ident("field name");
+                if (!field) {
+                    return std::nullopt;
+                }
+                v.fields.push_back(std::move(*field));
+                consume(TokenKind::Comma);
+            }
+            if (!expect(TokenKind::RBrace, "'}'")) {
+                return std::nullopt;
+            }
+            pat->kind = std::move(v);
+            return pat;
+        }
+
+        if (consume(TokenKind::LParen)) {
+            PatVariant v;
+            v.path = std::move(path);
+            v.tuple = true;
+            while (!at(TokenKind::Eof) && !at(TokenKind::RParen)) {
+                auto inner = parse_pat();
+                if (!inner) {
+                    return std::nullopt;
+                }
+                v.args.push_back(std::move(*inner));
+                if (!consume(TokenKind::Comma)) {
+                    break;
+                }
+            }
+            if (!expect(TokenKind::RParen, "')'")) {
+                return std::nullopt;
+            }
+            pat->kind = std::move(v);
+            return pat;
+        }
+
+        if (path.size() == 1) {
+            pat->kind = PatIdent{std::move(path[0])};
+        } else {
+            PatVariant v;
+            v.path = std::move(path);
+            pat->kind = std::move(v);
+        }
+        return pat;
+    }
+
+    std::optional<ExprPtr> parse_match() {
+        const std::size_t off = peek().offset;
+        advance();
+
+        auto scrutinee = parse_expr(false);
+        if (!scrutinee) {
+            return std::nullopt;
+        }
+        if (!expect(TokenKind::LBrace, "'{'")) {
+            return std::nullopt;
+        }
+
+        ExprMatch match;
+        match.scrutinee = std::move(*scrutinee);
+        while (!at(TokenKind::Eof) && !at(TokenKind::RBrace)) {
+            auto pat = parse_pat();
+            if (!pat) {
+                return std::nullopt;
+            }
+            if (!expect(TokenKind::FatArrow, "'=>'")) {
+                return std::nullopt;
+            }
+            auto body = parse_expr();
+            if (!body) {
+                return std::nullopt;
+            }
+            match.arms.push_back(MatchArm{std::move(*pat), std::move(*body)});
+            consume(TokenKind::Comma);
+        }
+
+        if (!expect(TokenKind::RBrace, "'}'")) {
+            return std::nullopt;
+        }
+        return make_expr(off, std::move(match));
     }
 
     std::optional<std::vector<ExprPtr>> parse_arg_list() {
@@ -651,16 +891,42 @@ private:
         return args;
     }
 
-    std::optional<ExprPtr> parse_primary() {
+    std::optional<ExprPtr> parse_primary(bool allow_struct = true) {
+        if (at(TokenKind::KwMatch)) {
+            return parse_match();
+        }
+
+        if (at(TokenKind::KwTrue) || at(TokenKind::KwFalse)) {
+            const std::size_t off = peek().offset;
+            const bool value = at(TokenKind::KwTrue);
+            advance();
+            return make_expr(off, LitBool{value});
+        }
+
+        if (at(TokenKind::String)) {
+            const std::size_t off = peek().offset;
+            std::string raw(peek_text());
+            advance();
+            return make_expr(off, LitString{std::move(raw)});
+        }
+
+        if (at(TokenKind::Char)) {
+            const std::size_t off = peek().offset;
+            std::string raw(peek_text());
+            advance();
+            return make_expr(off, LitChar{std::move(raw)});
+        }
+
         if (at(TokenKind::Int) || at(TokenKind::Float)) {
             const std::size_t off = peek().offset;
             const std::string raw(peek_text());
             const bool is_float = at(TokenKind::Float);
             advance();
+            auto suffix = take_suffix();
             if (is_float) {
-                return make_expr(off, LitFloat{raw});
+                return make_expr(off, LitFloat{raw, std::move(suffix)});
             }
-            return make_expr(off, LitInt{raw});
+            return make_expr(off, LitInt{raw, std::move(suffix)});
         }
 
         if (at(TokenKind::KwSelf)) {
@@ -671,12 +937,23 @@ private:
 
         if (at(TokenKind::Ident)) {
             const std::size_t off = peek().offset;
-            std::string name(peek_text());
+            std::vector<std::string> path;
+            path.emplace_back(peek_text());
             advance();
-            if (at(TokenKind::LBrace)) {
-                return parse_struct_lit(off, std::move(name));
+            while (consume(TokenKind::ColonColon)) {
+                auto part = take_ident("path segment");
+                if (!part) {
+                    return std::nullopt;
+                }
+                path.push_back(std::move(*part));
             }
-            return make_expr(off, ExprIdent{std::move(name)});
+            if (allow_struct && at(TokenKind::LBrace)) {
+                return parse_struct_lit(off, std::move(path));
+            }
+            if (path.size() == 1) {
+                return make_expr(off, ExprIdent{std::move(path[0])});
+            }
+            return make_expr(off, ExprPath{std::move(path)});
         }
 
         if (consume(TokenKind::LParen)) {
