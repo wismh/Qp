@@ -136,12 +136,32 @@ struct HirMatch {
     std::vector<HirMatchArm> arms;
 };
 
+struct HirIndex {
+    HirExprPtr base;
+    HirExprPtr index;
+};
+
+struct HirIndexAssign {
+    HirExprPtr base;
+    HirExprPtr index;
+    HirExprPtr value;
+};
+
+struct HirListLit {
+    std::vector<HirExprPtr> elems;
+    bool array = false;
+};
+
+struct HirDictLit {
+    std::vector<std::pair<HirExprPtr, HirExprPtr>> entries;
+};
+
 struct HirExpr {
     Type ty;
     std::size_t offset = 0;
     std::variant<HirLitInt, HirLitFloat, HirLitBool, HirLitChar, HirLitString, HirVar, HirBinary,
-                 HirUnary, HirCall, HirAssign, HirFieldAccess, HirStructLit, HirEnumLit,
-                 HirMethodCall, HirFieldAssign, HirMatch>
+                 HirUnary, HirCall, HirAssign, HirFieldAccess, HirIndex, HirStructLit, HirEnumLit,
+                 HirMethodCall, HirFieldAssign, HirIndexAssign, HirMatch, HirListLit, HirDictLit>
         kind;
 };
 
@@ -209,7 +229,20 @@ struct HirEnumVariant {
     std::size_t offset = 0;
 };
 
-struct HirEnum {
+struct HirCEnumMember {
+    std::string name;
+    std::int64_t value = 0;
+    std::size_t offset = 0;
+};
+
+struct HirCEnum {
+    bool pub = false;
+    std::string name;
+    std::vector<HirCEnumMember> members;
+    std::size_t offset = 0;
+};
+
+struct HirVariant {
     bool pub = false;
     std::string name;
     std::vector<HirEnumVariant> variants;
@@ -225,7 +258,8 @@ struct HirImpl {
 
 struct HirModule {
     std::vector<HirStruct> structs;
-    std::vector<HirEnum> enums;
+    std::vector<HirCEnum> enums;
+    std::vector<HirVariant> variants;
     std::vector<HirImpl> impls;
     std::vector<HirFn> functions;
 };
