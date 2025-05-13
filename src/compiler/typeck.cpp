@@ -46,6 +46,17 @@ struct VariantInfo {
     std::size_t offset = 0;
 };
 
+struct CEnumMemberInfo {
+    std::int64_t value = 0;
+    std::size_t index = 0;
+    std::size_t offset = 0;
+};
+
+struct CEnumInfo {
+    std::vector<std::pair<std::string, CEnumMemberInfo>> members;
+    std::size_t offset = 0;
+};
+
 struct EnumInfo {
     std::vector<std::pair<std::string, VariantInfo>> variants;
     std::size_t offset = 0;
@@ -78,9 +89,10 @@ public:
         : src_(src), mod_(mod), diags_(diags) {}
 
     void run() {
-        collect_enum_names();
+        collect_type_names();
         collect_structs();
-        collect_enums();
+        collect_c_enums();
+        collect_variants();
         collect_sigs();
         collect_methods();
         if (diags_.has_errors()) {
@@ -102,7 +114,8 @@ private:
     HirModule& mod_;
     DiagnosticEngine& diags_;
     std::unordered_map<std::string, StructInfo> structs_;
-    std::unordered_map<std::string, EnumInfo> enums_;
+    std::unordered_map<std::string, CEnumInfo> c_enums_;
+    std::unordered_map<std::string, EnumInfo> variants_;
     std::unordered_map<std::string, FnSig> sigs_;
     std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> methods_;
     std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> op_impls_;
@@ -114,10 +127,28 @@ private:
     }
 
     bool resolve_type(Type& ty, std::size_t offset) {
+        if (ty.kind == TypeKind::List || ty.kind == TypeKind::Array) {
+            if (ty.args.empty()) {
+                error(offset, "invalid collection type");
+                ty = Type::error();
+                return false;
+            }
+            return resolve_type(ty.args[0], offset);
+        }
+        if (ty.kind == TypeKind::Dict) {
+            if (ty.args.size() < 2) {
+                error(offset, "invalid dict type");
+                ty = Type::error();
+                return false;
+            }
+            const bool ok_key = resolve_type(ty.args[0], offset);
+            const bool ok_val = resolve_type(ty.args[1], offset);
+            return ok_key && ok_val;
+        }
         if (ty.kind != TypeKind::Named) {
             return ty != Type::error();
         }
-        if (!structs_.contains(ty.name) && !enums_.contains(ty.name)) {
+        if (!structs_.contains(ty.name) && !variants_.contains(ty.name) && !c_enums_.contains(ty.name)) {
             error(offset, "unknown type '" + ty.name + "'");
             ty = Type::error();
             return false;
@@ -144,8 +175,8 @@ private:
 
     void collect_structs() {
         for (auto& st : mod_.structs) {
-            if (structs_.contains(st.name)) {
-                error(st.offset, "duplicate struct '" + st.name + "'");
+            if (structs_.contains(st.name) || c_enums_.contains(st.name) || variants_.contains(st.name)) {
+                error(st.offset, "duplicate type '" + st.name + "'");
                 continue;
             }
             structs_.emplace(st.name, StructInfo{{}, st.offset});
@@ -169,13 +200,20 @@ private:
         }
     }
 
-    void collect_enum_names() {
+    void collect_type_names() {
         for (auto& en : mod_.enums) {
-            if (enums_.contains(en.name)) {
+            if (c_enums_.contains(en.name) || variants_.contains(en.name) || structs_.contains(en.name)) {
                 error(en.offset, "duplicate type '" + en.name + "'");
                 continue;
             }
-            enums_.emplace(en.name, EnumInfo{{}, en.offset});
+            c_enums_.emplace(en.name, CEnumInfo{{}, en.offset});
+        }
+        for (auto& var : mod_.variants) {
+            if (c_enums_.contains(var.name) || variants_.contains(var.name) || structs_.contains(var.name)) {
+                error(var.offset, "duplicate type '" + var.name + "'");
+                continue;
+            }
+            variants_.emplace(var.name, EnumInfo{{}, var.offset});
         }
     }
 
@@ -188,14 +226,38 @@ private:
         return nullptr;
     }
 
-    void collect_enums() {
+    const CEnumMemberInfo* find_member(const CEnumInfo& en, const std::string& name) const {
+        for (const auto& [mname, info] : en.members) {
+            if (mname == name) {
+                return &info;
+            }
+        }
+        return nullptr;
+    }
+
+    void collect_c_enums() {
         for (auto& en : mod_.enums) {
-            auto it = enums_.find(en.name);
-            if (it == enums_.end() || it->second.offset != en.offset) {
+            auto it = c_enums_.find(en.name);
+            if (it == c_enums_.end() || it->second.offset != en.offset) {
                 continue;
             }
-            if (structs_.contains(en.name)) {
-                error(en.offset, "duplicate type '" + en.name + "'");
+            CEnumInfo& info = it->second;
+            for (std::size_t i = 0; i < en.members.size(); ++i) {
+                auto& member = en.members[i];
+                if (find_member(info, member.name)) {
+                    error(member.offset, "duplicate enum member '" + member.name + "'");
+                    continue;
+                }
+                info.members.emplace_back(member.name,
+                                          CEnumMemberInfo{member.value, i, member.offset});
+            }
+        }
+    }
+
+    void collect_variants() {
+        for (auto& en : mod_.variants) {
+            auto it = variants_.find(en.name);
+            if (it == variants_.end() || it->second.offset != en.offset) {
                 continue;
             }
             EnumInfo& info = it->second;
@@ -240,7 +302,8 @@ private:
 
     void collect_methods() {
         for (auto& impl : mod_.impls) {
-            const bool known = structs_.contains(impl.type_name) || enums_.contains(impl.type_name);
+            const bool known = structs_.contains(impl.type_name) || variants_.contains(impl.type_name) ||
+                               c_enums_.contains(impl.type_name);
             if (!known) {
                 error(impl.offset, "impl for unknown type '" + impl.type_name + "'");
                 continue;
@@ -393,7 +456,12 @@ private:
     void check_let(std::size_t offset, HirLet& let) {
         const Type init_ty = check_expr(*let.init);
         if (let.ty.kind == TypeKind::Unknown) {
-            let.ty = init_ty;
+            if (init_ty.kind == TypeKind::Unknown) {
+                error(offset, "cannot infer type of '" + let.name + "', add a type annotation");
+                let.ty = Type::error();
+            } else {
+                let.ty = init_ty;
+            }
         } else {
             resolve_type(let.ty, offset);
             expect_expr(*let.init, let.ty, let.init->offset, "let initializer");
@@ -448,6 +516,14 @@ private:
                     ty = check_method_call(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirFieldAssign>) {
                     ty = check_field_assign(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirIndex>) {
+                    ty = check_index(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirIndexAssign>) {
+                    ty = check_index_assign(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirListLit>) {
+                    ty = check_list_lit(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirDictLit>) {
+                    ty = check_dict_lit(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirMatch>) {
                     ty = check_match(kind, expr.offset);
                 }
@@ -612,6 +688,9 @@ private:
         if (const auto* field = std::get_if<HirFieldAccess>(&expr.kind)) {
             return is_mut_place(*field->base);
         }
+        if (const auto* index = std::get_if<HirIndex>(&expr.kind)) {
+            return is_mut_place(*index->base);
+        }
         return false;
     }
 
@@ -753,10 +832,79 @@ private:
         return info->ty;
     }
 
+    Type check_index(HirIndex& idx, std::size_t offset) {
+        const Type base_ty = check_expr(*idx.base);
+        check_expr(*idx.index);
+        if (base_ty.kind == TypeKind::List || base_ty.kind == TypeKind::Array) {
+            expect_expr(*idx.index, Type::i32(), idx.index->offset, "index");
+            return base_ty.elem();
+        }
+        if (base_ty.kind == TypeKind::Dict) {
+            expect_expr(*idx.index, base_ty.key(), idx.index->offset, "key");
+            return base_ty.value();
+        }
+        if (base_ty != Type::error()) {
+            error(offset, "cannot index '" + type_name(base_ty) + "'");
+        }
+        return Type::error();
+    }
+
+    Type check_index_assign(HirIndexAssign& as, std::size_t offset) {
+        HirIndex idx{std::move(as.base), std::move(as.index)};
+        const Type elem_ty = check_index(idx, offset);
+        as.base = std::move(idx.base);
+        as.index = std::move(idx.index);
+        if (!is_mut_place(*as.base)) {
+            error(offset, "cannot assign through an immutable collection");
+        }
+        expect_expr(*as.value, elem_ty, as.value->offset, "assignment");
+        return elem_ty;
+    }
+
+    Type check_list_lit(HirListLit& lit, std::size_t offset) {
+        if (lit.elems.empty()) {
+            return Type::unknown();
+        }
+        Type elem = check_expr(*lit.elems.front());
+        for (std::size_t i = 1; i < lit.elems.size(); ++i) {
+            expect_expr(*lit.elems[i], elem, lit.elems[i]->offset, "list element");
+        }
+        if (lit.array) {
+            return Type::array(elem, lit.elems.size());
+        }
+        return Type::list(elem);
+    }
+
+    Type check_dict_lit(HirDictLit& lit, std::size_t offset) {
+        if (lit.entries.empty()) {
+            return Type::unknown();
+        }
+        Type key = check_expr(*lit.entries.front().first);
+        Type value = check_expr(*lit.entries.front().second);
+        for (std::size_t i = 1; i < lit.entries.size(); ++i) {
+            expect_expr(*lit.entries[i].first, key, lit.entries[i].first->offset, "dict key");
+            expect_expr(*lit.entries[i].second, value, lit.entries[i].second->offset, "dict value");
+        }
+        return Type::dict(key, value);
+    }
+
     Type check_enum_lit(HirEnumLit& lit, std::size_t offset) {
-        auto it = enums_.find(lit.enum_name);
-        if (it == enums_.end()) {
-            error(offset, "unknown enum '" + lit.enum_name + "'");
+        auto c_it = c_enums_.find(lit.enum_name);
+        if (c_it != c_enums_.end()) {
+            if (lit.tuple || !lit.fields.empty() || !lit.args.empty()) {
+                error(offset, "enum member '" + lit.variant + "' cannot have fields");
+                return Type::named(lit.enum_name);
+            }
+            if (!find_member(c_it->second, lit.variant)) {
+                error(offset, "unknown member '" + lit.variant + "' on '" + lit.enum_name + "'");
+                return Type::error();
+            }
+            return Type::named(lit.enum_name);
+        }
+
+        auto it = variants_.find(lit.enum_name);
+        if (it == variants_.end()) {
+            error(offset, "unknown type '" + lit.enum_name + "'");
             return Type::error();
         }
         const VariantInfo* v = find_variant(it->second, lit.variant);
@@ -818,18 +966,25 @@ private:
         Type result;
         bool first = true;
         std::vector<bool> covered;
-        const EnumInfo* en = nullptr;
+        const EnumInfo* adt = nullptr;
+        const CEnumInfo* cen = nullptr;
         if (scrut.kind == TypeKind::Named) {
-            auto it = enums_.find(scrut.name);
-            if (it != enums_.end()) {
-                en = &it->second;
-                covered.assign(en->variants.size(), false);
+            auto v_it = variants_.find(scrut.name);
+            if (v_it != variants_.end()) {
+                adt = &v_it->second;
+                covered.assign(adt->variants.size(), false);
+            } else {
+                auto c_it = c_enums_.find(scrut.name);
+                if (c_it != c_enums_.end()) {
+                    cen = &c_it->second;
+                    covered.assign(cen->members.size(), false);
+                }
             }
         }
 
         for (auto& arm : match.arms) {
             push_scope();
-            check_pat(*arm.pat, scrut, en, covered);
+            check_pat(*arm.pat, scrut, adt, cen, covered);
             check_expr(*arm.body);
             if (first) {
                 result = arm.body->ty;
@@ -840,17 +995,25 @@ private:
             pop_scope();
         }
 
-        if (en) {
+        if (adt) {
             for (std::size_t i = 0; i < covered.size(); ++i) {
                 if (!covered[i]) {
-                    error(offset, "non-exhaustive match, missing '" + en->variants[i].first + "'");
+                    error(offset, "non-exhaustive match, missing '" + adt->variants[i].first + "'");
+                }
+            }
+        }
+        if (cen) {
+            for (std::size_t i = 0; i < covered.size(); ++i) {
+                if (!covered[i]) {
+                    error(offset, "non-exhaustive match, missing '" + cen->members[i].first + "'");
                 }
             }
         }
         return result;
     }
 
-    void check_pat(HirPat& pat, const Type& scrut, const EnumInfo* en, std::vector<bool>& covered) {
+    void check_pat(HirPat& pat, const Type& scrut, const EnumInfo* en, const CEnumInfo* cen,
+                   std::vector<bool>& covered) {
         std::string unit_variant;
         std::visit(
             [&](auto&& kind) {
@@ -868,13 +1031,37 @@ private:
                             return;
                         }
                     }
+                    if (cen) {
+                        const CEnumMemberInfo* m = find_member(*cen, kind.name);
+                        if (m && !lookup(kind.name)) {
+                            covered[m->index] = true;
+                            unit_variant = kind.name;
+                            return;
+                        }
+                    }
                     declare(kind.name, Binding{scrut, false}, pat.offset);
                 } else if constexpr (std::is_same_v<K, HirPatVariant>) {
+                    if (cen) {
+                        if (!kind.enum_name.empty() && kind.enum_name != scrut.name) {
+                            error(pat.offset, "pattern has type '" + kind.enum_name + "', expected '" +
+                                                  type_name(scrut) + "'");
+                        }
+                        const CEnumMemberInfo* m = find_member(*cen, kind.variant);
+                        if (!m) {
+                            error(pat.offset, "unknown member '" + kind.variant + "'");
+                            return;
+                        }
+                        if (kind.tuple || !kind.fields.empty() || !kind.args.empty()) {
+                            error(pat.offset, "enum member '" + kind.variant + "' cannot have fields");
+                        }
+                        covered[m->index] = true;
+                        return;
+                    }
                     const EnumInfo* used = en;
                     if (!kind.enum_name.empty()) {
-                        auto it = enums_.find(kind.enum_name);
-                        if (it == enums_.end()) {
-                            error(pat.offset, "unknown enum '" + kind.enum_name + "'");
+                        auto it = variants_.find(kind.enum_name);
+                        if (it == variants_.end()) {
+                            error(pat.offset, "unknown variant type '" + kind.enum_name + "'");
                             return;
                         }
                         used = &it->second;
@@ -884,7 +1071,7 @@ private:
                         }
                     }
                     if (!used) {
-                        error(pat.offset, "variant pattern requires an enum");
+                        error(pat.offset, "variant pattern requires a variant type");
                         return;
                     }
                     const VariantInfo* v = find_variant(*used, kind.variant);
@@ -933,10 +1120,47 @@ private:
         }
     }
 
+    bool coerce_collection(HirExpr& expr, const Type& expected) {
+        if (auto* list = std::get_if<HirListLit>(&expr.kind)) {
+            if (expected.kind == TypeKind::List) {
+                if (list->elems.empty()) {
+                    expr.ty = expected;
+                    return true;
+                }
+                if (expr.ty.kind == TypeKind::List && expr.ty.elem() == expected.elem()) {
+                    expr.ty = expected;
+                    return true;
+                }
+            }
+            if (expected.kind == TypeKind::Array) {
+                if (list->elems.size() != expected.size) {
+                    return false;
+                }
+                if (list->elems.empty() ||
+                    (expr.ty.kind == TypeKind::List && expr.ty.elem() == expected.elem()) ||
+                    (expr.ty.kind == TypeKind::Array && expr.ty.elem() == expected.elem())) {
+                    list->array = true;
+                    expr.ty = expected;
+                    return true;
+                }
+            }
+        }
+        if (auto* dict = std::get_if<HirDictLit>(&expr.kind)) {
+            if (expected.kind == TypeKind::Dict && dict->entries.empty()) {
+                expr.ty = expected;
+                return true;
+            }
+        }
+        return false;
+    }
+
     void expect_expr(HirExpr& expr, Type expected, std::size_t offset, const char* what) {
         const Type got = (expr.ty.kind == TypeKind::Unknown || expr.ty.kind == TypeKind::Error)
                              ? check_expr(expr)
                              : expr.ty;
+        if (coerce_collection(expr, expected)) {
+            return;
+        }
         if (got == expected || got == Type::error() || expected == Type::error()) {
             return;
         }
