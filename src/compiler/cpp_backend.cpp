@@ -13,6 +13,20 @@
 namespace qpc {
 namespace {
 
+const HirModule* g_mod = nullptr;
+
+bool is_c_enum_name(const std::string& name) {
+    if (!g_mod) {
+        return false;
+    }
+    for (const auto& en : g_mod->enums) {
+        if (en.name == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::string line_path(std::string_view path) {
     std::string out;
     out.reserve(path.size());
@@ -186,6 +200,17 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
             } else if constexpr (std::is_same_v<K, HirFieldAccess>) {
                 emit_receiver(out, *kind.base);
                 out << '.' << kind.name;
+            } else if constexpr (std::is_same_v<K, HirIndex>) {
+                emit_receiver(out, *kind.base);
+                if (kind.base->ty.kind == TypeKind::Dict) {
+                    out << ".at(";
+                    emit_expr(out, *kind.index);
+                    out << ')';
+                } else {
+                    out << '[';
+                    emit_expr(out, *kind.index);
+                    out << ']';
+                }
             } else if constexpr (std::is_same_v<K, HirStructLit>) {
                 out << kind.name << '{';
                 for (std::size_t i = 0; i < kind.fields.size(); ++i) {
@@ -197,25 +222,29 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 }
                 out << '}';
             } else if constexpr (std::is_same_v<K, HirEnumLit>) {
-                out << kind.enum_name << '{' << kind.enum_name << "::" << kind.variant << '{';
-                if (kind.tuple) {
-                    for (std::size_t i = 0; i < kind.args.size(); ++i) {
-                        if (i != 0) {
-                            out << ", ";
-                        }
-                        out << "._" << i << " = ";
-                        emit_expr(out, *kind.args[i]);
-                    }
+                if (is_c_enum_name(kind.enum_name)) {
+                    out << kind.enum_name << "::" << kind.variant;
                 } else {
-                    for (std::size_t i = 0; i < kind.fields.size(); ++i) {
-                        if (i != 0) {
-                            out << ", ";
+                    out << kind.enum_name << '{' << kind.enum_name << "::" << kind.variant << '{';
+                    if (kind.tuple) {
+                        for (std::size_t i = 0; i < kind.args.size(); ++i) {
+                            if (i != 0) {
+                                out << ", ";
+                            }
+                            out << "._" << i << " = ";
+                            emit_expr(out, *kind.args[i]);
                         }
-                        out << '.' << kind.fields[i].name << " = ";
-                        emit_expr(out, *kind.fields[i].value);
+                    } else {
+                        for (std::size_t i = 0; i < kind.fields.size(); ++i) {
+                            if (i != 0) {
+                                out << ", ";
+                            }
+                            out << '.' << kind.fields[i].name << " = ";
+                            emit_expr(out, *kind.fields[i].value);
+                        }
                     }
+                    out << "}}";
                 }
-                out << "}}";
             } else if constexpr (std::is_same_v<K, HirMethodCall>) {
                 emit_receiver(out, *kind.receiver);
                 out << '.' << kind.method << '(';
@@ -227,16 +256,51 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 out << '.' << kind.field << " = ";
                 emit_expr(out, *kind.value);
                 out << ')';
+            } else if constexpr (std::is_same_v<K, HirIndexAssign>) {
+                out << '(';
+                emit_receiver(out, *kind.base);
+                out << '[';
+                emit_expr(out, *kind.index);
+                out << "] = ";
+                emit_expr(out, *kind.value);
+                out << ')';
+            } else if constexpr (std::is_same_v<K, HirListLit>) {
+                out << cpp_type_name(expr.ty) << '{';
+                emit_comma_list(out, kind.elems);
+                out << '}';
+            } else if constexpr (std::is_same_v<K, HirDictLit>) {
+                out << cpp_type_name(expr.ty) << '{';
+                for (std::size_t i = 0; i < kind.entries.size(); ++i) {
+                    if (i != 0) {
+                        out << ", ";
+                    }
+                    out << '{';
+                    emit_expr(out, *kind.entries[i].first);
+                    out << ", ";
+                    emit_expr(out, *kind.entries[i].second);
+                    out << '}';
+                }
+                out << '}';
             } else if constexpr (std::is_same_v<K, HirMatch>) {
                 const std::string scrut_ty =
                     kind.scrutinee->ty.kind == TypeKind::Named ? kind.scrutinee->ty.name : std::string{};
+                const bool c_enum = is_c_enum_name(scrut_ty);
                 out << "([&]() {\n";
                 out << "        auto __s = ";
                 emit_expr(out, *kind.scrutinee);
                 out << ";\n";
+                if (c_enum) {
+                    out << "        switch (__s) {\n";
+                }
                 for (const auto& arm : kind.arms) {
                     if (const auto* var = std::get_if<HirPatVariant>(&arm.pat->kind)) {
                         const std::string en = var->enum_name.empty() ? scrut_ty : var->enum_name;
+                        if (c_enum) {
+                            out << "        case " << en << "::" << var->variant << ": return ";
+                            emit_expr(out, *arm.body);
+                            out << ";\n";
+                            continue;
+                        }
                         const bool binds = !var->fields.empty() || !var->args.empty();
                         if (binds) {
                             out << "        if (auto* __v = std::get_if<" << en << "::" << var->variant
@@ -258,8 +322,19 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                         emit_expr(out, *arm.body);
                         out << ";\n        }\n";
                     } else if (const auto* bind = std::get_if<HirPatBinding>(&arm.pat->kind)) {
-                        out << "        const auto " << bind->name << " = __s;\n";
-                        out << "        return ";
+                        if (c_enum) {
+                            out << "        default: {\n            const auto " << bind->name
+                                << " = __s;\n            return ";
+                            emit_expr(out, *arm.body);
+                            out << ";\n        }\n";
+                        } else {
+                            out << "        const auto " << bind->name << " = __s;\n";
+                            out << "        return ";
+                            emit_expr(out, *arm.body);
+                            out << ";\n";
+                        }
+                    } else if (c_enum) {
+                        out << "        default: return ";
                         emit_expr(out, *arm.body);
                         out << ";\n";
                     } else {
@@ -267,6 +342,9 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                         emit_expr(out, *arm.body);
                         out << ";\n";
                     }
+                }
+                if (c_enum) {
+                    out << "        }\n";
                 }
                 out << "        std::abort();\n    }())";
             }
@@ -359,7 +437,19 @@ std::unordered_map<std::string, std::vector<const HirFn*>> methods_by_type(const
     return out;
 }
 
-void emit_enum(std::ostringstream& header, const HirEnum& en) {
+void emit_c_enum(std::ostringstream& header, const HirCEnum& en) {
+    header << "enum class " << en.name << " : std::int32_t {\n";
+    for (std::size_t i = 0; i < en.members.size(); ++i) {
+        header << "    " << en.members[i].name << " = " << en.members[i].value;
+        if (i + 1 != en.members.size()) {
+            header << ',';
+        }
+        header << '\n';
+    }
+    header << "};\n\n";
+}
+
+void emit_variant(std::ostringstream& header, const HirVariant& en) {
     header << "struct " << en.name << " {\n";
     for (const auto& variant : en.variants) {
         header << "    struct " << variant.name << " {";
@@ -388,15 +478,24 @@ std::string emit_header(const HirModule& mod) {
     const auto methods = methods_by_type(mod);
     std::ostringstream header;
     header << "#pragma once\n\n";
+    header << "#include <array>\n";
     header << "#include <cstdint>\n";
     header << "#include <cstdlib>\n";
+    header << "#include <map>\n";
     header << "#include <string>\n";
-    header << "#include <variant>\n\n";
+    header << "#include <variant>\n";
+    header << "#include <vector>\n\n";
     header << "namespace qplus {\n\n";
-    header << "using String = std::string;\n\n";
+    header << "using String = std::string;\n";
+    header << "template <typename T>\nusing List = std::vector<T>;\n";
+    header << "template <typename T, std::size_t N>\nusing Array = std::array<T, N>;\n";
+    header << "template <typename K, typename V>\nusing Dict = std::map<K, V>;\n\n";
 
     for (const auto& en : mod.enums) {
-        emit_enum(header, en);
+        emit_c_enum(header, en);
+    }
+    for (const auto& var : mod.variants) {
+        emit_variant(header, var);
     }
 
     for (const auto& st : mod.structs) {
@@ -473,6 +572,7 @@ std::string emit_source(const Source& src, const HirModule& mod, std::string_vie
 }  // namespace
 
 CppOutput emit_cpp(const Source& src, const HirModule& mod) {
+    g_mod = &mod;
     CppOutput out;
     const std::filesystem::path path(src.path());
     out.stem = path.stem().string();
