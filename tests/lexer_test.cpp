@@ -95,7 +95,16 @@ TEST(Lexer, StringsCharsBoolsAndMatchTokens) {
     EXPECT_EQ(tokens[7].kind, TokenKind::FatArrow);
     EXPECT_EQ(tokens[8].kind, TokenKind::String);
     EXPECT_EQ(tokens[8].text(src.view()), "\"hi\"");
-    EXPECT_EQ(tokens[9].kind, TokenKind::Char);
-    EXPECT_EQ(tokens[9].text(src.view()), "'x'");
-    EXPECT_EQ(tokens[10].kind, TokenKind::Eof);
+        EXPECT_EQ(tokens[9].kind, TokenKind::Char);
+        EXPECT_EQ(tokens[9].text(src.view()), "'x'");
+        EXPECT_EQ(tokens[10].kind, TokenKind::Eof);
+}
+
+TEST(Lexer, Brackets) {
+    auto src = Source::from_string("t.qp", "[1, 2]");
+    DiagnosticEngine diags;
+    const auto tokens = lex(src, diags);
+    ASSERT_FALSE(diags.has_errors());
+    EXPECT_EQ(tokens[0].kind, TokenKind::LBracket);
+    EXPECT_EQ(tokens[4].kind, TokenKind::RBracket);
 }

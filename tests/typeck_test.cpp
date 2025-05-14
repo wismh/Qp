@@ -84,7 +84,8 @@ TEST(Typeck, ImmutableFieldAssignIsError) {
 
 TEST(Typeck, EnumMatchAndPrimitivesOk) {
     auto compiled = qpc::test::compile_string(R"(
-        enum Shape { None, Circle { r: f32 } }
+        enum Color { Red, Green, Blue }
+        variant Shape { None, Circle { r: f32 } }
         variant Opt { None, Some(i32) }
         fn area(s: Shape) -> f32 {
             match s {
@@ -98,6 +99,12 @@ TEST(Typeck, EnumMatchAndPrimitivesOk) {
                 Some(x) => x,
             }
         }
+        fn is_red(c: Color) -> i32 {
+            match c {
+                Red => 1,
+                _ => 0,
+            }
+        }
         fn hi(name: string) -> string { "hello, " + name }
         fn flag(b: bool) -> bool { b }
         fn as_byte(x: byte) -> u8 { x }
@@ -108,13 +115,28 @@ TEST(Typeck, EnumMatchAndPrimitivesOk) {
 
 TEST(Typeck, NonExhaustiveMatchIsError) {
     auto compiled = qpc::test::compile_string(R"(
-        enum Shape { None, Circle { r: f32 } }
+        variant Shape { None, Circle { r: f32 } }
         fn area(s: Shape) -> f32 {
             match s { None => 0.0 }
         }
     )");
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("non-exhaustive"), std::string::npos);
+}
+
+TEST(Typeck, CollectionsOk) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn sum(xs: [i32]) -> i32 { xs[0] + xs[1] }
+        fn at(buf: [i32; 2]) -> i32 { buf[1] }
+        fn hp(m: {string: i32}) -> i32 { m["hp"] }
+        fn build() -> i32 {
+            let xs = [1, 2];
+            let buf: [i32; 2] = [3, 4];
+            let m = {"hp": 10};
+            sum(xs) + at(buf) + hp(m)
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
 
 TEST(Typeck, OperatorImplAllowsPlus) {

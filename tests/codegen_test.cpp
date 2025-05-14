@@ -53,7 +53,8 @@ TEST(Codegen, StructAndMethod) {
 
 TEST(Codegen, EnumMatchStringAndOperator) {
     auto compiled = qpc::test::compile_string(R"(
-        enum Shape { None, Circle { r: f32 } }
+        enum Color { Red, Green, Blue }
+        variant Shape { None, Circle { r: f32 } }
         fn area(s: Shape) -> f32 {
             match s {
                 None => 0.0,
@@ -72,6 +73,7 @@ TEST(Codegen, EnumMatchStringAndOperator) {
         fn as_byte(x: byte) -> u8 { x }
     )");
     ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("enum class Color"), std::string::npos);
     EXPECT_NE(compiled.result.output.header.find("struct Shape"), std::string::npos);
     EXPECT_NE(compiled.result.output.header.find("std::variant<None, Circle>"), std::string::npos);
     EXPECT_NE(compiled.result.output.header.find("using String = std::string;"), std::string::npos);
@@ -85,4 +87,24 @@ TEST(Codegen, EnumMatchStringAndOperator) {
     EXPECT_NE(compiled.result.output.source.find("std::get_if<Shape::Circle>"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("String(\"hello, \")"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("operator+(Point self, Point other)"), std::string::npos);
+}
+
+TEST(Codegen, CollectionsAndCEnum) {
+    auto compiled = qpc::test::compile_string(R"(
+        enum Color { Red, Green }
+        fn first(xs: [i32], buf: [i32; 2], m: {string: i32}) -> i32 {
+            xs[0] + buf[1] + m["hp"]
+        }
+        fn red() -> Color { Color::Red }
+        fn make() -> [i32] { [1, 2, 3] }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("enum class Color"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("using List = std::vector<T>;"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("List<std::int32_t> xs"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("Array<std::int32_t, 2>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("Dict<String, std::int32_t>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("Color::Red"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("List<std::int32_t>{"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find(".at("), std::string::npos);
 }
