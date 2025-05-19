@@ -27,6 +27,7 @@ enum class TokenKind {
     KwFor,
     KwTrue,
     KwFalse,
+    KwExtern,
     LParen,
     RParen,
     LBracket,
@@ -117,6 +118,8 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'true'";
         case TokenKind::KwFalse:
             return "'false'";
+        case TokenKind::KwExtern:
+            return "'extern'";
         case TokenKind::LParen:
             return "'('";
         case TokenKind::RParen:
