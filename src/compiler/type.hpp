@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace qpc {
 
@@ -25,11 +26,16 @@ enum class TypeKind {
     F32,
     F64,
     Named,
+    List,
+    Array,
+    Dict,
 };
 
 struct Type {
     TypeKind kind = TypeKind::Unknown;
     std::string name;
+    std::size_t size = 0;
+    std::vector<Type> args;
 
     static Type unknown() { return {}; }
     static Type error() { return {TypeKind::Error, {}}; }
@@ -49,8 +55,35 @@ struct Type {
     static Type f64() { return {TypeKind::F64, {}}; }
     static Type named(std::string n) { return {TypeKind::Named, std::move(n)}; }
 
+    static Type list(Type elem) {
+        Type t;
+        t.kind = TypeKind::List;
+        t.args.push_back(std::move(elem));
+        return t;
+    }
+
+    static Type array(Type elem, std::size_t n) {
+        Type t;
+        t.kind = TypeKind::Array;
+        t.size = n;
+        t.args.push_back(std::move(elem));
+        return t;
+    }
+
+    static Type dict(Type key, Type value) {
+        Type t;
+        t.kind = TypeKind::Dict;
+        t.args.push_back(std::move(key));
+        t.args.push_back(std::move(value));
+        return t;
+    }
+
+    const Type& elem() const { return args.front(); }
+    const Type& key() const { return args.front(); }
+    const Type& value() const { return args.back(); }
+
     friend bool operator==(const Type& a, const Type& b) {
-        return a.kind == b.kind && a.name == b.name;
+        return a.kind == b.kind && a.name == b.name && a.size == b.size && a.args == b.args;
     }
 
     friend bool operator!=(const Type& a, const Type& b) { return !(a == b); }
@@ -150,6 +183,12 @@ inline std::string type_name(const Type& ty) {
             return "f64";
         case TypeKind::Named:
             return ty.name;
+        case TypeKind::List:
+            return "[" + type_name(ty.elem()) + "]";
+        case TypeKind::Array:
+            return "[" + type_name(ty.elem()) + "; " + std::to_string(ty.size) + "]";
+        case TypeKind::Dict:
+            return "{" + type_name(ty.key()) + ": " + type_name(ty.value()) + "}";
     }
     return "<invalid>";
 }
@@ -186,6 +225,12 @@ inline std::string cpp_type_name(const Type& ty) {
             return "double";
         case TypeKind::Named:
             return ty.name;
+        case TypeKind::List:
+            return "List<" + cpp_type_name(ty.elem()) + ">";
+        case TypeKind::Array:
+            return "Array<" + cpp_type_name(ty.elem()) + ", " + std::to_string(ty.size) + ">";
+        case TypeKind::Dict:
+            return "Dict<" + cpp_type_name(ty.key()) + ", " + cpp_type_name(ty.value()) + ">";
         default:
             return "void";
     }

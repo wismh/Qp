@@ -129,3 +129,24 @@ add_executable(shape_host
 target_include_directories(shape_host PRIVATE ${SHAPE_GEN_DIR})
 
 add_test(NAME shape_host COMMAND shape_host)
+
+set(COLLECTIONS_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_collections)
+set(COLLECTIONS_GEN_H ${COLLECTIONS_GEN_DIR}/collections.h)
+set(COLLECTIONS_GEN_CPP ${COLLECTIONS_GEN_DIR}/collections.cpp)
+
+add_custom_command(
+    OUTPUT ${COLLECTIONS_GEN_H} ${COLLECTIONS_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${COLLECTIONS_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/collections.qp -o ${COLLECTIONS_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/collections.qp
+    COMMENT "qpc compile examples/collections.qp"
+    VERBATIM
+)
+
+add_executable(collections_host
+    examples/collections_host/main.cpp
+    ${COLLECTIONS_GEN_CPP}
+)
+target_include_directories(collections_host PRIVATE ${COLLECTIONS_GEN_DIR})
+
+add_test(NAME collections_host COMMAND collections_host)

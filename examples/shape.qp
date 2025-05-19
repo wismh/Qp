@@ -1,4 +1,4 @@
-pub enum Shape {
+pub variant Shape {
     None,
     Circle { r: f32 },
     Rect { w: f32, h: f32 },

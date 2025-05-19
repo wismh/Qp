@@ -73,6 +73,10 @@ namespace {
             return TokenKind::LParen;
         case ')':
             return TokenKind::RParen;
+        case '[':
+            return TokenKind::LBracket;
+        case ']':
+            return TokenKind::RBracket;
         case '{':
             return TokenKind::LBrace;
         case '}':

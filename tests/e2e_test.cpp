@@ -81,3 +81,23 @@ TEST(E2E, CompileShapeExampleToFiles) {
     EXPECT_NE(header_text.find("String greet(String name);"), std::string::npos);
     EXPECT_NE(header_text.find("float area(Shape s);"), std::string::npos);
 }
+
+TEST(E2E, CompileCollectionsExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_collections";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input =
+        std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "collections.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "collections.h";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    std::ifstream header_in(header);
+    const std::string header_text((std::istreambuf_iterator<char>(header_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("enum class Color"), std::string::npos);
+    EXPECT_NE(header_text.find("std::int32_t sum2(List<std::int32_t> xs)"), std::string::npos);
+    EXPECT_NE(header_text.find("Dict<String, std::int32_t>"), std::string::npos);
+}
