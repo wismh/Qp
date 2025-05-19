@@ -105,6 +105,10 @@ inline bool is_float(const Type& ty) { return ty.kind == TypeKind::F32 || ty.kin
 
 inline bool is_numeric(const Type& ty) { return is_int(ty) || is_float(ty); }
 
+inline bool is_c_abi_type(const Type& ty) {
+    return ty.kind == TypeKind::Unit || ty.kind == TypeKind::Bool || is_numeric(ty);
+}
+
 inline int int_bit_width(const Type& ty) {
     switch (ty.kind) {
         case TypeKind::I8:
