@@ -29,6 +29,8 @@ enum class TokenKind {
     KwFalse,
     LParen,
     RParen,
+    LBracket,
+    RBracket,
     LBrace,
     RBrace,
     Dot,
@@ -119,6 +121,10 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'('";
         case TokenKind::RParen:
             return "')'";
+        case TokenKind::LBracket:
+            return "'['";
+        case TokenKind::RBracket:
+            return "']'";
         case TokenKind::LBrace:
             return "'{'";
         case TokenKind::RBrace:

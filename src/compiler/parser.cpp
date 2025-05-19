@@ -1,7 +1,9 @@
 #include "compiler/parser.hpp"
 
+#include <algorithm>
 #include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -109,14 +111,23 @@ private:
             return true;
         }
 
-        if (at(TokenKind::KwEnum) || at(TokenKind::KwVariant) ||
-            (at(TokenKind::KwPub) &&
-             (peek_n(1).kind == TokenKind::KwEnum || peek_n(1).kind == TokenKind::KwVariant))) {
-            auto en = parse_enum();
+        if (at(TokenKind::KwEnum) ||
+            (at(TokenKind::KwPub) && peek_n(1).kind == TokenKind::KwEnum)) {
+            auto en = parse_c_enum();
             if (!en) {
                 return false;
             }
             file.enums.push_back(std::move(*en));
+            return true;
+        }
+
+        if (at(TokenKind::KwVariant) ||
+            (at(TokenKind::KwPub) && peek_n(1).kind == TokenKind::KwVariant)) {
+            auto var = parse_variant_type();
+            if (!var) {
+                return false;
+            }
+            file.variants.push_back(std::move(*var));
             return true;
         }
 
@@ -206,7 +217,7 @@ private:
             return std::nullopt;
         }
 
-        auto ty = parse_type_name();
+        auto ty = parse_type();
         if (!ty) {
             return std::nullopt;
         }
@@ -214,19 +225,72 @@ private:
         return field;
     }
 
-    std::optional<EnumDecl> parse_enum() {
+    std::optional<EnumDecl> parse_c_enum() {
         EnumDecl en;
         en.offset = peek().offset;
         en.pub = consume(TokenKind::KwPub);
 
-        if (!at(TokenKind::KwEnum) && !at(TokenKind::KwVariant)) {
-            error(peek(), "expected 'enum' or 'variant'");
+        if (!expect(TokenKind::KwEnum, "'enum'")) {
             return std::nullopt;
         }
-        advance();
 
         const std::size_t name_off = peek().offset;
         auto name = take_ident("enum name");
+        if (!name) {
+            return std::nullopt;
+        }
+        en.name = std::move(*name);
+        en.offset = name_off;
+
+        if (!expect(TokenKind::LBrace, "'{'")) {
+            return std::nullopt;
+        }
+
+        std::int64_t next = 0;
+        while (!at(TokenKind::Eof) && !at(TokenKind::RBrace)) {
+            EnumMember member;
+            member.offset = peek().offset;
+            auto mname = take_ident("enum member");
+            if (!mname) {
+                return std::nullopt;
+            }
+            member.name = std::move(*mname);
+            if (at(TokenKind::LBrace) || at(TokenKind::LParen)) {
+                error(peek(), "enum members cannot have fields, use 'variant'");
+                return std::nullopt;
+            }
+            if (consume(TokenKind::Equal)) {
+                auto value = take_i64("enum discriminant");
+                if (!value) {
+                    return std::nullopt;
+                }
+                member.value = *value;
+                next = *value + 1;
+            } else {
+                member.value = next;
+                ++next;
+            }
+            en.members.push_back(std::move(member));
+            consume(TokenKind::Comma);
+        }
+
+        if (!expect(TokenKind::RBrace, "'}'")) {
+            return std::nullopt;
+        }
+        return en;
+    }
+
+    std::optional<VariantTypeDecl> parse_variant_type() {
+        VariantTypeDecl en;
+        en.offset = peek().offset;
+        en.pub = consume(TokenKind::KwPub);
+
+        if (!expect(TokenKind::KwVariant, "'variant'")) {
+            return std::nullopt;
+        }
+
+        const std::size_t name_off = peek().offset;
+        auto name = take_ident("variant name");
         if (!name) {
             return std::nullopt;
         }
@@ -283,7 +347,7 @@ private:
                 FieldDecl field;
                 field.offset = peek().offset;
                 field.name = "_" + std::to_string(index++);
-                auto ty = parse_type_name();
+                auto ty = parse_type();
                 if (!ty) {
                     return std::nullopt;
                 }
@@ -365,7 +429,7 @@ private:
         fn.params = std::move(*params);
 
         if (consume(TokenKind::Arrow)) {
-            auto ty = parse_type_name();
+            auto ty = parse_type();
             if (!ty) {
                 return std::nullopt;
             }
@@ -456,7 +520,7 @@ private:
             return std::nullopt;
         }
 
-        auto ty = parse_type_name();
+        auto ty = parse_type();
         if (!ty) {
             return std::nullopt;
         }
@@ -464,19 +528,88 @@ private:
         return p;
     }
 
-    std::optional<std::string> parse_type_name() {
+    std::optional<std::int64_t> take_i64(const char* what) {
+        if (!at(TokenKind::Int)) {
+            error(peek(), std::string("expected ") + what);
+            return std::nullopt;
+        }
+        std::string raw(peek_text());
+        raw.erase(std::remove(raw.begin(), raw.end(), '_'), raw.end());
+        try {
+            const auto value = std::stoll(raw, nullptr, 0);
+            advance();
+            return value;
+        } catch (...) {
+            error(peek(), "invalid integer");
+            advance();
+            return std::nullopt;
+        }
+    }
+
+    std::optional<TypeExpr> parse_type() {
+        TypeExpr ty;
+        ty.offset = peek().offset;
+
         if (consume(TokenKind::LParen)) {
             if (!expect(TokenKind::RParen, "')' after '(' in type")) {
                 return std::nullopt;
             }
-            return std::string("()");
+            return TypeExpr::unit();
+        }
+
+        if (consume(TokenKind::LBracket)) {
+            auto elem = parse_type();
+            if (!elem) {
+                return std::nullopt;
+            }
+            if (consume(TokenKind::Semicolon)) {
+                auto n = take_i64("array length");
+                if (!n || *n < 0) {
+                    error(peek(), "array length must be a non-negative integer");
+                    return std::nullopt;
+                }
+                if (!expect(TokenKind::RBracket, "']'")) {
+                    return std::nullopt;
+                }
+                ty.kind = TypeExpr::Kind::Array;
+                ty.array_len = static_cast<std::size_t>(*n);
+                ty.args.push_back(std::move(*elem));
+                return ty;
+            }
+            if (!expect(TokenKind::RBracket, "']'")) {
+                return std::nullopt;
+            }
+            ty.kind = TypeExpr::Kind::List;
+            ty.args.push_back(std::move(*elem));
+            return ty;
+        }
+
+        if (consume(TokenKind::LBrace)) {
+            auto key = parse_type();
+            if (!key) {
+                return std::nullopt;
+            }
+            if (!expect(TokenKind::Colon, "':'")) {
+                return std::nullopt;
+            }
+            auto value = parse_type();
+            if (!value) {
+                return std::nullopt;
+            }
+            if (!expect(TokenKind::RBrace, "'}'")) {
+                return std::nullopt;
+            }
+            ty.kind = TypeExpr::Kind::Dict;
+            ty.args.push_back(std::move(*key));
+            ty.args.push_back(std::move(*value));
+            return ty;
         }
 
         auto name = take_ident("type name");
         if (!name) {
             return std::nullopt;
         }
-        return name;
+        return TypeExpr::named(std::move(*name));
     }
 
     std::optional<Block> parse_block() {
@@ -544,7 +677,7 @@ private:
         let.name = std::move(*name);
 
         if (consume(TokenKind::Colon)) {
-            auto ty = parse_type_name();
+            auto ty = parse_type();
             if (!ty) {
                 return std::nullopt;
             }
@@ -675,9 +808,29 @@ private:
                 }
                 continue;
             }
+            if (at(TokenKind::LBracket)) {
+                expr = parse_index(std::move(*expr));
+                if (!expr) {
+                    return std::nullopt;
+                }
+                continue;
+            }
             break;
         }
         return expr;
+    }
+
+    std::optional<ExprPtr> parse_index(ExprPtr base) {
+        const std::size_t off = peek().offset;
+        advance();
+        auto index = parse_expr();
+        if (!index) {
+            return std::nullopt;
+        }
+        if (!expect(TokenKind::RBracket, "']'")) {
+            return std::nullopt;
+        }
+        return make_expr(off, ExprIndex{std::move(base), std::move(*index)});
     }
 
     std::optional<ExprPtr> parse_field(ExprPtr base) {
@@ -967,8 +1120,63 @@ private:
             return inner;
         }
 
+        if (at(TokenKind::LBracket)) {
+            return parse_list_lit();
+        }
+
+        if (at(TokenKind::LBrace)) {
+            return parse_dict_lit();
+        }
+
         error(peek(), std::string("expected expression, found ") + token_kind_name(peek().kind));
         return std::nullopt;
+    }
+
+    std::optional<ExprPtr> parse_list_lit() {
+        const std::size_t off = peek().offset;
+        advance();
+        ExprListLit lit;
+        while (!at(TokenKind::Eof) && !at(TokenKind::RBracket)) {
+            auto elem = parse_expr();
+            if (!elem) {
+                return std::nullopt;
+            }
+            lit.elems.push_back(std::move(*elem));
+            if (!consume(TokenKind::Comma)) {
+                break;
+            }
+        }
+        if (!expect(TokenKind::RBracket, "']'")) {
+            return std::nullopt;
+        }
+        return make_expr(off, std::move(lit));
+    }
+
+    std::optional<ExprPtr> parse_dict_lit() {
+        const std::size_t off = peek().offset;
+        advance();
+        ExprDictLit lit;
+        while (!at(TokenKind::Eof) && !at(TokenKind::RBrace)) {
+            auto key = parse_expr();
+            if (!key) {
+                return std::nullopt;
+            }
+            if (!expect(TokenKind::Colon, "':'")) {
+                return std::nullopt;
+            }
+            auto value = parse_expr();
+            if (!value) {
+                return std::nullopt;
+            }
+            lit.entries.push_back(ExprDictEntry{std::move(*key), std::move(*value)});
+            if (!consume(TokenKind::Comma)) {
+                break;
+            }
+        }
+        if (!expect(TokenKind::RBrace, "'}'")) {
+            return std::nullopt;
+        }
+        return make_expr(off, std::move(lit));
     }
 };
 

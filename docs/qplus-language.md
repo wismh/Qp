@@ -248,10 +248,33 @@ struct Vec2 {
 
 ### 5.4 `enum`
 
-ADT, як у Rust.
+Звичайний C-подібний перелік іменованих констант. Без полів.
 
 ```qp
-pub enum Shape {
+pub enum Color {
+    Red,
+    Green = 2,
+    Blue,
+}
+
+fn is_red(c: Color) -> bool {
+    match c {
+        Red => true,
+        _ => false,
+    }
+}
+```
+
+У C++: `enum class Color : std::int32_t { Red = 0, Green = 2, Blue = 3 };`. Значення: `Color::Red`.
+
+Якщо потрібні поля — `variant`.
+
+### 5.4.1 `variant`
+
+ADT, як `enum` у Rust.
+
+```qp
+pub variant Shape {
     None,
     Circle { r: f32 },
     Rect { w: f32, h: f32 },
@@ -266,7 +289,7 @@ fn area(s: Shape) -> f32 {
 }
 ```
 
-У C++: tagged union (`index` + `union`) або `std::variant` у рантаймі — на вибір реалізації, ABI зафіксувати один раз.
+У C++: `std::variant` внутрішніх структур.
 
 ### 5.5 Колекції
 
@@ -279,9 +302,9 @@ let map: {string: i32} = {"hp": 10};
 
 | Q+ | C++ runtime |
 |---|---|
-| `[T]` | `qplus::Vec<T>` |
-| `[T; N]` | `std::array<T,N>` / `T[N]` |
-| `{K: V}` | `qplus::Map<K,V>` |
+| `[T]` | `qplus::List<T>` (`std::vector`) |
+| `[T; N]` | `qplus::Array<T, N>` (`std::array`) |
+| `{K: V}` | `qplus::Dict<K,V>` (`std::map`) |
 | `#{T}` | `qplus::Set<T>` |
 | `(A, B)` | `std::tuple` або struct |
 
@@ -319,7 +342,7 @@ pub trait Pool {
 ```qp
 type Meters = f32;
 
-pub enum Result<T, E> {
+pub variant Result<T, E> {
     Ok(T),
     Err(E),
 }
@@ -436,8 +459,11 @@ JIT у debug: panic показує Q+ стек через debug info LLVM.
 | `T?` | `T*` |
 | `new T { }` | `qplus::alloc<T>(...)` |
 | `string` | `qplus::String` |
-| `[T]` | `qplus::Vec<T>` |
-| `enum E { A, B { x } }` | tagged union |
+| `[T]` | `qplus::List<T>` |
+| `[T; N]` | `qplus::Array<T, N>` |
+| `{K: V}` | `qplus::Dict<K, V>` |
+| `enum E { A, B }` | `enum class E` |
+| `variant E { A, B { x } }` | `std::variant` tagged union |
 | `trait T` + `impl` | концепт / шаблон, або vtable для `dyn` |
 | `fn foo<T: Add>` | `template<typename T> requires ...` |
 | `match` | `switch` + accessors union |
@@ -496,7 +522,7 @@ pub fn longest(a: Vec2?, b: Vec2?) -> Vec2? {
 ```
 as async break const continue else enum extern false fn for
 if impl in let loop match mod mut new null pub return struct
-trait true type use while
+trait true type use variant while
 ```
 
 `async` зарезервовано, у v0 не реалізується.
@@ -513,7 +539,7 @@ trait true type use while
 2. **HIR + typeck** для примітивів і `struct`.
 3. **CppBackend**: функції на `i32`/`f32` і value-`struct` → `.cpp`, збірка clang++/MSVC у exe. Перший milestone: `qpc` компілює `fn add(a: i32, b: i32) -> i32` і лінкується з `main.cpp`.
 4. **Рантайм мінімум:** `panic`, `string`, `[T]`.
-5. **`enum` + `match`, `T?` + `new`, GC/ARC.**
+5. **`enum` / `variant` + `match`, `T?` + `new`, GC/ARC.**
 6. **Модулі, `use`, `extern`.**
 7. **`trait` + generics** (мономорфізація).
 8. **LlvmJitBackend** на тому ж HIR: виконати `fn` без C++ compile step.

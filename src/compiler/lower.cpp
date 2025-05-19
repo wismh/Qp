@@ -14,6 +14,22 @@
 namespace qpc {
 namespace {
 
+Type lower_type(const TypeExpr& te) {
+    switch (te.kind) {
+        case TypeExpr::Kind::Unit:
+            return Type::unit();
+        case TypeExpr::Kind::Named:
+            return type_from_name(te.name);
+        case TypeExpr::Kind::List:
+            return Type::list(lower_type(te.args.front()));
+        case TypeExpr::Kind::Array:
+            return Type::array(lower_type(te.args.front()), te.array_len);
+        case TypeExpr::Kind::Dict:
+            return Type::dict(lower_type(te.args.front()), lower_type(te.args.back()));
+    }
+    return Type::error();
+}
+
 std::string strip_underscores(std::string_view raw) {
     std::string out;
     out.reserve(raw.size());
@@ -218,10 +234,7 @@ HirStmtPtr lower_stmt(const Source& src, StmtPtr stmt, DiagnosticEngine& diags) 
                 let.mut = kind.mut;
                 let.name = std::move(kind.name);
                 if (kind.ty) {
-                    let.ty = type_from_name(*kind.ty);
-                    if (let.ty == Type::error()) {
-                        diags.error(src, stmt->offset, "unknown type '" + *kind.ty + "'");
-                    }
+                    let.ty = lower_type(*kind.ty);
                 }
                 let.init = lower_expr(src, std::move(kind.init), diags);
                 out->kind = std::move(let);
@@ -354,6 +367,11 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                     HirExprPtr base = lower_expr(src, std::move(field->base), diags);
                     HirExprPtr value = lower_expr(src, std::move(kind.rhs), diags);
                     out->kind = HirFieldAssign{std::move(base), std::move(name), std::move(value)};
+                } else if (auto* index = std::get_if<ExprIndex>(&kind.lhs->kind)) {
+                    HirExprPtr base = lower_expr(src, std::move(index->base), diags);
+                    HirExprPtr idx = lower_expr(src, std::move(index->index), diags);
+                    HirExprPtr value = lower_expr(src, std::move(kind.rhs), diags);
+                    out->kind = HirIndexAssign{std::move(base), std::move(idx), std::move(value)};
                 } else {
                     out->kind = HirAssign{
                         assign_target(src, *kind.lhs, diags),
@@ -364,6 +382,11 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                 out->kind = HirFieldAccess{
                     lower_expr(src, std::move(kind.base), diags),
                     std::move(kind.name),
+                };
+            } else if constexpr (std::is_same_v<K, ExprIndex>) {
+                out->kind = HirIndex{
+                    lower_expr(src, std::move(kind.base), diags),
+                    lower_expr(src, std::move(kind.index), diags),
                 };
             } else if constexpr (std::is_same_v<K, ExprStructLit>) {
                 if (kind.path.size() >= 2) {
@@ -401,6 +424,21 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                     match.arms.push_back(std::move(hir_arm));
                 }
                 out->kind = std::move(match);
+            } else if constexpr (std::is_same_v<K, ExprListLit>) {
+                HirListLit lit;
+                lit.elems.reserve(kind.elems.size());
+                for (auto& elem : kind.elems) {
+                    lit.elems.push_back(lower_expr(src, std::move(elem), diags));
+                }
+                out->kind = std::move(lit);
+            } else if constexpr (std::is_same_v<K, ExprDictLit>) {
+                HirDictLit lit;
+                lit.entries.reserve(kind.entries.size());
+                for (auto& entry : kind.entries) {
+                    lit.entries.emplace_back(lower_expr(src, std::move(entry.key), diags),
+                                             lower_expr(src, std::move(entry.value), diags));
+                }
+                out->kind = std::move(lit);
             }
         },
         expr->kind);
@@ -408,17 +446,11 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
     return out;
 }
 
-Type parse_return_ty(const Source& src, const FnDecl& fn, DiagnosticEngine& diags) {
+Type parse_return_ty(const FnDecl& fn) {
     if (!fn.return_ty) {
         return Type::unit();
     }
-
-    const Type ty = type_from_name(*fn.return_ty);
-    if (ty == Type::error()) {
-        diags.error(src, fn.offset, "unknown return type '" + *fn.return_ty + "'");
-        return Type::error();
-    }
-    return ty;
+    return lower_type(*fn.return_ty);
 }
 
 HirFn lower_fn(const Source& src, FnDecl& fn, DiagnosticEngine& diags, std::string self_ty = {}) {
@@ -428,17 +460,14 @@ HirFn lower_fn(const Source& src, FnDecl& fn, DiagnosticEngine& diags, std::stri
     hfn.self_ty = std::move(self_ty);
     hfn.name = std::move(fn.name);
     hfn.offset = fn.offset;
-    hfn.return_ty = parse_return_ty(src, fn, diags);
+    hfn.return_ty = parse_return_ty(fn);
     hfn.params.reserve(fn.params.size());
 
     for (auto& p : fn.params) {
         HirParam hp;
         hp.name = std::move(p.name);
         hp.offset = p.offset;
-        hp.ty = type_from_name(p.ty);
-        if (hp.ty == Type::error()) {
-            diags.error(src, p.offset, "unknown type '" + p.ty + "'");
-        }
+        hp.ty = lower_type(p.ty);
         hfn.params.push_back(std::move(hp));
     }
 
@@ -458,10 +487,7 @@ HirStruct lower_struct(const Source& src, StructDecl& st, DiagnosticEngine& diag
         hf.mut = field.mut;
         hf.name = std::move(field.name);
         hf.offset = field.offset;
-        hf.ty = type_from_name(field.ty);
-        if (hf.ty == Type::error()) {
-            diags.error(src, field.offset, "unknown type '" + field.ty + "'");
-        }
+        hf.ty = lower_type(field.ty);
         out.fields.push_back(std::move(hf));
     }
     return out;
@@ -480,8 +506,24 @@ HirImpl lower_impl(const Source& src, ImplDecl& impl, DiagnosticEngine& diags) {
     return out;
 }
 
-HirEnum lower_enum(const Source& src, EnumDecl& en, DiagnosticEngine& diags) {
-    HirEnum out;
+HirCEnum lower_c_enum(EnumDecl& en) {
+    HirCEnum out;
+    out.pub = en.pub;
+    out.name = std::move(en.name);
+    out.offset = en.offset;
+    out.members.reserve(en.members.size());
+    for (auto& member : en.members) {
+        HirCEnumMember m;
+        m.name = std::move(member.name);
+        m.value = member.value.value_or(0);
+        m.offset = member.offset;
+        out.members.push_back(std::move(m));
+    }
+    return out;
+}
+
+HirVariant lower_variant(const Source& src, VariantTypeDecl& en, DiagnosticEngine& diags) {
+    HirVariant out;
     out.pub = en.pub;
     out.name = std::move(en.name);
     out.offset = en.offset;
@@ -498,7 +540,7 @@ HirEnum lower_enum(const Source& src, EnumDecl& en, DiagnosticEngine& diags) {
             hf.mut = field.mut;
             hf.name = std::move(field.name);
             hf.offset = field.offset;
-            hf.ty = type_from_name(field.ty);
+            hf.ty = lower_type(field.ty);
             hv.fields.push_back(std::move(hf));
         }
         out.variants.push_back(std::move(hv));
@@ -512,6 +554,7 @@ HirModule lower(const Source& src, AstFile ast, DiagnosticEngine& diags) {
     HirModule mod;
     mod.structs.reserve(ast.structs.size());
     mod.enums.reserve(ast.enums.size());
+    mod.variants.reserve(ast.variants.size());
     mod.impls.reserve(ast.impls.size());
     mod.functions.reserve(ast.functions.size());
 
@@ -519,7 +562,10 @@ HirModule lower(const Source& src, AstFile ast, DiagnosticEngine& diags) {
         mod.structs.push_back(lower_struct(src, st, diags));
     }
     for (auto& en : ast.enums) {
-        mod.enums.push_back(lower_enum(src, en, diags));
+        mod.enums.push_back(lower_c_enum(en));
+    }
+    for (auto& var : ast.variants) {
+        mod.variants.push_back(lower_variant(src, var, diags));
     }
     for (auto& impl : ast.impls) {
         mod.impls.push_back(lower_impl(src, impl, diags));

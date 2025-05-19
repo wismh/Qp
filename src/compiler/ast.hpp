@@ -2,6 +2,7 @@
 
 #include "compiler/token.hpp"
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -9,6 +10,30 @@
 #include <vector>
 
 namespace qpc {
+
+struct TypeExpr {
+    enum class Kind { Named, Unit, List, Array, Dict };
+
+    Kind kind = Kind::Named;
+    std::string name;
+    std::size_t array_len = 0;
+    std::vector<TypeExpr> args;
+    std::size_t offset = 0;
+
+    static TypeExpr named(std::string n) {
+        TypeExpr t;
+        t.kind = Kind::Named;
+        t.name = std::move(n);
+        return t;
+    }
+
+    static TypeExpr unit() {
+        TypeExpr t;
+        t.kind = Kind::Unit;
+        t.name = "()";
+        return t;
+    }
+};
 
 struct Expr;
 struct Stmt;
@@ -100,10 +125,29 @@ struct ExprMatch {
     std::vector<MatchArm> arms;
 };
 
+struct ExprIndex {
+    ExprPtr base;
+    ExprPtr index;
+};
+
+struct ExprListLit {
+    std::vector<ExprPtr> elems;
+};
+
+struct ExprDictEntry {
+    ExprPtr key;
+    ExprPtr value;
+};
+
+struct ExprDictLit {
+    std::vector<ExprDictEntry> entries;
+};
+
 struct Expr {
     std::size_t offset = 0;
     std::variant<LitInt, LitFloat, LitBool, LitChar, LitString, ExprIdent, ExprPath, ExprBinary,
-                 ExprUnary, ExprCall, ExprAssign, ExprField, ExprStructLit, ExprMatch>
+                 ExprUnary, ExprCall, ExprAssign, ExprField, ExprIndex, ExprStructLit, ExprMatch,
+                 ExprListLit, ExprDictLit>
         kind;
 };
 
@@ -128,7 +172,7 @@ struct Pat {
 struct StmtLet {
     bool mut = false;
     std::string name;
-    std::optional<std::string> ty;
+    std::optional<TypeExpr> ty;
     ExprPtr init;
 };
 
@@ -153,7 +197,7 @@ struct Block {
 
 struct Param {
     std::string name;
-    std::string ty;
+    TypeExpr ty;
     std::size_t offset = 0;
 };
 
@@ -162,7 +206,7 @@ struct FnDecl {
     SelfParam self_param = SelfParam::None;
     std::string name;
     std::vector<Param> params;
-    std::optional<std::string> return_ty;
+    std::optional<TypeExpr> return_ty;
     Block body;
     std::size_t offset = 0;
 };
@@ -171,7 +215,7 @@ struct FieldDecl {
     bool pub = false;
     bool mut = false;
     std::string name;
-    std::string ty;
+    TypeExpr ty;
     std::size_t offset = 0;
 };
 
@@ -189,7 +233,20 @@ struct VariantDecl {
     std::size_t offset = 0;
 };
 
+struct EnumMember {
+    std::string name;
+    std::optional<std::int64_t> value;
+    std::size_t offset = 0;
+};
+
 struct EnumDecl {
+    bool pub = false;
+    std::string name;
+    std::vector<EnumMember> members;
+    std::size_t offset = 0;
+};
+
+struct VariantTypeDecl {
     bool pub = false;
     std::string name;
     std::vector<VariantDecl> variants;
@@ -206,6 +263,7 @@ struct ImplDecl {
 struct AstFile {
     std::vector<StructDecl> structs;
     std::vector<EnumDecl> enums;
+    std::vector<VariantTypeDecl> variants;
     std::vector<ImplDecl> impls;
     std::vector<FnDecl> functions;
 };
