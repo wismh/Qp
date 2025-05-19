@@ -201,8 +201,15 @@ struct Param {
     std::size_t offset = 0;
 };
 
+enum class Abi {
+    Qplus,
+    C,
+};
+
 struct FnDecl {
     bool pub = false;
+    bool is_extern = false;
+    Abi abi = Abi::Qplus;
     SelfParam self_param = SelfParam::None;
     std::string name;
     std::vector<Param> params;
