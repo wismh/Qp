@@ -108,3 +108,14 @@ TEST(Lexer, Brackets) {
     EXPECT_EQ(tokens[0].kind, TokenKind::LBracket);
     EXPECT_EQ(tokens[4].kind, TokenKind::RBracket);
 }
+
+TEST(Lexer, ExternKeyword) {
+    auto src = Source::from_string("t.qp", "extern \"C\" fn");
+    DiagnosticEngine diags;
+    const auto tokens = lex(src, diags);
+    ASSERT_FALSE(diags.has_errors());
+    EXPECT_EQ(tokens[0].kind, TokenKind::KwExtern);
+    EXPECT_EQ(tokens[1].kind, TokenKind::String);
+    EXPECT_EQ(tokens[1].text(src.view()), "\"C\"");
+    EXPECT_EQ(tokens[2].kind, TokenKind::KwFn);
+}

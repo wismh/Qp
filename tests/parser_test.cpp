@@ -124,3 +124,32 @@ TEST(Parser, EnumWithFieldsIsError) {
     EXPECT_TRUE(parsed.diags.has_errors());
     EXPECT_NE(parsed.diags.all().front().message.find("use 'variant'"), std::string::npos);
 }
+
+TEST(Parser, ExternBlocks) {
+    auto parsed = qpc::test::parse_string(R"(
+        extern "C" {
+            fn c_mul(a: i32, b: i32) -> i32;
+        }
+        extern {
+            fn host_add(a: i32, b: i32) -> i32;
+            fn host_greet(name: string) -> string;
+        }
+        fn use_host(a: i32, b: i32) -> i32 { host_add(a, b) }
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.functions.size(), 4u);
+    EXPECT_TRUE(parsed.ast.functions[0].is_extern);
+    EXPECT_EQ(parsed.ast.functions[0].abi, qpc::Abi::C);
+    EXPECT_EQ(parsed.ast.functions[0].name, "c_mul");
+    EXPECT_TRUE(parsed.ast.functions[1].is_extern);
+    EXPECT_EQ(parsed.ast.functions[1].abi, qpc::Abi::Qplus);
+    EXPECT_EQ(parsed.ast.functions[1].name, "host_add");
+    EXPECT_TRUE(parsed.ast.functions[2].is_extern);
+    EXPECT_FALSE(parsed.ast.functions[3].is_extern);
+}
+
+TEST(Parser, ExternBodyIsError) {
+    auto parsed = qpc::test::parse_string("extern { fn foo() -> i32 { 1 } }");
+    EXPECT_TRUE(parsed.diags.has_errors());
+    EXPECT_NE(parsed.diags.all().front().message.find("cannot have a body"), std::string::npos);
+}

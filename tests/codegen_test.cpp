@@ -108,3 +108,28 @@ TEST(Codegen, CollectionsAndCEnum) {
     EXPECT_NE(compiled.result.output.source.find("List<std::int32_t>{"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find(".at("), std::string::npos);
 }
+
+TEST(Codegen, ExternDeclarations) {
+    auto compiled = qpc::test::compile_string(R"(
+        extern "C" {
+            fn c_mul(a: i32, b: i32) -> i32;
+        }
+        extern {
+            fn host_add(a: i32, b: i32) -> i32;
+            fn host_greet(name: string) -> string;
+        }
+        fn via_c(a: i32, b: i32) -> i32 { c_mul(a, b) }
+        fn via_host(a: i32, b: i32) -> i32 { host_add(a, b) }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("extern \"C\""), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("std::int32_t c_mul(std::int32_t a, std::int32_t b);"),
+              std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("std::int32_t host_add(std::int32_t a, std::int32_t b);"),
+              std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("String host_greet(String name);"), std::string::npos);
+    EXPECT_EQ(compiled.result.output.source.find("std::int32_t host_add"), std::string::npos);
+    EXPECT_EQ(compiled.result.output.source.find("std::int32_t c_mul"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("c_mul(a, b)"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("host_add(a, b)"), std::string::npos);
+}
