@@ -96,7 +96,7 @@ private:
     void recover_to_item() {
         while (!at(TokenKind::Eof) && !at(TokenKind::KwFn) && !at(TokenKind::KwPub) &&
                !at(TokenKind::KwStruct) && !at(TokenKind::KwImpl) && !at(TokenKind::KwEnum) &&
-               !at(TokenKind::KwVariant)) {
+               !at(TokenKind::KwVariant) && !at(TokenKind::KwExtern)) {
             advance();
         }
     }
@@ -139,6 +139,10 @@ private:
             }
             file.structs.push_back(std::move(*st));
             return true;
+        }
+
+        if (at(TokenKind::KwExtern)) {
+            return parse_extern_block(file);
         }
 
         if (at(TokenKind::KwFn) || (at(TokenKind::KwPub) && peek_n(1).kind == TokenKind::KwFn)) {
@@ -406,7 +410,39 @@ private:
         return impl;
     }
 
-    std::optional<FnDecl> parse_fn(bool in_impl) {
+    bool parse_extern_block(AstFile& file) {
+        if (!expect(TokenKind::KwExtern, "'extern'")) {
+            return false;
+        }
+
+        Abi abi = Abi::Qplus;
+        if (at(TokenKind::String)) {
+            if (peek_text() != "\"C\"") {
+                error(peek(), "unknown ABI, expected \"C\"");
+                return false;
+            }
+            abi = Abi::C;
+            advance();
+        }
+
+        if (!expect(TokenKind::LBrace, "'{'")) {
+            return false;
+        }
+
+        while (!at(TokenKind::Eof) && !at(TokenKind::RBrace)) {
+            auto fn = parse_fn(false, true);
+            if (!fn) {
+                return false;
+            }
+            fn->is_extern = true;
+            fn->abi = abi;
+            file.functions.push_back(std::move(*fn));
+        }
+
+        return expect(TokenKind::RBrace, "'}'");
+    }
+
+    std::optional<FnDecl> parse_fn(bool in_impl, bool prototype = false) {
         FnDecl fn;
         fn.offset = peek().offset;
         fn.pub = consume(TokenKind::KwPub);
@@ -434,6 +470,17 @@ private:
                 return std::nullopt;
             }
             fn.return_ty = std::move(*ty);
+        }
+
+        if (prototype) {
+            if (at(TokenKind::LBrace)) {
+                error(peek(), "extern function cannot have a body");
+                return std::nullopt;
+            }
+            if (!expect(TokenKind::Semicolon, "';'")) {
+                return std::nullopt;
+            }
+            return fn;
         }
 
         auto body = parse_block();

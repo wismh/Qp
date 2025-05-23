@@ -64,6 +64,9 @@ namespace {
     if (text == "false") {
         return TokenKind::KwFalse;
     }
+    if (text == "extern") {
+        return TokenKind::KwExtern;
+    }
     return TokenKind::Ident;
 }
 

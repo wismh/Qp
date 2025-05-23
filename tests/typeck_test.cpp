@@ -160,3 +160,30 @@ TEST(Typeck, MissingOperatorImplIsError) {
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("does not implement Add"), std::string::npos);
 }
+
+TEST(Typeck, ExternCallOk) {
+    auto compiled = qpc::test::compile_string(R"(
+        extern "C" {
+            fn c_mul(a: i32, b: i32) -> i32;
+        }
+        extern {
+            fn host_add(a: i32, b: i32) -> i32;
+            fn host_greet(name: string) -> string;
+        }
+        fn via_c(a: i32, b: i32) -> i32 { c_mul(a, b) }
+        fn via_host(a: i32, b: i32) -> i32 { host_add(a, b) }
+        fn hello(name: string) -> string { host_greet(name) }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, ExternCRejectsString) {
+    auto compiled = qpc::test::compile_string(R"(
+        extern "C" {
+            fn puts(s: string) -> i32;
+        }
+        fn f() -> i32 { puts("x") }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("extern \"C\""), std::string::npos);
+}

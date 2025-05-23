@@ -199,6 +199,8 @@ struct HirParam {
 
 struct HirFn {
     bool pub = false;
+    bool is_extern = false;
+    bool c_abi = false;
     SelfKind self_kind = SelfKind::None;
     std::string self_ty;
     std::string name;

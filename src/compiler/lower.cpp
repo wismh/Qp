@@ -456,6 +456,8 @@ Type parse_return_ty(const FnDecl& fn) {
 HirFn lower_fn(const Source& src, FnDecl& fn, DiagnosticEngine& diags, std::string self_ty = {}) {
     HirFn hfn;
     hfn.pub = fn.pub;
+    hfn.is_extern = fn.is_extern;
+    hfn.c_abi = fn.abi == Abi::C;
     hfn.self_kind = self_kind_from(fn.self_param);
     hfn.self_ty = std::move(self_ty);
     hfn.name = std::move(fn.name);
@@ -471,7 +473,9 @@ HirFn lower_fn(const Source& src, FnDecl& fn, DiagnosticEngine& diags, std::stri
         hfn.params.push_back(std::move(hp));
     }
 
-    hfn.body = lower_block(src, std::move(fn.body), diags);
+    if (!fn.is_extern) {
+        hfn.body = lower_block(src, std::move(fn.body), diags);
+    }
     return hfn;
 }
 
