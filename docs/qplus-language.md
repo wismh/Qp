@@ -464,6 +464,8 @@ JIT у debug: panic показує Q+ стек через debug info LLVM.
 | `{K: V}` | `qplus::Dict<K, V>` |
 | `enum E { A, B }` | `enum class E` |
 | `variant E { A, B { x } }` | `std::variant` tagged union |
+| `extern { fn f(); }` | declaration in `qplus::`, body in the host |
+| `extern "C" { fn f(); }` | `extern "C"` declaration, body in the host |
 | `trait T` + `impl` | концепт / шаблон, або vtable для `dyn` |
 | `fn foo<T: Add>` | `template<typename T> requires ...` |
 | `match` | `switch` + accessors union |

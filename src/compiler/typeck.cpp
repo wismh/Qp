@@ -100,7 +100,9 @@ public:
         }
 
         for (auto& fn : mod_.functions) {
-            check_fn(fn);
+            if (!fn.is_extern) {
+                check_fn(fn);
+            }
         }
         for (auto& impl : mod_.impls) {
             for (auto& method : impl.methods) {
@@ -296,8 +298,21 @@ private:
                 resolve_type(p.ty, p.offset);
                 sig.params.push_back(p.ty);
             }
+            if (fn.c_abi) {
+                check_c_abi_type(fn.return_ty, fn.offset, fn.name);
+                for (const auto& p : fn.params) {
+                    check_c_abi_type(p.ty, p.offset, fn.name);
+                }
+            }
             sigs_.emplace(fn.name, std::move(sig));
         }
+    }
+
+    void check_c_abi_type(const Type& ty, std::size_t offset, const std::string& fn_name) {
+        if (ty == Type::error() || is_c_abi_type(ty)) {
+            return;
+        }
+        error(offset, "extern \"C\" function '" + fn_name + "' cannot use type '" + type_name(ty) + "'");
     }
 
     void collect_methods() {

@@ -1,0 +1,20 @@
+extern "C" {
+    fn c_mul(a: i32, b: i32) -> i32;
+}
+
+extern {
+    fn host_add(a: i32, b: i32) -> i32;
+    fn host_greet(name: string) -> string;
+}
+
+pub fn via_c(a: i32, b: i32) -> i32 {
+    c_mul(a, b)
+}
+
+pub fn via_host(a: i32, b: i32) -> i32 {
+    host_add(a, b)
+}
+
+pub fn hello(name: string) -> string {
+    host_greet(name)
+}

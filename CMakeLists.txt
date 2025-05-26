@@ -150,3 +150,24 @@ add_executable(collections_host
 target_include_directories(collections_host PRIVATE ${COLLECTIONS_GEN_DIR})
 
 add_test(NAME collections_host COMMAND collections_host)
+
+set(EXTERN_FN_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_extern_fn)
+set(EXTERN_FN_GEN_H ${EXTERN_FN_GEN_DIR}/extern_fn.h)
+set(EXTERN_FN_GEN_CPP ${EXTERN_FN_GEN_DIR}/extern_fn.cpp)
+
+add_custom_command(
+    OUTPUT ${EXTERN_FN_GEN_H} ${EXTERN_FN_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${EXTERN_FN_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/extern_fn.qp -o ${EXTERN_FN_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/extern_fn.qp
+    COMMENT "qpc compile examples/extern_fn.qp"
+    VERBATIM
+)
+
+add_executable(extern_host
+    examples/extern_host/main.cpp
+    ${EXTERN_FN_GEN_CPP}
+)
+target_include_directories(extern_host PRIVATE ${EXTERN_FN_GEN_DIR})
+
+add_test(NAME extern_host COMMAND extern_host)

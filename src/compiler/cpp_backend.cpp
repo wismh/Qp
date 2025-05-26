@@ -485,6 +485,24 @@ std::string emit_header(const HirModule& mod) {
     header << "#include <string>\n";
     header << "#include <variant>\n";
     header << "#include <vector>\n\n";
+
+    bool any_c_abi = false;
+    for (const auto& fn : mod.functions) {
+        if (!fn.c_abi) {
+            continue;
+        }
+        if (!any_c_abi) {
+            header << "extern \"C\" {\n";
+            any_c_abi = true;
+        }
+        header << "    ";
+        emit_free_signature(header, fn);
+        header << ";\n";
+    }
+    if (any_c_abi) {
+        header << "}\n\n";
+    }
+
     header << "namespace qplus {\n\n";
     header << "using String = std::string;\n";
     header << "template <typename T>\nusing List = std::vector<T>;\n";
@@ -528,6 +546,9 @@ std::string emit_header(const HirModule& mod) {
     }
 
     for (const auto& fn : mod.functions) {
+        if (fn.c_abi) {
+            continue;
+        }
         emit_free_signature(header, fn);
         header << ";\n";
     }
@@ -559,6 +580,9 @@ std::string emit_source(const Source& src, const HirModule& mod, std::string_vie
     }
 
     for (const auto& fn : mod.functions) {
+        if (fn.is_extern) {
+            continue;
+        }
         const auto loc = src.location(fn.offset);
         source << "#line " << loc.line << " \"" << qp_path << "\"\n";
         emit_free_signature(source, fn);
