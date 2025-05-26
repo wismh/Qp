@@ -35,9 +35,16 @@ struct TypeExpr {
     }
 };
 
+struct TypeParam {
+    std::string name;
+    std::optional<std::string> bound;
+    std::size_t offset = 0;
+};
+
 struct Expr;
 struct Stmt;
 struct Pat;
+struct Block;
 using ExprPtr = std::unique_ptr<Expr>;
 using StmtPtr = std::unique_ptr<Stmt>;
 using PatPtr = std::unique_ptr<Pat>;
@@ -91,6 +98,7 @@ struct ExprUnary {
 
 struct ExprCall {
     ExprPtr callee;
+    std::vector<TypeExpr> type_args;
     std::vector<ExprPtr> args;
 };
 
@@ -143,11 +151,22 @@ struct ExprDictLit {
     std::vector<ExprDictEntry> entries;
 };
 
+struct ExprIf {
+    ExprPtr cond;
+    std::unique_ptr<Block> then_block;
+    ExprPtr else_expr;
+};
+
+struct ExprRange {
+    ExprPtr start;
+    ExprPtr end;
+};
+
 struct Expr {
     std::size_t offset = 0;
     std::variant<LitInt, LitFloat, LitBool, LitChar, LitString, ExprIdent, ExprPath, ExprBinary,
                  ExprUnary, ExprCall, ExprAssign, ExprField, ExprIndex, ExprStructLit, ExprMatch,
-                 ExprListLit, ExprDictLit>
+                 ExprListLit, ExprDictLit, ExprIf, ExprRange>
         kind;
 };
 
@@ -184,9 +203,24 @@ struct StmtExpr {
     ExprPtr expr;
 };
 
+struct StmtWhile {
+    ExprPtr cond;
+    std::unique_ptr<Block> body;
+};
+
+struct StmtFor {
+    std::string name;
+    ExprPtr iter;
+    std::unique_ptr<Block> body;
+};
+
+struct StmtBreak {};
+
+struct StmtContinue {};
+
 struct Stmt {
     std::size_t offset = 0;
-    std::variant<StmtLet, StmtReturn, StmtExpr> kind;
+    std::variant<StmtLet, StmtReturn, StmtExpr, StmtWhile, StmtFor, StmtBreak, StmtContinue> kind;
 };
 
 struct Block {
@@ -212,6 +246,7 @@ struct FnDecl {
     Abi abi = Abi::Qplus;
     SelfParam self_param = SelfParam::None;
     std::string name;
+    std::vector<TypeParam> type_params;
     std::vector<Param> params;
     std::optional<TypeExpr> return_ty;
     Block body;
@@ -267,7 +302,50 @@ struct ImplDecl {
     std::size_t offset = 0;
 };
 
+struct TraitMethod {
+    SelfParam self_param = SelfParam::None;
+    std::string name;
+    std::vector<Param> params;
+    std::optional<TypeExpr> return_ty;
+    std::size_t offset = 0;
+};
+
+struct TraitDecl {
+    bool pub = false;
+    std::string name;
+    std::vector<TraitMethod> methods;
+    std::size_t offset = 0;
+};
+
+struct StaticDecl {
+    bool pub = false;
+    bool mut = false;
+    std::string name;
+    std::optional<TypeExpr> ty;
+    ExprPtr init;
+    std::size_t offset = 0;
+};
+
+struct UseDecl {
+    std::vector<std::string> path;
+    bool glob = false;
+    std::size_t offset = 0;
+};
+
+struct AstFile;
+
+struct ModDecl {
+    bool pub = false;
+    std::string name;
+    std::unique_ptr<AstFile> body;
+    std::size_t offset = 0;
+};
+
 struct AstFile {
+    std::vector<UseDecl> uses;
+    std::vector<ModDecl> mods;
+    std::vector<StaticDecl> statics;
+    std::vector<TraitDecl> traits;
     std::vector<StructDecl> structs;
     std::vector<EnumDecl> enums;
     std::vector<VariantTypeDecl> variants;
