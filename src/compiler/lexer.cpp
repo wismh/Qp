@@ -67,6 +67,33 @@ namespace {
     if (text == "extern") {
         return TokenKind::KwExtern;
     }
+    if (text == "if") {
+        return TokenKind::KwIf;
+    }
+    if (text == "else") {
+        return TokenKind::KwElse;
+    }
+    if (text == "while") {
+        return TokenKind::KwWhile;
+    }
+    if (text == "in") {
+        return TokenKind::KwIn;
+    }
+    if (text == "break") {
+        return TokenKind::KwBreak;
+    }
+    if (text == "continue") {
+        return TokenKind::KwContinue;
+    }
+    if (text == "mod") {
+        return TokenKind::KwMod;
+    }
+    if (text == "use") {
+        return TokenKind::KwUse;
+    }
+    if (text == "trait") {
+        return TokenKind::KwTrait;
+    }
     return TokenKind::Ident;
 }
 
@@ -86,6 +113,15 @@ namespace {
             return TokenKind::RBrace;
         case '.':
             return TokenKind::Dot;
+        case '<':
+            return TokenKind::Lt;
+        case '>':
+            return TokenKind::Gt;
+        case '!':
+            return TokenKind::Bang;
+        case '&':
+        case '|':
+            return TokenKind::Eof;
         case ':':
             return TokenKind::Colon;
         case ',':
@@ -263,6 +299,41 @@ struct Lexer {
         }
         if (ahead() == ':' && ahead(1) == ':') {
             push(TokenKind::ColonColon, i, i + 2);
+            i += 2;
+            return;
+        }
+        if (ahead() == '=' && ahead(1) == '=') {
+            push(TokenKind::EqEq, i, i + 2);
+            i += 2;
+            return;
+        }
+        if (ahead() == '!' && ahead(1) == '=') {
+            push(TokenKind::BangEq, i, i + 2);
+            i += 2;
+            return;
+        }
+        if (ahead() == '<' && ahead(1) == '=') {
+            push(TokenKind::Le, i, i + 2);
+            i += 2;
+            return;
+        }
+        if (ahead() == '>' && ahead(1) == '=') {
+            push(TokenKind::Ge, i, i + 2);
+            i += 2;
+            return;
+        }
+        if (ahead() == '&' && ahead(1) == '&') {
+            push(TokenKind::AmpAmp, i, i + 2);
+            i += 2;
+            return;
+        }
+        if (ahead() == '|' && ahead(1) == '|') {
+            push(TokenKind::PipePipe, i, i + 2);
+            i += 2;
+            return;
+        }
+        if (ahead() == '.' && ahead(1) == '.') {
+            push(TokenKind::DotDot, i, i + 2);
             i += 2;
             return;
         }
