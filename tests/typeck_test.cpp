@@ -187,3 +187,75 @@ TEST(Typeck, ExternCRejectsString) {
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("extern \"C\""), std::string::npos);
 }
+
+TEST(Typeck, IfWhileForAndCompare) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn clamp(x: i32, lo: i32, hi: i32) -> i32 {
+            if x < lo { lo } else if x > hi { hi } else { x }
+        }
+        fn sum_n(n: i32) -> i32 {
+            let mut s = 0;
+            let mut i = 0;
+            while i < n {
+                s = s + i;
+                i = i + 1;
+            }
+            s
+        }
+        fn sum_range() -> i32 {
+            let mut s = 0;
+            for i in 0..4 {
+                s = s + i;
+            }
+            s
+        }
+        fn flags(a: i32, b: bool) -> bool {
+            a == 1 && !b || a != 2
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, ModUseGenericsAndAssociated) {
+    auto compiled = qpc::test::compile_string(R"(
+        let mut hits = 0;
+        mod math {
+            pub fn min(a: i32, b: i32) -> i32 { if a < b { a } else { b } }
+            pub fn id<T>(x: T) -> T { x }
+        }
+        use math::*;
+        trait Component {}
+        struct Transform { x: i32 }
+        struct Sprite { id: i32 }
+        struct World {}
+        impl Component for Transform {}
+        impl Component for Sprite {}
+        impl World {
+            fn for_each<T: Component, U: Component>() -> i32 { 2 }
+        }
+        fn run() -> i32 {
+            hits = hits + 1;
+            min(id<i32>(1), World.for_each<Transform, Sprite>())
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, TraitBoundIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        trait Component {}
+        struct World {}
+        impl World {
+            fn for_each<T: Component>() -> i32 { 1 }
+        }
+        fn run() -> i32 { World.for_each<i32>() }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("does not implement"), std::string::npos);
+}
+
+TEST(Typeck, BreakOutsideLoopIsError) {
+    auto compiled = qpc::test::compile_string("fn f() { break; }");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("break/continue"), std::string::npos);
+}

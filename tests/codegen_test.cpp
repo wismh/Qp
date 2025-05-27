@@ -133,3 +133,44 @@ TEST(Codegen, ExternDeclarations) {
     EXPECT_NE(compiled.result.output.source.find("c_mul(a, b)"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("host_add(a, b)"), std::string::npos);
 }
+
+TEST(Codegen, ControlModGenericsAndStatics) {
+    auto compiled = qpc::test::compile_string(R"(
+        let mut hits = 0;
+        mod math {
+            pub fn min(a: i32, b: i32) -> i32 { if a < b { a } else { b } }
+            pub fn id<T>(x: T) -> T { x }
+        }
+        use math::*;
+        trait Component {}
+        struct Transform { x: i32 }
+        struct Sprite { id: i32 }
+        struct World {}
+        impl Component for Transform {}
+        impl Component for Sprite {}
+        impl World {
+            fn for_each<T: Component, U: Component>() -> i32 { 2 }
+        }
+        fn sum_range() -> i32 {
+            let mut s = 0;
+            for i in 0..3 {
+                s = s + i;
+            }
+            s
+        }
+        fn run() -> i32 {
+            hits = hits + 1;
+            min(id<i32>(1), World.for_each<Transform, Sprite>())
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("namespace math"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("using namespace math;"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("inline std::int32_t hits"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("template <typename T>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("template <typename T, typename U>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("static std::int32_t for_each()"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("for (std::int32_t i = "), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("World::for_each<Transform, Sprite>()"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("id<std::int32_t>(1)"), std::string::npos);
+}
