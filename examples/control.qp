@@ -1,0 +1,89 @@
+let mut hits = 0;
+
+mod math {
+    pub fn min(a: i32, b: i32) -> i32 {
+        if a < b { a } else { b }
+    }
+
+    pub fn id<T>(x: T) -> T {
+        x
+    }
+}
+
+use math::*;
+
+trait Component {}
+
+struct Transform {
+    x: i32,
+}
+
+struct Sprite {
+    id: i32,
+}
+
+struct World {}
+
+impl Component for Transform {}
+impl Component for Sprite {}
+
+impl World {
+    fn for_each<T: Component, U: Component>() -> i32 {
+        2
+    }
+}
+
+extern {
+    fn query2<A: Component, B: Component>(n: i32) -> i32;
+}
+
+pub fn clamp(x: i32, lo: i32, hi: i32) -> i32 {
+    if x < lo { lo } else if x > hi { hi } else { x }
+}
+
+pub fn sum_n(n: i32) -> i32 {
+    let mut s = 0;
+    let mut i = 0;
+    while i < n {
+        s = s + i;
+        i = i + 1;
+    }
+    s
+}
+
+pub fn sum_range() -> i32 {
+    let mut s = 0;
+    for i in 0..5 {
+        s = s + i;
+    }
+    s
+}
+
+pub fn sum_list(xs: [i32]) -> i32 {
+    let mut s = 0;
+    for x in xs {
+        s = s + x;
+    }
+    s
+}
+
+pub fn min2(a: i32, b: i32) -> i32 {
+    min(a, b)
+}
+
+pub fn same(x: i32) -> i32 {
+    id<i32>(x)
+}
+
+pub fn bump() -> i32 {
+    hits = hits + 1;
+    hits
+}
+
+pub fn world_count() -> i32 {
+    World.for_each<Transform, Sprite>()
+}
+
+pub fn not_flag(b: bool) -> bool {
+    !b && true || false
+}
