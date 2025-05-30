@@ -15,16 +15,22 @@ namespace {
 
 const HirModule* g_mod = nullptr;
 
-bool is_c_enum_name(const std::string& name) {
-    if (!g_mod) {
-        return false;
-    }
-    for (const auto& en : g_mod->enums) {
+bool is_c_enum_in(const HirModule& mod, const std::string& name) {
+    for (const auto& en : mod.enums) {
         if (en.name == name) {
             return true;
         }
     }
+    for (const auto& child : mod.mods) {
+        if (is_c_enum_in(child, name)) {
+            return true;
+        }
+    }
     return false;
+}
+
+bool is_c_enum_name(const std::string& name) {
+    return g_mod && is_c_enum_in(*g_mod, name);
 }
 
 std::string line_path(std::string_view path) {
@@ -48,6 +54,22 @@ const char* binop_spelling(BinOp op) {
             return "/";
         case BinOp::Mod:
             return "%";
+        case BinOp::Eq:
+            return "==";
+        case BinOp::Ne:
+            return "!=";
+        case BinOp::Lt:
+            return "<";
+        case BinOp::Le:
+            return "<=";
+        case BinOp::Gt:
+            return ">";
+        case BinOp::Ge:
+            return ">=";
+        case BinOp::And:
+            return "&&";
+        case BinOp::Or:
+            return "||";
     }
     return "+";
 }
@@ -103,6 +125,62 @@ std::string cpp_escape(std::string_view text) {
 }
 
 void emit_expr(std::ostringstream& out, const HirExpr& expr);
+void emit_stmt(std::ostringstream& out, const HirStmt& stmt);
+
+bool is_generic(const HirFn& fn) { return !fn.type_params.empty(); }
+
+std::string join_path(const std::vector<std::string>& path) {
+    std::string out;
+    for (std::size_t i = 0; i < path.size(); ++i) {
+        if (i != 0) {
+            out += "::";
+        }
+        out += path[i];
+    }
+    return out;
+}
+
+void emit_type_args(std::ostringstream& out, const std::vector<Type>& args) {
+    if (args.empty()) {
+        return;
+    }
+    out << '<';
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (i != 0) {
+            out << ", ";
+        }
+        out << cpp_type_name(args[i]);
+    }
+    out << '>';
+}
+
+void emit_template_head(std::ostringstream& out, const std::vector<HirTypeParam>& tps,
+                        std::string_view indent = "") {
+    if (tps.empty()) {
+        return;
+    }
+    out << indent << "template <";
+    for (std::size_t i = 0; i < tps.size(); ++i) {
+        if (i != 0) {
+            out << ", ";
+        }
+        out << "typename " << tps[i].name;
+    }
+    out << ">\n";
+}
+
+void emit_uses(std::ostringstream& out, const HirModule& mod) {
+    for (const auto& u : mod.uses) {
+        if (u.glob) {
+            out << "using namespace " << join_path(u.path) << ";\n";
+        } else if (!u.path.empty()) {
+            out << "using " << join_path(u.path) << ";\n";
+        }
+    }
+    if (!mod.uses.empty()) {
+        out << '\n';
+    }
+}
 
 void emit_comma_list(std::ostringstream& out, const std::vector<HirExprPtr>& args) {
     for (std::size_t i = 0; i < args.size(); ++i) {
@@ -155,6 +233,35 @@ void emit_int_lit(std::ostringstream& out, const HirLitInt& lit) {
     }
 }
 
+void emit_if(std::ostringstream& out, const HirIf& iff, const Type& ty) {
+    const bool valued =
+        ty.kind != TypeKind::Unit && ty.kind != TypeKind::Error && ty.kind != TypeKind::Unknown;
+    out << "([&]() {\n";
+    out << "        if (";
+    emit_expr(out, *iff.cond);
+    out << ") {\n";
+    for (const auto& stmt : iff.then_stmts) {
+        emit_stmt(out, *stmt);
+    }
+    if (iff.then_tail) {
+        out << (valued ? "            return " : "            ");
+        emit_expr(out, *iff.then_tail);
+        out << ";\n";
+    }
+    out << "        }";
+    if (iff.else_expr) {
+        out << " else {\n";
+        out << (valued ? "            return " : "            ");
+        emit_expr(out, *iff.else_expr);
+        out << ";\n        }";
+    }
+    out << "\n";
+    if (valued) {
+        out << "        std::abort();\n";
+    }
+    out << "    }())";
+}
+
 void emit_expr(std::ostringstream& out, const HirExpr& expr) {
     std::visit(
         [&](auto&& kind) {
@@ -186,11 +293,13 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 emit_expr(out, *kind.rhs);
                 out << ')';
             } else if constexpr (std::is_same_v<K, HirUnary>) {
-                out << "(-";
+                out << '(' << (kind.op == UnOp::Not ? '!' : '-');
                 emit_expr(out, *kind.operand);
                 out << ')';
             } else if constexpr (std::is_same_v<K, HirCall>) {
-                out << kind.callee << '(';
+                out << kind.callee;
+                emit_type_args(out, kind.type_args);
+                out << '(';
                 emit_comma_list(out, kind.args);
                 out << ')';
             } else if constexpr (std::is_same_v<K, HirAssign>) {
@@ -247,7 +356,9 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 }
             } else if constexpr (std::is_same_v<K, HirMethodCall>) {
                 emit_receiver(out, *kind.receiver);
-                out << '.' << kind.method << '(';
+                out << (kind.associated ? "::" : ".") << kind.method;
+                emit_type_args(out, kind.type_args);
+                out << '(';
                 emit_comma_list(out, kind.args);
                 out << ')';
             } else if constexpr (std::is_same_v<K, HirFieldAssign>) {
@@ -347,6 +458,10 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                     out << "        }\n";
                 }
                 out << "        std::abort();\n    }())";
+            } else if constexpr (std::is_same_v<K, HirIf>) {
+                emit_if(out, kind, expr.ty);
+            } else if constexpr (std::is_same_v<K, HirRange>) {
+                emit_expr(out, *kind.start);
             }
         },
         expr.kind);
@@ -371,6 +486,44 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
                 out << "    ";
                 emit_expr(out, *kind.expr);
                 out << ";\n";
+            } else if constexpr (std::is_same_v<K, HirWhile>) {
+                out << "    while (";
+                emit_expr(out, *kind.cond);
+                out << ") {\n";
+                for (const auto& inner : kind.stmts) {
+                    emit_stmt(out, *inner);
+                }
+                if (kind.tail) {
+                    out << "    ";
+                    emit_expr(out, *kind.tail);
+                    out << ";\n";
+                }
+                out << "    }\n";
+            } else if constexpr (std::is_same_v<K, HirFor>) {
+                if (const auto* range = std::get_if<HirRange>(&kind.iter->kind)) {
+                    out << "    for (" << cpp_type_name(kind.iter->ty) << ' ' << kind.name << " = ";
+                    emit_expr(out, *range->start);
+                    out << "; " << kind.name << " < ";
+                    emit_expr(out, *range->end);
+                    out << "; ++" << kind.name << ") {\n";
+                } else {
+                    out << "    for (const auto& " << kind.name << " : ";
+                    emit_expr(out, *kind.iter);
+                    out << ") {\n";
+                }
+                for (const auto& inner : kind.stmts) {
+                    emit_stmt(out, *inner);
+                }
+                if (kind.tail) {
+                    out << "    ";
+                    emit_expr(out, *kind.tail);
+                    out << ";\n";
+                }
+                out << "    }\n";
+            } else if constexpr (std::is_same_v<K, HirBreak>) {
+                out << "    break;\n";
+            } else if constexpr (std::is_same_v<K, HirContinue>) {
+                out << "    continue;\n";
             }
         },
         stmt.kind);
@@ -389,9 +542,16 @@ void emit_fn_body(std::ostringstream& out, const HirFn& fn, bool operator_self =
         emit_stmt(out, *stmt);
     }
     if (fn.body.tail) {
-        out << "    return ";
-        emit_expr(out, *fn.body.tail);
-        out << ";\n";
+        const bool unit_tail = fn.return_ty == Type::unit() || fn.body.tail->ty == Type::unit();
+        if (unit_tail) {
+            out << "    ";
+            emit_expr(out, *fn.body.tail);
+            out << ";\n";
+        } else {
+            out << "    return ";
+            emit_expr(out, *fn.body.tail);
+            out << ";\n";
+        }
     }
     out << "}\n\n";
 }
@@ -403,6 +563,9 @@ void emit_free_signature(std::ostringstream& out, const HirFn& fn) {
 }
 
 void emit_method_signature(std::ostringstream& out, const HirFn& fn, bool qualified) {
+    if (!qualified && fn.self_kind == SelfKind::None) {
+        out << "static ";
+    }
     out << cpp_type_name(fn.return_ty) << ' ';
     if (qualified) {
         out << fn.self_ty << "::";
@@ -424,8 +587,8 @@ void emit_operator_signature(std::ostringstream& out, const HirImpl& impl, const
     out << ')';
 }
 
-std::unordered_map<std::string, std::vector<const HirFn*>> methods_by_type(const HirModule& mod) {
-    std::unordered_map<std::string, std::vector<const HirFn*>> out;
+void collect_methods_by_type(const HirModule& mod,
+                             std::unordered_map<std::string, std::vector<const HirFn*>>& out) {
     for (const auto& impl : mod.impls) {
         if (impl.trait_name) {
             continue;
@@ -434,6 +597,14 @@ std::unordered_map<std::string, std::vector<const HirFn*>> methods_by_type(const
             out[impl.type_name].push_back(&method);
         }
     }
+    for (const auto& child : mod.mods) {
+        collect_methods_by_type(child, out);
+    }
+}
+
+std::unordered_map<std::string, std::vector<const HirFn*>> methods_by_type(const HirModule& mod) {
+    std::unordered_map<std::string, std::vector<const HirFn*>> out;
+    collect_methods_by_type(mod, out);
     return out;
 }
 
@@ -474,6 +645,129 @@ void emit_variant(std::ostringstream& header, const HirVariant& en) {
     header << "};\n\n";
 }
 
+void emit_structs(std::ostringstream& header, const HirModule& mod,
+                  const std::unordered_map<std::string, std::vector<const HirFn*>>& methods) {
+    for (const auto& st : mod.structs) {
+        header << "struct " << st.name << " {\n";
+        for (const auto& field : st.fields) {
+            header << "    " << cpp_type_name(field.ty) << ' ' << field.name << ";\n";
+        }
+        auto it = methods.find(st.name);
+        if (it != methods.end()) {
+            if (!st.fields.empty() && !it->second.empty()) {
+                header << '\n';
+            }
+            for (const HirFn* method : it->second) {
+                emit_template_head(header, method->type_params, "    ");
+                header << "    ";
+                emit_method_signature(header, *method, false);
+                if (is_generic(*method) && !method->is_extern) {
+                    emit_fn_body(header, *method);
+                } else {
+                    header << ";\n";
+                }
+            }
+        }
+        header << "};\n\n";
+    }
+}
+
+void emit_module_header(std::ostringstream& header, const HirModule& mod,
+                        const std::unordered_map<std::string, std::vector<const HirFn*>>& methods) {
+    for (const auto& en : mod.enums) {
+        emit_c_enum(header, en);
+    }
+    for (const auto& var : mod.variants) {
+        emit_variant(header, var);
+    }
+    emit_structs(header, mod, methods);
+
+    for (const auto& child : mod.mods) {
+        header << "namespace " << child.name << " {\n\n";
+        emit_module_header(header, child, methods);
+        header << "}  // namespace " << child.name << "\n\n";
+    }
+
+    emit_uses(header, mod);
+
+    for (const auto& st : mod.statics) {
+        header << "inline ";
+        if (!st.mut) {
+            header << "const ";
+        }
+        header << cpp_type_name(st.ty) << ' ' << st.name << " = ";
+        emit_expr(header, *st.init);
+        header << ";\n";
+    }
+    if (!mod.statics.empty()) {
+        header << '\n';
+    }
+
+    for (const auto& impl : mod.impls) {
+        if (!impl.trait_name) {
+            continue;
+        }
+        for (const auto& method : impl.methods) {
+            emit_operator_signature(header, impl, method);
+            header << ";\n";
+        }
+    }
+
+    for (const auto& fn : mod.functions) {
+        if (fn.c_abi) {
+            continue;
+        }
+        emit_template_head(header, fn.type_params);
+        emit_free_signature(header, fn);
+        if (is_generic(fn) && !fn.is_extern) {
+            emit_fn_body(header, fn);
+        } else {
+            header << ";\n";
+        }
+    }
+    if (!mod.functions.empty()) {
+        header << '\n';
+    }
+}
+
+void emit_module_source(std::ostringstream& source, const Source& src, const HirModule& mod,
+                        const std::string& qp_path) {
+    for (const auto& child : mod.mods) {
+        source << "namespace " << child.name << " {\n\n";
+        emit_module_source(source, src, child, qp_path);
+        source << "}  // namespace " << child.name << "\n\n";
+    }
+
+    emit_uses(source, mod);
+
+    for (const auto& impl : mod.impls) {
+        for (const auto& method : impl.methods) {
+            if (is_generic(method)) {
+                continue;
+            }
+            const auto loc = src.location(method.offset);
+            source << "#line " << loc.line << " \"" << qp_path << "\"\n";
+            if (impl.trait_name) {
+                emit_operator_signature(source, impl, method);
+                emit_fn_body(source, method, true);
+            } else {
+                emit_method_signature(source, method, true);
+                emit_fn_body(source, method);
+            }
+        }
+    }
+
+    for (const auto& fn : mod.functions) {
+        if (fn.is_extern || is_generic(fn)) {
+            continue;
+        }
+        const auto loc = src.location(fn.offset);
+        source << "#line " << loc.line << " \"" << qp_path << "\"\n";
+        emit_free_signature(source, fn);
+        emit_fn_body(source, fn);
+    }
+}
+
 std::string emit_header(const HirModule& mod) {
     const auto methods = methods_by_type(mod);
     std::ostringstream header;
@@ -508,53 +802,7 @@ std::string emit_header(const HirModule& mod) {
     header << "template <typename T>\nusing List = std::vector<T>;\n";
     header << "template <typename T, std::size_t N>\nusing Array = std::array<T, N>;\n";
     header << "template <typename K, typename V>\nusing Dict = std::map<K, V>;\n\n";
-
-    for (const auto& en : mod.enums) {
-        emit_c_enum(header, en);
-    }
-    for (const auto& var : mod.variants) {
-        emit_variant(header, var);
-    }
-
-    for (const auto& st : mod.structs) {
-        header << "struct " << st.name << " {\n";
-        for (const auto& field : st.fields) {
-            header << "    " << cpp_type_name(field.ty) << ' ' << field.name << ";\n";
-        }
-        auto it = methods.find(st.name);
-        if (it != methods.end()) {
-            if (!st.fields.empty() && !it->second.empty()) {
-                header << '\n';
-            }
-            for (const HirFn* method : it->second) {
-                header << "    ";
-                emit_method_signature(header, *method, false);
-                header << ";\n";
-            }
-        }
-        header << "};\n\n";
-    }
-
-    for (const auto& impl : mod.impls) {
-        if (!impl.trait_name) {
-            continue;
-        }
-        for (const auto& method : impl.methods) {
-            emit_operator_signature(header, impl, method);
-            header << ";\n";
-        }
-    }
-
-    for (const auto& fn : mod.functions) {
-        if (fn.c_abi) {
-            continue;
-        }
-        emit_free_signature(header, fn);
-        header << ";\n";
-    }
-    if (!mod.functions.empty()) {
-        header << '\n';
-    }
+    emit_module_header(header, mod, methods);
     header << "}  // namespace qplus\n";
     return header.str();
 }
@@ -564,31 +812,7 @@ std::string emit_source(const Source& src, const HirModule& mod, std::string_vie
     std::ostringstream source;
     source << "#include \"" << header_name << "\"\n\n";
     source << "namespace qplus {\n\n";
-
-    for (const auto& impl : mod.impls) {
-        for (const auto& method : impl.methods) {
-            const auto loc = src.location(method.offset);
-            source << "#line " << loc.line << " \"" << qp_path << "\"\n";
-            if (impl.trait_name) {
-                emit_operator_signature(source, impl, method);
-                emit_fn_body(source, method, true);
-            } else {
-                emit_method_signature(source, method, true);
-                emit_fn_body(source, method);
-            }
-        }
-    }
-
-    for (const auto& fn : mod.functions) {
-        if (fn.is_extern) {
-            continue;
-        }
-        const auto loc = src.location(fn.offset);
-        source << "#line " << loc.line << " \"" << qp_path << "\"\n";
-        emit_free_signature(source, fn);
-        emit_fn_body(source, fn);
-    }
-
+    emit_module_source(source, src, mod, qp_path);
     source << "}  // namespace qplus\n";
     return source.str();
 }

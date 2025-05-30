@@ -153,3 +153,42 @@ TEST(Parser, ExternBodyIsError) {
     EXPECT_TRUE(parsed.diags.has_errors());
     EXPECT_NE(parsed.diags.all().front().message.find("cannot have a body"), std::string::npos);
 }
+
+TEST(Parser, ControlModUseAndGenerics) {
+    auto parsed = qpc::test::parse_string(R"(
+        let mut hits = 0;
+        mod math {
+            pub fn min(a: i32, b: i32) -> i32 { if a < b { a } else { b } }
+        }
+        use math::min;
+        trait Component {}
+        fn sum(xs: [i32]) -> i32 {
+            let mut s = 0;
+            for i in 0..3 {
+                s = s + i;
+            }
+            while s < 10 {
+                s = s + 1;
+            }
+            if s > 0 { s } else { 0 }
+        }
+        impl World {
+            fn for_each<T: Component, U: Component>() -> i32 { 1 }
+        }
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.statics.size(), 1u);
+    EXPECT_TRUE(parsed.ast.statics[0].mut);
+    EXPECT_EQ(parsed.ast.statics[0].name, "hits");
+    ASSERT_EQ(parsed.ast.mods.size(), 1u);
+    EXPECT_EQ(parsed.ast.mods[0].name, "math");
+    ASSERT_EQ(parsed.ast.uses.size(), 1u);
+    EXPECT_EQ(parsed.ast.uses[0].path.back(), "min");
+    ASSERT_EQ(parsed.ast.traits.size(), 1u);
+    EXPECT_EQ(parsed.ast.traits[0].name, "Component");
+    ASSERT_EQ(parsed.ast.impls.size(), 1u);
+    ASSERT_EQ(parsed.ast.impls[0].methods.size(), 1u);
+    ASSERT_EQ(parsed.ast.impls[0].methods[0].type_params.size(), 2u);
+    EXPECT_EQ(parsed.ast.impls[0].methods[0].type_params[0].name, "T");
+    EXPECT_EQ(*parsed.ast.impls[0].methods[0].type_params[0].bound, "Component");
+}

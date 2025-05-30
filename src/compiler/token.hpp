@@ -28,6 +28,15 @@ enum class TokenKind {
     KwTrue,
     KwFalse,
     KwExtern,
+    KwIf,
+    KwElse,
+    KwWhile,
+    KwIn,
+    KwBreak,
+    KwContinue,
+    KwMod,
+    KwUse,
+    KwTrait,
     LParen,
     RParen,
     LBracket,
@@ -47,6 +56,16 @@ enum class TokenKind {
     Star,
     Slash,
     Percent,
+    EqEq,
+    BangEq,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    AmpAmp,
+    PipePipe,
+    Bang,
+    DotDot,
 };
 
 struct Token {
@@ -70,6 +89,14 @@ inline bool is_binop(TokenKind kind) {
         case TokenKind::Slash:
         case TokenKind::Percent:
         case TokenKind::Equal:
+        case TokenKind::EqEq:
+        case TokenKind::BangEq:
+        case TokenKind::Lt:
+        case TokenKind::Le:
+        case TokenKind::Gt:
+        case TokenKind::Ge:
+        case TokenKind::AmpAmp:
+        case TokenKind::PipePipe:
             return true;
         default:
             return false;
@@ -120,6 +147,24 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'false'";
         case TokenKind::KwExtern:
             return "'extern'";
+        case TokenKind::KwIf:
+            return "'if'";
+        case TokenKind::KwElse:
+            return "'else'";
+        case TokenKind::KwWhile:
+            return "'while'";
+        case TokenKind::KwIn:
+            return "'in'";
+        case TokenKind::KwBreak:
+            return "'break'";
+        case TokenKind::KwContinue:
+            return "'continue'";
+        case TokenKind::KwMod:
+            return "'mod'";
+        case TokenKind::KwUse:
+            return "'use'";
+        case TokenKind::KwTrait:
+            return "'trait'";
         case TokenKind::LParen:
             return "'('";
         case TokenKind::RParen:
@@ -158,6 +203,26 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'/'";
         case TokenKind::Percent:
             return "'%'";
+        case TokenKind::EqEq:
+            return "'=='";
+        case TokenKind::BangEq:
+            return "'!='";
+        case TokenKind::Lt:
+            return "'<'";
+        case TokenKind::Le:
+            return "'<='";
+        case TokenKind::Gt:
+            return "'>'";
+        case TokenKind::Ge:
+            return "'>='";
+        case TokenKind::AmpAmp:
+            return "'&&'";
+        case TokenKind::PipePipe:
+            return "'||'";
+        case TokenKind::Bang:
+            return "'!'";
+        case TokenKind::DotDot:
+            return "'..'";
     }
     return "token";
 }

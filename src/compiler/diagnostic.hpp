@@ -26,6 +26,8 @@ public:
 
     [[nodiscard]] bool has_errors() const;
     [[nodiscard]] const std::vector<Diagnostic>& all() const { return diags_; }
+    [[nodiscard]] std::size_t size() const { return diags_.size(); }
+    void truncate(std::size_t n);
     void print(std::ostream& out) const;
 
 private:
