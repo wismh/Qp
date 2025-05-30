@@ -171,3 +171,24 @@ add_executable(extern_host
 target_include_directories(extern_host PRIVATE ${EXTERN_FN_GEN_DIR})
 
 add_test(NAME extern_host COMMAND extern_host)
+
+set(CONTROL_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_control)
+set(CONTROL_GEN_H ${CONTROL_GEN_DIR}/control.h)
+set(CONTROL_GEN_CPP ${CONTROL_GEN_DIR}/control.cpp)
+
+add_custom_command(
+    OUTPUT ${CONTROL_GEN_H} ${CONTROL_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CONTROL_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/control.qp -o ${CONTROL_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/control.qp
+    COMMENT "qpc compile examples/control.qp"
+    VERBATIM
+)
+
+add_executable(control_host
+    examples/control_host/main.cpp
+    ${CONTROL_GEN_CPP}
+)
+target_include_directories(control_host PRIVATE ${CONTROL_GEN_DIR})
+
+add_test(NAME control_host COMMAND control_host)

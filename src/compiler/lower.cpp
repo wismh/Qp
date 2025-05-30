@@ -154,6 +154,22 @@ BinOp binop_from_token(TokenKind kind) {
             return BinOp::Div;
         case TokenKind::Percent:
             return BinOp::Mod;
+        case TokenKind::EqEq:
+            return BinOp::Eq;
+        case TokenKind::BangEq:
+            return BinOp::Ne;
+        case TokenKind::Lt:
+            return BinOp::Lt;
+        case TokenKind::Le:
+            return BinOp::Le;
+        case TokenKind::Gt:
+            return BinOp::Gt;
+        case TokenKind::Ge:
+            return BinOp::Ge;
+        case TokenKind::AmpAmp:
+            return BinOp::And;
+        case TokenKind::PipePipe:
+            return BinOp::Or;
         default:
             return BinOp::Add;
     }
@@ -221,6 +237,7 @@ HirPatPtr lower_pat(const Source& src, PatPtr pat, DiagnosticEngine& diags) {
 }
 
 HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags);
+HirBlock lower_block(const Source& src, Block block, DiagnosticEngine& diags);
 
 HirStmtPtr lower_stmt(const Source& src, StmtPtr stmt, DiagnosticEngine& diags) {
     auto out = std::make_unique<HirStmt>();
@@ -246,6 +263,25 @@ HirStmtPtr lower_stmt(const Source& src, StmtPtr stmt, DiagnosticEngine& diags) 
                 out->kind = std::move(ret);
             } else if constexpr (std::is_same_v<K, StmtExpr>) {
                 out->kind = HirExprStmt{lower_expr(src, std::move(kind.expr), diags)};
+            } else if constexpr (std::is_same_v<K, StmtWhile>) {
+                HirWhile w;
+                w.cond = lower_expr(src, std::move(kind.cond), diags);
+                auto body = lower_block(src, std::move(*kind.body), diags);
+                w.stmts = std::move(body.stmts);
+                w.tail = std::move(body.tail);
+                out->kind = std::move(w);
+            } else if constexpr (std::is_same_v<K, StmtFor>) {
+                HirFor f;
+                f.name = std::move(kind.name);
+                f.iter = lower_expr(src, std::move(kind.iter), diags);
+                auto body = lower_block(src, std::move(*kind.body), diags);
+                f.stmts = std::move(body.stmts);
+                f.tail = std::move(body.tail);
+                out->kind = std::move(f);
+            } else if constexpr (std::is_same_v<K, StmtBreak>) {
+                out->kind = HirBreak{};
+            } else if constexpr (std::is_same_v<K, StmtContinue>) {
+                out->kind = HirContinue{};
             }
         },
         stmt->kind);
@@ -328,7 +364,10 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                     lower_expr(src, std::move(kind.rhs), diags),
                 };
             } else if constexpr (std::is_same_v<K, ExprUnary>) {
-                out->kind = HirUnary{UnOp::Neg, lower_expr(src, std::move(kind.operand), diags)};
+                out->kind = HirUnary{
+                    kind.op == TokenKind::Bang ? UnOp::Not : UnOp::Neg,
+                    lower_expr(src, std::move(kind.operand), diags),
+                };
             } else if constexpr (std::is_same_v<K, ExprCall>) {
                 if (auto* field = std::get_if<ExprField>(&kind.callee->kind)) {
                     std::string method = std::move(field->name);
@@ -336,6 +375,10 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                     HirMethodCall call;
                     call.receiver = std::move(receiver);
                     call.method = std::move(method);
+                    call.type_args.reserve(kind.type_args.size());
+                    for (auto& ta : kind.type_args) {
+                        call.type_args.push_back(lower_type(ta));
+                    }
                     call.args.reserve(kind.args.size());
                     for (auto& arg : kind.args) {
                         call.args.push_back(lower_expr(src, std::move(arg), diags));
@@ -355,6 +398,10 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                 } else {
                     HirCall call;
                     call.callee = callee_name(src, *kind.callee, diags);
+                    call.type_args.reserve(kind.type_args.size());
+                    for (auto& ta : kind.type_args) {
+                        call.type_args.push_back(lower_type(ta));
+                    }
                     call.args.reserve(kind.args.size());
                     for (auto& arg : kind.args) {
                         call.args.push_back(lower_expr(src, std::move(arg), diags));
@@ -439,6 +486,21 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                                              lower_expr(src, std::move(entry.value), diags));
                 }
                 out->kind = std::move(lit);
+            } else if constexpr (std::is_same_v<K, ExprIf>) {
+                HirIf hi;
+                hi.cond = lower_expr(src, std::move(kind.cond), diags);
+                auto then_b = lower_block(src, std::move(*kind.then_block), diags);
+                hi.then_stmts = std::move(then_b.stmts);
+                hi.then_tail = std::move(then_b.tail);
+                if (kind.else_expr) {
+                    hi.else_expr = lower_expr(src, std::move(kind.else_expr), diags);
+                }
+                out->kind = std::move(hi);
+            } else if constexpr (std::is_same_v<K, ExprRange>) {
+                out->kind = HirRange{
+                    lower_expr(src, std::move(kind.start), diags),
+                    lower_expr(src, std::move(kind.end), diags),
+                };
             }
         },
         expr->kind);
@@ -463,6 +525,10 @@ HirFn lower_fn(const Source& src, FnDecl& fn, DiagnosticEngine& diags, std::stri
     hfn.name = std::move(fn.name);
     hfn.offset = fn.offset;
     hfn.return_ty = parse_return_ty(fn);
+    hfn.type_params.reserve(fn.type_params.size());
+    for (auto& tp : fn.type_params) {
+        hfn.type_params.push_back(HirTypeParam{std::move(tp.name), std::move(tp.bound)});
+    }
     hfn.params.reserve(fn.params.size());
 
     for (auto& p : fn.params) {
@@ -554,8 +620,57 @@ HirVariant lower_variant(const Source& src, VariantTypeDecl& en, DiagnosticEngin
 
 }  // namespace
 
-HirModule lower(const Source& src, AstFile ast, DiagnosticEngine& diags) {
+HirModule lower_file(const Source& src, AstFile ast, DiagnosticEngine& diags) {
     HirModule mod;
+    mod.uses.reserve(ast.uses.size());
+    for (auto& u : ast.uses) {
+        HirUse hu;
+        hu.path = std::move(u.path);
+        hu.glob = u.glob;
+        hu.offset = u.offset;
+        mod.uses.push_back(std::move(hu));
+    }
+    mod.mods.reserve(ast.mods.size());
+    for (auto& nested : ast.mods) {
+        HirModule child = lower_file(src, std::move(*nested.body), diags);
+        child.name = std::move(nested.name);
+        mod.mods.push_back(std::move(child));
+    }
+    mod.statics.reserve(ast.statics.size());
+    for (auto& st : ast.statics) {
+        HirStatic hs;
+        hs.pub = st.pub;
+        hs.mut = st.mut;
+        hs.name = std::move(st.name);
+        hs.offset = st.offset;
+        if (st.ty) {
+            hs.ty = lower_type(*st.ty);
+        }
+        hs.init = lower_expr(src, std::move(st.init), diags);
+        mod.statics.push_back(std::move(hs));
+    }
+    mod.traits.reserve(ast.traits.size());
+    for (auto& tr : ast.traits) {
+        HirTrait ht;
+        ht.pub = tr.pub;
+        ht.name = std::move(tr.name);
+        ht.offset = tr.offset;
+        for (auto& m : tr.methods) {
+            HirTraitMethod hm;
+            hm.self_kind = self_kind_from(m.self_param);
+            hm.name = std::move(m.name);
+            hm.return_ty = m.return_ty ? lower_type(*m.return_ty) : Type::unit();
+            for (auto& p : m.params) {
+                HirParam hp;
+                hp.name = std::move(p.name);
+                hp.offset = p.offset;
+                hp.ty = lower_type(p.ty);
+                hm.params.push_back(std::move(hp));
+            }
+            ht.methods.push_back(std::move(hm));
+        }
+        mod.traits.push_back(std::move(ht));
+    }
     mod.structs.reserve(ast.structs.size());
     mod.enums.reserve(ast.enums.size());
     mod.variants.reserve(ast.variants.size());
@@ -578,6 +693,10 @@ HirModule lower(const Source& src, AstFile ast, DiagnosticEngine& diags) {
         mod.functions.push_back(lower_fn(src, fn, diags));
     }
     return mod;
+}
+
+HirModule lower(const Source& src, AstFile ast, DiagnosticEngine& diags) {
+    return lower_file(src, std::move(ast), diags);
 }
 
 }  // namespace qpc

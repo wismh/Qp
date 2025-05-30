@@ -19,8 +19,8 @@ using HirExprPtr = std::unique_ptr<HirExpr>;
 using HirStmtPtr = std::unique_ptr<HirStmt>;
 using HirPatPtr = std::unique_ptr<HirPat>;
 
-enum class BinOp { Add, Sub, Mul, Div, Mod };
-enum class UnOp { Neg };
+enum class BinOp { Add, Sub, Mul, Div, Mod, Eq, Ne, Lt, Le, Gt, Ge, And, Or };
+enum class UnOp { Neg, Not };
 enum class SelfKind { None, Value, Mut };
 
 struct HirLitInt {
@@ -64,6 +64,7 @@ struct HirUnary {
 
 struct HirCall {
     std::string callee;
+    std::vector<Type> type_args;
     std::vector<HirExprPtr> args;
 };
 
@@ -98,7 +99,9 @@ struct HirEnumLit {
 struct HirMethodCall {
     HirExprPtr receiver;
     std::string method;
+    std::vector<Type> type_args;
     std::vector<HirExprPtr> args;
+    bool associated = false;
 };
 
 struct HirFieldAssign {
@@ -156,12 +159,25 @@ struct HirDictLit {
     std::vector<std::pair<HirExprPtr, HirExprPtr>> entries;
 };
 
+struct HirIf {
+    HirExprPtr cond;
+    std::vector<HirStmtPtr> then_stmts;
+    HirExprPtr then_tail;
+    HirExprPtr else_expr;
+};
+
+struct HirRange {
+    HirExprPtr start;
+    HirExprPtr end;
+};
+
 struct HirExpr {
     Type ty;
     std::size_t offset = 0;
     std::variant<HirLitInt, HirLitFloat, HirLitBool, HirLitChar, HirLitString, HirVar, HirBinary,
                  HirUnary, HirCall, HirAssign, HirFieldAccess, HirIndex, HirStructLit, HirEnumLit,
-                 HirMethodCall, HirFieldAssign, HirIndexAssign, HirMatch, HirListLit, HirDictLit>
+                 HirMethodCall, HirFieldAssign, HirIndexAssign, HirMatch, HirListLit, HirDictLit,
+                 HirIf, HirRange>
         kind;
 };
 
@@ -180,9 +196,25 @@ struct HirExprStmt {
     HirExprPtr expr;
 };
 
+struct HirWhile {
+    HirExprPtr cond;
+    std::vector<HirStmtPtr> stmts;
+    HirExprPtr tail;
+};
+
+struct HirFor {
+    std::string name;
+    HirExprPtr iter;
+    std::vector<HirStmtPtr> stmts;
+    HirExprPtr tail;
+};
+
+struct HirBreak {};
+struct HirContinue {};
+
 struct HirStmt {
     std::size_t offset = 0;
-    std::variant<HirLet, HirReturn, HirExprStmt> kind;
+    std::variant<HirLet, HirReturn, HirExprStmt, HirWhile, HirFor, HirBreak, HirContinue> kind;
 };
 
 struct HirBlock {
@@ -197,6 +229,11 @@ struct HirParam {
     std::size_t offset = 0;
 };
 
+struct HirTypeParam {
+    std::string name;
+    std::optional<std::string> bound;
+};
+
 struct HirFn {
     bool pub = false;
     bool is_extern = false;
@@ -204,6 +241,7 @@ struct HirFn {
     SelfKind self_kind = SelfKind::None;
     std::string self_ty;
     std::string name;
+    std::vector<HirTypeParam> type_params;
     std::vector<HirParam> params;
     Type return_ty = Type::unit();
     HirBlock body;
@@ -258,7 +296,41 @@ struct HirImpl {
     std::size_t offset = 0;
 };
 
+struct HirStatic {
+    bool pub = false;
+    bool mut = false;
+    std::string name;
+    Type ty;
+    HirExprPtr init;
+    std::size_t offset = 0;
+};
+
+struct HirTraitMethod {
+    SelfKind self_kind = SelfKind::None;
+    std::string name;
+    std::vector<HirParam> params;
+    Type return_ty = Type::unit();
+};
+
+struct HirTrait {
+    bool pub = false;
+    std::string name;
+    std::vector<HirTraitMethod> methods;
+    std::size_t offset = 0;
+};
+
+struct HirUse {
+    std::vector<std::string> path;
+    bool glob = false;
+    std::size_t offset = 0;
+};
+
 struct HirModule {
+    std::string name;
+    std::vector<HirUse> uses;
+    std::vector<HirModule> mods;
+    std::vector<HirStatic> statics;
+    std::vector<HirTrait> traits;
     std::vector<HirStruct> structs;
     std::vector<HirCEnum> enums;
     std::vector<HirVariant> variants;

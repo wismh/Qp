@@ -26,6 +26,12 @@ bool DiagnosticEngine::has_errors() const {
     return std::ranges::any_of(diags_, [](const Diagnostic& d) { return d.level == DiagLevel::Error; });
 }
 
+void DiagnosticEngine::truncate(std::size_t n) {
+    if (n < diags_.size()) {
+        diags_.resize(n);
+    }
+}
+
 void DiagnosticEngine::print(std::ostream& out) const {
     for (const auto& d : diags_) {
         const char* kind = d.level == DiagLevel::Error ? "error" : "warning";

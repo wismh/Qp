@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -16,6 +18,7 @@ struct Binding {
 };
 
 struct FnSig {
+    std::vector<HirTypeParam> type_params;
     std::vector<Type> params;
     Type ret = Type::unit();
     std::size_t offset = 0;
@@ -23,6 +26,7 @@ struct FnSig {
 
 struct MethodSig {
     SelfKind self_kind = SelfKind::None;
+    std::vector<HirTypeParam> type_params;
     std::vector<Type> params;
     Type ret = Type::unit();
     std::size_t offset = 0;
@@ -74,9 +78,26 @@ static const char* binop_trait(BinOp op) {
             return "Div";
         case BinOp::Mod:
             return "Rem";
+        case BinOp::Eq:
+        case BinOp::Ne:
+        case BinOp::Lt:
+        case BinOp::Le:
+        case BinOp::Gt:
+        case BinOp::Ge:
+        case BinOp::And:
+        case BinOp::Or:
+            return "";
     }
     return "Add";
 }
+
+static bool is_eq_op(BinOp op) { return op == BinOp::Eq || op == BinOp::Ne; }
+
+static bool is_ord_op(BinOp op) {
+    return op == BinOp::Lt || op == BinOp::Le || op == BinOp::Gt || op == BinOp::Ge;
+}
+
+static bool is_logic_op(BinOp op) { return op == BinOp::And || op == BinOp::Or; }
 
 static bool is_op_trait(std::string_view name) {
     return name == "Add" || name == "Sub" || name == "Mul" || name == "Div" || name == "Rem" ||
@@ -89,26 +110,14 @@ public:
         : src_(src), mod_(mod), diags_(diags) {}
 
     void run() {
-        collect_type_names();
-        collect_structs();
-        collect_c_enums();
-        collect_variants();
-        collect_sigs();
-        collect_methods();
+        collect_tree(mod_, "");
+        apply_uses(mod_, "");
         if (diags_.has_errors()) {
             return;
         }
-
-        for (auto& fn : mod_.functions) {
-            if (!fn.is_extern) {
-                check_fn(fn);
-            }
-        }
-        for (auto& impl : mod_.impls) {
-            for (auto& method : impl.methods) {
-                check_fn(method);
-            }
-        }
+        push_scope();
+        check_tree(mod_);
+        pop_scope();
     }
 
 private:
@@ -121,8 +130,12 @@ private:
     std::unordered_map<std::string, FnSig> sigs_;
     std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> methods_;
     std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> op_impls_;
+    std::unordered_map<std::string, std::unordered_set<std::string>> trait_impls_;
+    std::unordered_set<std::string> traits_;
+    std::unordered_set<std::string> generic_params_;
     std::vector<std::unordered_map<std::string, Binding>> scopes_;
     Type current_ret_ = Type::unit();
+    int loop_depth_ = 0;
 
     void error(std::size_t offset, std::string message) {
         diags_.error(src_, offset, std::move(message));
@@ -150,7 +163,8 @@ private:
         if (ty.kind != TypeKind::Named) {
             return ty != Type::error();
         }
-        if (!structs_.contains(ty.name) && !variants_.contains(ty.name) && !c_enums_.contains(ty.name)) {
+        if (!structs_.contains(ty.name) && !variants_.contains(ty.name) && !c_enums_.contains(ty.name) &&
+            !generic_params_.contains(ty.name)) {
             error(offset, "unknown type '" + ty.name + "'");
             ty = Type::error();
             return false;
@@ -175,15 +189,281 @@ private:
         return it == structs_.end() ? nullptr : &it->second;
     }
 
-    void collect_structs() {
-        for (auto& st : mod_.structs) {
-            if (structs_.contains(st.name) || c_enums_.contains(st.name) || variants_.contains(st.name)) {
-                error(st.offset, "duplicate type '" + st.name + "'");
+    static std::string qualify(const std::string& prefix, const std::string& name) {
+        return prefix.empty() ? name : prefix + "::" + name;
+    }
+
+    void collect_tree(HirModule& m, const std::string& prefix) {
+        for (auto& tr : m.traits) {
+            traits_.insert(qualify(prefix, tr.name));
+            traits_.insert(tr.name);
+        }
+        for (auto& en : m.enums) {
+            const auto name = qualify(prefix, en.name);
+            if (c_enums_.contains(name) || variants_.contains(name) || structs_.contains(name)) {
+                error(en.offset, "duplicate type '" + name + "'");
                 continue;
             }
-            structs_.emplace(st.name, StructInfo{{}, st.offset});
+            c_enums_.emplace(name, CEnumInfo{{}, en.offset});
+            if (!prefix.empty()) {
+                c_enums_.emplace(en.name, CEnumInfo{{}, en.offset});
+            }
+        }
+        for (auto& var : m.variants) {
+            const auto name = qualify(prefix, var.name);
+            if (c_enums_.contains(name) || variants_.contains(name) || structs_.contains(name)) {
+                error(var.offset, "duplicate type '" + name + "'");
+                continue;
+            }
+            variants_.emplace(name, EnumInfo{{}, var.offset});
+        }
+        for (auto& st : m.structs) {
+            const auto name = qualify(prefix, st.name);
+            if (structs_.contains(name) || c_enums_.contains(name) || variants_.contains(name)) {
+                error(st.offset, "duplicate type '" + name + "'");
+                continue;
+            }
+            structs_.emplace(name, StructInfo{{}, st.offset});
         }
 
+        if (prefix.empty()) {
+            collect_c_enums();
+            collect_variants();
+            collect_structs();
+        } else {
+            for (auto& st : m.structs) {
+                auto it = structs_.find(qualify(prefix, st.name));
+                if (it == structs_.end()) {
+                    continue;
+                }
+                for (auto& field : st.fields) {
+                    resolve_type(field.ty, field.offset);
+                    it->second.fields.emplace_back(field.name, FieldInfo{field.mut, field.ty, field.offset});
+                }
+            }
+        }
+
+        collect_sigs_of(m, prefix);
+        collect_methods_of(m, prefix);
+
+        for (auto& st : m.statics) {
+            if (st.ty.kind != TypeKind::Unknown) {
+                resolve_type(st.ty, st.offset);
+            }
+        }
+
+        for (auto& child : m.mods) {
+            collect_tree(child, qualify(prefix, child.name));
+        }
+    }
+
+    void apply_uses(HirModule& m, const std::string& prefix) {
+        for (auto& u : m.uses) {
+            if (u.path.empty() && !u.glob) {
+                continue;
+            }
+            if (u.glob) {
+                std::string head;
+                for (std::size_t i = 0; i < u.path.size(); ++i) {
+                    if (i != 0) {
+                        head += "::";
+                    }
+                    head += u.path[i];
+                }
+                const std::string pfx = head + "::";
+                auto alias_map = [&](auto& map) {
+                    std::vector<std::pair<std::string, typename std::decay_t<decltype(map)>::mapped_type>> extra;
+                    for (auto& [k, v] : map) {
+                        if (k.rfind(pfx, 0) == 0) {
+                            extra.emplace_back(k.substr(pfx.size()), v);
+                        }
+                    }
+                    for (auto& e : extra) {
+                        map.emplace(e.first, e.second);
+                    }
+                };
+                alias_map(structs_);
+                alias_map(sigs_);
+                alias_map(c_enums_);
+                alias_map(variants_);
+                continue;
+            }
+            std::string full;
+            for (std::size_t i = 0; i < u.path.size(); ++i) {
+                if (i != 0) {
+                    full += "::";
+                }
+                full += u.path[i];
+            }
+            const std::string last = u.path.back();
+            if (auto it = structs_.find(full); it != structs_.end()) {
+                structs_.emplace(last, it->second);
+            }
+            if (auto it = sigs_.find(full); it != sigs_.end()) {
+                sigs_.emplace(last, it->second);
+            }
+            if (auto it = methods_.find(full); it != methods_.end()) {
+                methods_.emplace(last, it->second);
+            }
+            if (auto it = c_enums_.find(full); it != c_enums_.end()) {
+                c_enums_.emplace(last, it->second);
+            }
+            if (auto it = variants_.find(full); it != variants_.end()) {
+                variants_.emplace(last, it->second);
+            }
+            if (auto it = traits_.find(full); it != traits_.end()) {
+                traits_.insert(last);
+            }
+        }
+        for (auto& child : m.mods) {
+            apply_uses(child, qualify(prefix, child.name));
+        }
+    }
+
+    void check_tree(HirModule& m) {
+        for (auto& st : m.statics) {
+            const Type init_ty = check_expr(*st.init);
+            if (st.ty.kind == TypeKind::Unknown) {
+                if (init_ty.kind == TypeKind::Unknown) {
+                    error(st.offset, "cannot infer type of '" + st.name + "', add a type annotation");
+                    st.ty = Type::error();
+                } else {
+                    st.ty = init_ty;
+                }
+            } else {
+                expect_expr(*st.init, st.ty, st.init->offset, "static initializer");
+            }
+            declare(st.name, Binding{st.ty, st.mut}, st.offset);
+        }
+        for (auto& fn : m.functions) {
+            if (!fn.is_extern) {
+                check_fn(fn);
+            }
+        }
+        for (auto& impl : m.impls) {
+            for (auto& method : impl.methods) {
+                check_fn(method);
+            }
+        }
+        for (auto& child : m.mods) {
+            check_tree(child);
+        }
+    }
+
+    void collect_sigs_of(HirModule& m, const std::string& prefix) {
+        for (auto& fn : m.functions) {
+            const auto name = qualify(prefix, fn.name);
+            if (sigs_.contains(name)) {
+                error(fn.offset, "duplicate function '" + name + "'");
+                continue;
+            }
+            generic_params_.clear();
+            for (const auto& tp : fn.type_params) {
+                generic_params_.insert(tp.name);
+            }
+            resolve_type(fn.return_ty, fn.offset);
+            FnSig sig;
+            sig.type_params = fn.type_params;
+            sig.ret = fn.return_ty;
+            sig.offset = fn.offset;
+            sig.params.reserve(fn.params.size());
+            for (auto& p : fn.params) {
+                resolve_type(p.ty, p.offset);
+                sig.params.push_back(p.ty);
+            }
+            if (fn.c_abi) {
+                check_c_abi_type(fn.return_ty, fn.offset, fn.name);
+                for (const auto& p : fn.params) {
+                    check_c_abi_type(p.ty, p.offset, fn.name);
+                }
+            }
+            generic_params_.clear();
+            sigs_.emplace(name, sig);
+            if (!prefix.empty()) {
+                sigs_.emplace(fn.name, std::move(sig));
+            }
+        }
+    }
+
+    void collect_methods_of(HirModule& m, const std::string& prefix) {
+        for (auto& impl : m.impls) {
+            const auto type_name = qualify(prefix, impl.type_name);
+            const bool known = structs_.contains(type_name) || structs_.contains(impl.type_name) ||
+                               variants_.contains(type_name) || c_enums_.contains(type_name);
+            if (!known) {
+                error(impl.offset, "impl for unknown type '" + impl.type_name + "'");
+                continue;
+            }
+            if (impl.trait_name) {
+                const auto& trait = *impl.trait_name;
+                if (!is_op_trait(trait) && !traits_.contains(trait)) {
+                    error(impl.offset, "unknown trait '" + trait + "'");
+                    continue;
+                }
+                trait_impls_[impl.type_name].insert(trait);
+                if (is_op_trait(trait) && !traits_.contains(trait)) {
+                    if (impl.methods.size() != 1) {
+                        error(impl.offset, "operator impl '" + trait + "' needs one method");
+                        continue;
+                    }
+                    auto& method = impl.methods[0];
+                    const char* expected = trait == "Neg" ? "neg" : binop_method_from_trait(trait);
+                    if (method.name != expected) {
+                        error(method.offset, "operator impl '" + trait + "' needs fn " + expected);
+                    }
+                    generic_params_.clear();
+                    for (const auto& tp : method.type_params) {
+                        generic_params_.insert(tp.name);
+                    }
+                    resolve_type(method.return_ty, method.offset);
+                    MethodSig sig;
+                    sig.self_kind = method.self_kind;
+                    sig.type_params = method.type_params;
+                    sig.ret = method.return_ty;
+                    sig.offset = method.offset;
+                    for (auto& p : method.params) {
+                        resolve_type(p.ty, p.offset);
+                        sig.params.push_back(p.ty);
+                    }
+                    auto& table = op_impls_[impl.type_name];
+                    if (table.contains(trait)) {
+                        error(impl.offset, "duplicate impl " + trait + " for '" + impl.type_name + "'");
+                        continue;
+                    }
+                    generic_params_.clear();
+                    table.emplace(trait, std::move(sig));
+                }
+                continue;
+            }
+
+            auto& table = methods_[impl.type_name];
+            for (auto& method : impl.methods) {
+                if (table.contains(method.name)) {
+                    error(method.offset, "duplicate method '" + method.name + "'");
+                    continue;
+                }
+                generic_params_.clear();
+                for (const auto& tp : method.type_params) {
+                    generic_params_.insert(tp.name);
+                }
+                resolve_type(method.return_ty, method.offset);
+                MethodSig sig;
+                sig.self_kind = method.self_kind;
+                sig.type_params = method.type_params;
+                sig.ret = method.return_ty;
+                sig.offset = method.offset;
+                sig.params.reserve(method.params.size());
+                for (auto& p : method.params) {
+                    resolve_type(p.ty, p.offset);
+                    sig.params.push_back(p.ty);
+                }
+                generic_params_.clear();
+                table.emplace(method.name, std::move(sig));
+            }
+        }
+    }
+
+    void collect_structs() {
         for (auto& st : mod_.structs) {
             auto it = structs_.find(st.name);
             if (it == structs_.end() || it->second.offset != st.offset) {
@@ -427,6 +707,13 @@ private:
     void check_fn(HirFn& fn) {
         current_ret_ = fn.return_ty;
         push_scope();
+        generic_params_.clear();
+        for (const auto& tp : fn.type_params) {
+            generic_params_.insert(tp.name);
+            if (tp.bound && !traits_.contains(*tp.bound) && !is_op_trait(*tp.bound)) {
+                error(fn.offset, "unknown trait bound '" + *tp.bound + "'");
+            }
+        }
 
         if (fn.self_kind != SelfKind::None) {
             declare("self", Binding{Type::named(fn.self_ty), fn.self_kind == SelfKind::Mut}, fn.offset);
@@ -447,6 +734,7 @@ private:
         }
 
         pop_scope();
+        generic_params_.clear();
     }
 
     static bool ends_with_return(const HirBlock& body) {
@@ -463,6 +751,43 @@ private:
                     check_return(stmt.offset, kind);
                 } else if constexpr (std::is_same_v<K, HirExprStmt>) {
                     check_expr(*kind.expr);
+                } else if constexpr (std::is_same_v<K, HirWhile>) {
+                    expect_expr(*kind.cond, Type::boolean(), kind.cond->offset, "while condition");
+                    ++loop_depth_;
+                    push_scope();
+                    for (auto& s : kind.stmts) {
+                        check_stmt(*s);
+                    }
+                    if (kind.tail) {
+                        check_expr(*kind.tail);
+                    }
+                    pop_scope();
+                    --loop_depth_;
+                } else if constexpr (std::is_same_v<K, HirFor>) {
+                    const Type iter_ty = check_expr(*kind.iter);
+                    Type elem = Type::error();
+                    if (std::holds_alternative<HirRange>(kind.iter->kind)) {
+                        elem = iter_ty;
+                    } else if (iter_ty.kind == TypeKind::List || iter_ty.kind == TypeKind::Array) {
+                        elem = iter_ty.elem();
+                    } else if (iter_ty != Type::error()) {
+                        error(stmt.offset, "for-loop requires a list, array or range");
+                    }
+                    ++loop_depth_;
+                    push_scope();
+                    declare(kind.name, Binding{elem, false}, stmt.offset);
+                    for (auto& s : kind.stmts) {
+                        check_stmt(*s);
+                    }
+                    if (kind.tail) {
+                        check_expr(*kind.tail);
+                    }
+                    pop_scope();
+                    --loop_depth_;
+                } else if constexpr (std::is_same_v<K, HirBreak> || std::is_same_v<K, HirContinue>) {
+                    if (loop_depth_ == 0) {
+                        error(stmt.offset, "break/continue outside of a loop");
+                    }
                 }
             },
             stmt.kind);
@@ -541,6 +866,10 @@ private:
                     ty = check_dict_lit(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirMatch>) {
                     ty = check_match(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirIf>) {
+                    ty = check_if(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirRange>) {
+                    ty = check_range(kind, expr.offset);
                 }
             },
             expr.kind);
@@ -556,8 +885,118 @@ private:
         return Type::error();
     }
 
+    Type subst_type(Type t, const std::unordered_map<std::string, Type>& mapping) const {
+        if (t.kind == TypeKind::Named) {
+            if (auto it = mapping.find(t.name); it != mapping.end()) {
+                return it->second;
+            }
+            return t;
+        }
+        for (auto& arg : t.args) {
+            arg = subst_type(std::move(arg), mapping);
+        }
+        return t;
+    }
+
+    void bind_type_args(const std::vector<HirTypeParam>& tps, std::vector<Type>& args, std::size_t offset,
+                        std::unordered_map<std::string, Type>& mapping) {
+        if (args.size() != tps.size()) {
+            error(offset, "expects " + std::to_string(tps.size()) + " type argument(s), got " +
+                              std::to_string(args.size()));
+        }
+        const std::size_t n = std::min(args.size(), tps.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            resolve_type(args[i], offset);
+            mapping[tps[i].name] = args[i];
+            if (!tps[i].bound) {
+                continue;
+            }
+            const std::string& bound = *tps[i].bound;
+            bool ok = false;
+            if (args[i].kind == TypeKind::Named) {
+                if (auto it = trait_impls_.find(args[i].name); it != trait_impls_.end()) {
+                    ok = it->second.contains(bound);
+                }
+                if (!ok) {
+                    if (auto it = op_impls_.find(args[i].name); it != op_impls_.end()) {
+                        ok = it->second.contains(bound);
+                    }
+                }
+            }
+            if (!ok) {
+                error(offset, "type '" + type_name(args[i]) + "' does not implement '" + bound + "'");
+            }
+        }
+    }
+
+    Type check_if(HirIf& iff, std::size_t offset) {
+        expect_expr(*iff.cond, Type::boolean(), iff.cond->offset, "if condition");
+        push_scope();
+        for (auto& s : iff.then_stmts) {
+            check_stmt(*s);
+        }
+        Type then_ty = Type::unit();
+        if (iff.then_tail) {
+            then_ty = check_expr(*iff.then_tail);
+        }
+        pop_scope();
+
+        if (!iff.else_expr) {
+            if (then_ty != Type::unit() && then_ty != Type::error()) {
+                if (std::holds_alternative<HirLitBool>(iff.cond->kind) &&
+                    std::get<HirLitBool>(iff.cond->kind).value) {
+                    return then_ty;
+                }
+                error(offset, "if expression is missing an else branch");
+            }
+            return Type::unit();
+        }
+
+        Type else_ty = check_expr(*iff.else_expr);
+        if (then_ty == Type::error() || else_ty == Type::error()) {
+            return Type::error();
+        }
+        if (then_ty != else_ty) {
+            if (iff.then_tail && coerce_lit(*iff.then_tail, else_ty)) {
+                then_ty = else_ty;
+            } else if (coerce_lit(*iff.else_expr, then_ty)) {
+                else_ty = then_ty;
+            }
+        }
+        if (then_ty != else_ty) {
+            error(offset, "if branches have types '" + type_name(then_ty) + "' and '" + type_name(else_ty) +
+                              "'");
+            return Type::error();
+        }
+        return then_ty;
+    }
+
+    Type check_range(HirRange& range, std::size_t offset) {
+        Type lo = check_expr(*range.start);
+        Type hi = check_expr(*range.end);
+        if (lo == Type::error() || hi == Type::error()) {
+            return Type::error();
+        }
+        if (lo != hi) {
+            if (coerce_lit(*range.start, hi)) {
+                lo = hi;
+            } else if (coerce_lit(*range.end, lo)) {
+                hi = lo;
+            }
+        }
+        if (lo != hi || !is_int(lo)) {
+            error(offset, "range bounds must be integers of the same type");
+            return Type::error();
+        }
+        return lo;
+    }
+
     Type check_unary(HirUnary& un, std::size_t offset) {
         const Type inner = check_expr(*un.operand);
+        if (un.op == UnOp::Not) {
+            expect_type(inner, Type::boolean(), offset, "operand");
+            return Type::boolean();
+        }
         if (is_signed_int(inner) || is_float(inner)) {
             return inner;
         }
@@ -615,6 +1054,31 @@ private:
             return Type::string();
         }
 
+        if (is_logic_op(bin.op)) {
+            expect_type(lhs, Type::boolean(), bin.lhs->offset, "operand");
+            expect_type(rhs, Type::boolean(), bin.rhs->offset, "operand");
+            return Type::boolean();
+        }
+
+        if (is_eq_op(bin.op) || is_ord_op(bin.op)) {
+            if (lhs != rhs) {
+                error(offset, "cannot compare '" + type_name(lhs) + "' and '" + type_name(rhs) + "'");
+                return Type::error();
+            }
+            const bool comparable =
+                is_numeric(lhs) || lhs == Type::boolean() || lhs == Type::char_() || lhs == Type::string() ||
+                (lhs.kind == TypeKind::Named && c_enums_.contains(lhs.name));
+            if (is_ord_op(bin.op) && !is_numeric(lhs)) {
+                error(offset, "cannot ordered-compare '" + type_name(lhs) + "'");
+                return Type::error();
+            }
+            if (!comparable) {
+                error(offset, "cannot compare '" + type_name(lhs) + "'");
+                return Type::error();
+            }
+            return Type::boolean();
+        }
+
         if (lhs.kind == TypeKind::Named) {
             auto type_it = op_impls_.find(lhs.name);
             if (type_it != op_impls_.end()) {
@@ -662,6 +1126,9 @@ private:
         }
 
         const FnSig& sig = it->second;
+        std::unordered_map<std::string, Type> mapping;
+        bind_type_args(sig.type_params, call.type_args, offset, mapping);
+
         if (call.args.size() != sig.params.size()) {
             error(offset, "function '" + call.callee + "' expects " + std::to_string(sig.params.size()) +
                               " argument(s), got " + std::to_string(call.args.size()));
@@ -669,12 +1136,13 @@ private:
 
         const std::size_t n = std::min(call.args.size(), sig.params.size());
         for (std::size_t i = 0; i < call.args.size(); ++i) {
-            const Type arg_ty = check_expr(*call.args[i]);
+            check_expr(*call.args[i]);
             if (i < n) {
-            expect_expr(*call.args[i], sig.params[i], call.args[i]->offset, "argument");
+                expect_expr(*call.args[i], subst_type(sig.params[i], mapping), call.args[i]->offset,
+                            "argument");
             }
         }
-        return sig.ret;
+        return subst_type(sig.ret, mapping);
     }
 
     Type check_assign(HirAssign& as, std::size_t offset) {
@@ -771,7 +1239,21 @@ private:
     }
 
     Type check_method_call(HirMethodCall& call, std::size_t offset) {
-        const Type recv_ty = check_expr(*call.receiver);
+        Type recv_ty;
+        bool associated = false;
+        if (auto* var = std::get_if<HirVar>(&call.receiver->kind)) {
+            if (!lookup(var->name) && (structs_.contains(var->name) || variants_.contains(var->name) ||
+                                       c_enums_.contains(var->name))) {
+                associated = true;
+                recv_ty = Type::named(var->name);
+                call.receiver->ty = recv_ty;
+            }
+        }
+        if (!associated) {
+            recv_ty = check_expr(*call.receiver);
+        }
+        call.associated = associated;
+
         if (recv_ty.kind != TypeKind::Named) {
             if (recv_ty != Type::error()) {
                 error(offset, "method call requires a struct, found '" + type_name(recv_ty) + "'");
@@ -801,9 +1283,15 @@ private:
         }
 
         const MethodSig& sig = method_it->second;
-        if (sig.self_kind == SelfKind::Mut && !is_mut_place(*call.receiver)) {
+        if (associated && sig.self_kind != SelfKind::None) {
+            error(offset, "cannot call instance method '" + call.method + "' on type '" + recv_ty.name + "'");
+        }
+        if (!associated && sig.self_kind == SelfKind::Mut && !is_mut_place(*call.receiver)) {
             error(offset, "cannot call '" + call.method + "' on an immutable receiver");
         }
+
+        std::unordered_map<std::string, Type> mapping;
+        bind_type_args(sig.type_params, call.type_args, offset, mapping);
 
         if (call.args.size() != sig.params.size()) {
             error(offset, "method '" + call.method + "' expects " + std::to_string(sig.params.size()) +
@@ -812,12 +1300,13 @@ private:
 
         const std::size_t n = std::min(call.args.size(), sig.params.size());
         for (std::size_t i = 0; i < call.args.size(); ++i) {
-            const Type arg_ty = check_expr(*call.args[i]);
+            check_expr(*call.args[i]);
             if (i < n) {
-            expect_expr(*call.args[i], sig.params[i], call.args[i]->offset, "argument");
+                expect_expr(*call.args[i], subst_type(sig.params[i], mapping), call.args[i]->offset,
+                            "argument");
             }
         }
-        return sig.ret;
+        return subst_type(sig.ret, mapping);
     }
 
     Type check_field_assign(HirFieldAssign& as, std::size_t offset) {
