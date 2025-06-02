@@ -423,10 +423,22 @@ extern "C" {
 
 extern {
     fn log_info(msg: string);
+
+    pub struct Test;
+    impl Test {
+        pub fn add<T>(self, a: T, b: T) -> T;
+    }
+    pub let mut test_object: Test;
+}
+
+fn demo() -> i32 {
+    test_object.add(3, 5)
 }
 ```
 
-`extern "C"` — C ABI. `extern` без ABI — C++ runtime Q+ (`qplus::...`). Тіло пишеться на C++, не в `.qp`.
+`extern "C"` — лише вільні функції з C ABI. `extern` без ABI — C++ runtime Q+ (`qplus::...`). Тіло пишеться на C++, не в `.qp`.
+
+`struct Test;` у `extern` — непрозорий тип хоста: Q+ не знає полів і не генерує `struct`. Методи з `impl` теж лише прототипи; виклик `obj.add(3, 5)` іде в C++ як `obj.add<std::int32_t>(3, 5)` (аргументи виводять `T`, або пишеться `add<i32>(...)`). `let` без `=` — `extern` глобаль хоста. Повний тип хост кладе в `qplus_host.h` на include path, у `namespace qplus`.
 
 ---
 
@@ -465,6 +477,7 @@ JIT у debug: panic показує Q+ стек через debug info LLVM.
 | `enum E { A, B }` | `enum class E` |
 | `variant E { A, B { x } }` | `std::variant` tagged union |
 | `extern { fn f(); }` | declaration in `qplus::`, body in the host |
+| `extern { struct T; impl T { fn f(self); } let x: T; }` | host type + methods + `extern T x;` |
 | `extern "C" { fn f(); }` | `extern "C"` declaration, body in the host |
 | `trait T` + `impl` | концепт / шаблон, або vtable для `dyn` |
 | `fn foo<T: Add>` | `template<typename T> requires ...` |
