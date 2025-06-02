@@ -263,6 +263,8 @@ struct FieldDecl {
 
 struct StructDecl {
     bool pub = false;
+    bool is_extern = false;
+    bool opaque = false;
     std::string name;
     std::vector<FieldDecl> fields;
     std::size_t offset = 0;
@@ -320,6 +322,7 @@ struct TraitDecl {
 struct StaticDecl {
     bool pub = false;
     bool mut = false;
+    bool is_extern = false;
     std::string name;
     std::optional<TypeExpr> ty;
     ExprPtr init;
