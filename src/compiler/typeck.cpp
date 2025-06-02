@@ -41,6 +41,7 @@ struct FieldInfo {
 struct StructInfo {
     std::vector<std::pair<std::string, FieldInfo>> fields;
     std::size_t offset = 0;
+    bool opaque = false;
 };
 
 struct VariantInfo {
@@ -223,7 +224,7 @@ private:
                 error(st.offset, "duplicate type '" + name + "'");
                 continue;
             }
-            structs_.emplace(name, StructInfo{{}, st.offset});
+            structs_.emplace(name, StructInfo{{}, st.offset, st.opaque});
         }
 
         if (prefix.empty()) {
@@ -234,6 +235,10 @@ private:
             for (auto& st : m.structs) {
                 auto it = structs_.find(qualify(prefix, st.name));
                 if (it == structs_.end()) {
+                    continue;
+                }
+                it->second.opaque = st.opaque;
+                if (st.opaque) {
                     continue;
                 }
                 for (auto& field : st.fields) {
@@ -322,6 +327,17 @@ private:
 
     void check_tree(HirModule& m) {
         for (auto& st : m.statics) {
+            if (st.ty.kind != TypeKind::Unknown) {
+                resolve_type(st.ty, st.offset);
+            }
+            if (st.is_extern) {
+                if (st.ty.kind == TypeKind::Unknown) {
+                    error(st.offset, "extern static '" + st.name + "' requires a type annotation");
+                    st.ty = Type::error();
+                }
+                declare(st.name, Binding{st.ty, st.mut}, st.offset);
+                continue;
+            }
             const Type init_ty = check_expr(*st.init);
             if (st.ty.kind == TypeKind::Unknown) {
                 if (init_ty.kind == TypeKind::Unknown) {
@@ -342,7 +358,9 @@ private:
         }
         for (auto& impl : m.impls) {
             for (auto& method : impl.methods) {
-                check_fn(method);
+                if (!method.is_extern) {
+                    check_fn(method);
+                }
             }
         }
         for (auto& child : m.mods) {
@@ -471,6 +489,10 @@ private:
             }
 
             StructInfo& info = it->second;
+            info.opaque = st.opaque;
+            if (st.opaque) {
+                continue;
+            }
             for (auto& field : st.fields) {
                 if (find_field(info, field.name)) {
                     error(field.offset, "duplicate field '" + field.name + "'");
@@ -898,16 +920,44 @@ private:
         return t;
     }
 
-    void bind_type_args(const std::vector<HirTypeParam>& tps, std::vector<Type>& args, std::size_t offset,
-                        std::unordered_map<std::string, Type>& mapping) {
-        if (args.size() != tps.size()) {
-            error(offset, "expects " + std::to_string(tps.size()) + " type argument(s), got " +
-                              std::to_string(args.size()));
+    static bool is_generic_param(const std::vector<HirTypeParam>& tps, const std::string& name) {
+        for (const auto& tp : tps) {
+            if (tp.name == name) {
+                return true;
+            }
         }
+        return false;
+    }
+
+    bool unify_type(const Type& pattern, const Type& actual, const std::vector<HirTypeParam>& tps,
+                    std::unordered_map<std::string, Type>& mapping) {
+        if (pattern.kind == TypeKind::Named && is_generic_param(tps, pattern.name)) {
+            auto it = mapping.find(pattern.name);
+            if (it == mapping.end()) {
+                if (actual.kind == TypeKind::Unknown || actual.kind == TypeKind::Error) {
+                    return false;
+                }
+                mapping[pattern.name] = actual;
+                return true;
+            }
+            return it->second == actual;
+        }
+        if (pattern.kind != actual.kind || pattern.name != actual.name || pattern.size != actual.size ||
+            pattern.args.size() != actual.args.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < pattern.args.size(); ++i) {
+            if (!unify_type(pattern.args[i], actual.args[i], tps, mapping)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void check_type_arg_bounds(const std::vector<HirTypeParam>& tps, const std::vector<Type>& args,
+                               std::size_t offset) {
         const std::size_t n = std::min(args.size(), tps.size());
         for (std::size_t i = 0; i < n; ++i) {
-            resolve_type(args[i], offset);
-            mapping[tps[i].name] = args[i];
             if (!tps[i].bound) {
                 continue;
             }
@@ -927,6 +977,62 @@ private:
                 error(offset, "type '" + type_name(args[i]) + "' does not implement '" + bound + "'");
             }
         }
+    }
+
+    void bind_type_args(const std::vector<HirTypeParam>& tps, std::vector<Type>& args, std::size_t offset,
+                        std::unordered_map<std::string, Type>& mapping) {
+        if (args.size() != tps.size()) {
+            error(offset, "expects " + std::to_string(tps.size()) + " type argument(s), got " +
+                              std::to_string(args.size()));
+        }
+        const std::size_t n = std::min(args.size(), tps.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            resolve_type(args[i], offset);
+            mapping[tps[i].name] = args[i];
+        }
+        check_type_arg_bounds(tps, args, offset);
+    }
+
+    void infer_type_args(const std::vector<HirTypeParam>& tps, std::vector<Type>& type_args,
+                         const std::vector<Type>& params, std::vector<HirExprPtr>& args, std::size_t offset,
+                         std::unordered_map<std::string, Type>& mapping) {
+        const std::size_t n = std::min(args.size(), params.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            if (unify_type(params[i], args[i]->ty, tps, mapping)) {
+                continue;
+            }
+            if (params[i].kind == TypeKind::Named && is_generic_param(tps, params[i].name)) {
+                auto it = mapping.find(params[i].name);
+                if (it != mapping.end() && coerce_lit(*args[i], it->second)) {
+                    continue;
+                }
+            }
+            error(offset, "cannot infer type arguments");
+        }
+        type_args.clear();
+        type_args.reserve(tps.size());
+        for (const auto& tp : tps) {
+            auto it = mapping.find(tp.name);
+            if (it == mapping.end() || it->second.kind == TypeKind::Unknown ||
+                it->second.kind == TypeKind::Error) {
+                error(offset, "cannot infer type argument '" + tp.name + "'");
+                mapping[tp.name] = Type::error();
+                type_args.push_back(Type::error());
+            } else {
+                type_args.push_back(it->second);
+            }
+        }
+        check_type_arg_bounds(tps, type_args, offset);
+    }
+
+    void bind_or_infer_type_args(const std::vector<HirTypeParam>& tps, std::vector<Type>& type_args,
+                                 const std::vector<Type>& params, std::vector<HirExprPtr>& args,
+                                 std::size_t offset, std::unordered_map<std::string, Type>& mapping) {
+        if (type_args.empty() && !tps.empty()) {
+            infer_type_args(tps, type_args, params, args, offset, mapping);
+            return;
+        }
+        bind_type_args(tps, type_args, offset, mapping);
     }
 
     Type check_if(HirIf& iff, std::size_t offset) {
@@ -1126,8 +1232,12 @@ private:
         }
 
         const FnSig& sig = it->second;
+        for (auto& arg : call.args) {
+            check_expr(*arg);
+        }
+
         std::unordered_map<std::string, Type> mapping;
-        bind_type_args(sig.type_params, call.type_args, offset, mapping);
+        bind_or_infer_type_args(sig.type_params, call.type_args, sig.params, call.args, offset, mapping);
 
         if (call.args.size() != sig.params.size()) {
             error(offset, "function '" + call.callee + "' expects " + std::to_string(sig.params.size()) +
@@ -1135,12 +1245,8 @@ private:
         }
 
         const std::size_t n = std::min(call.args.size(), sig.params.size());
-        for (std::size_t i = 0; i < call.args.size(); ++i) {
-            check_expr(*call.args[i]);
-            if (i < n) {
-                expect_expr(*call.args[i], subst_type(sig.params[i], mapping), call.args[i]->offset,
-                            "argument");
-            }
+        for (std::size_t i = 0; i < n; ++i) {
+            expect_expr(*call.args[i], subst_type(sig.params[i], mapping), call.args[i]->offset, "argument");
         }
         return subst_type(sig.ret, mapping);
     }
@@ -1186,6 +1292,10 @@ private:
             }
             return Type::error();
         }
+        if (st->opaque) {
+            error(offset, "cannot access fields of opaque type '" + type_name(base_ty) + "'");
+            return Type::error();
+        }
 
         const FieldInfo* info = find_field(*st, field.name);
         if (!info) {
@@ -1206,6 +1316,13 @@ private:
         }
 
         const StructInfo& st = it->second;
+        if (st.opaque) {
+            error(offset, "cannot construct opaque type '" + lit.name + "'");
+            for (auto& field : lit.fields) {
+                check_expr(*field.value);
+            }
+            return Type::error();
+        }
         std::vector<bool> seen(st.fields.size(), false);
 
         for (auto& field : lit.fields) {
@@ -1290,8 +1407,12 @@ private:
             error(offset, "cannot call '" + call.method + "' on an immutable receiver");
         }
 
+        for (auto& arg : call.args) {
+            check_expr(*arg);
+        }
+
         std::unordered_map<std::string, Type> mapping;
-        bind_type_args(sig.type_params, call.type_args, offset, mapping);
+        bind_or_infer_type_args(sig.type_params, call.type_args, sig.params, call.args, offset, mapping);
 
         if (call.args.size() != sig.params.size()) {
             error(offset, "method '" + call.method + "' expects " + std::to_string(sig.params.size()) +
@@ -1299,12 +1420,8 @@ private:
         }
 
         const std::size_t n = std::min(call.args.size(), sig.params.size());
-        for (std::size_t i = 0; i < call.args.size(); ++i) {
-            check_expr(*call.args[i]);
-            if (i < n) {
-                expect_expr(*call.args[i], subst_type(sig.params[i], mapping), call.args[i]->offset,
-                            "argument");
-            }
+        for (std::size_t i = 0; i < n; ++i) {
+            expect_expr(*call.args[i], subst_type(sig.params[i], mapping), call.args[i]->offset, "argument");
         }
         return subst_type(sig.ret, mapping);
     }
@@ -1317,6 +1434,10 @@ private:
             if (base_ty != Type::error()) {
                 error(offset, "field assignment requires a struct, found '" + type_name(base_ty) + "'");
             }
+            return Type::error();
+        }
+        if (st->opaque) {
+            error(offset, "cannot assign fields of opaque type '" + type_name(base_ty) + "'");
             return Type::error();
         }
 
