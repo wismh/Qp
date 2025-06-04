@@ -139,3 +139,23 @@ TEST(E2E, CompileControlExampleToFiles) {
     EXPECT_NE(header_text.find("namespace math"), std::string::npos);
     EXPECT_NE(header_text.find("template <typename T, typename U>"), std::string::npos);
 }
+
+TEST(E2E, CompileExternObjExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_extern_obj";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input =
+        std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "extern_obj.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "extern_obj.h";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    std::ifstream header_in(header);
+    const auto header_text = std::string((std::istreambuf_iterator<char>(header_in)),
+                                         std::istreambuf_iterator<char>());
+    EXPECT_EQ(header_text.find("struct Test"), std::string::npos);
+    EXPECT_NE(header_text.find("extern Test test_object;"), std::string::npos);
+    EXPECT_NE(header_text.find("qplus_host.h"), std::string::npos);
+}
