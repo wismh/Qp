@@ -1,0 +1,16 @@
+extern {
+    pub struct Test;
+    impl Test {
+        pub fn add<T>(self, a: T, b: T) -> T;
+        pub fn created() -> i32;
+    }
+    pub let mut test_object: Test;
+}
+
+pub fn test() -> i32 {
+    test_object.add(3, 5)
+}
+
+pub fn use_created() -> i32 {
+    Test.created()
+}

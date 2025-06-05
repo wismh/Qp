@@ -257,6 +257,8 @@ struct HirField {
 
 struct HirStruct {
     bool pub = false;
+    bool is_extern = false;
+    bool opaque = false;
     std::string name;
     std::vector<HirField> fields;
     std::size_t offset = 0;
@@ -299,6 +301,7 @@ struct HirImpl {
 struct HirStatic {
     bool pub = false;
     bool mut = false;
+    bool is_extern = false;
     std::string name;
     Type ty;
     HirExprPtr init;

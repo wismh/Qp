@@ -209,7 +209,7 @@ private:
         return name;
     }
 
-    std::optional<StructDecl> parse_struct() {
+    std::optional<StructDecl> parse_struct(bool in_extern = false) {
         StructDecl st;
         st.offset = peek().offset;
         st.pub = consume(TokenKind::KwPub);
@@ -225,6 +225,15 @@ private:
         }
         st.name = std::move(*name);
         st.offset = name_off;
+        st.is_extern = in_extern;
+
+        if (in_extern) {
+            if (!expect(TokenKind::Semicolon, "';' after opaque struct")) {
+                return std::nullopt;
+            }
+            st.opaque = true;
+            return st;
+        }
 
         if (!expect(TokenKind::LBrace, "'{'")) {
             return std::nullopt;
@@ -408,7 +417,7 @@ private:
         return v;
     }
 
-    std::optional<ImplDecl> parse_impl() {
+    std::optional<ImplDecl> parse_impl(bool prototype = false) {
         ImplDecl impl;
         impl.offset = peek().offset;
 
@@ -437,9 +446,12 @@ private:
         }
 
         while (!at(TokenKind::Eof) && !at(TokenKind::RBrace)) {
-            auto method = parse_fn(true);
+            auto method = parse_fn(true, prototype);
             if (!method) {
                 return std::nullopt;
+            }
+            if (prototype) {
+                method->is_extern = true;
             }
             impl.methods.push_back(std::move(*method));
         }
@@ -470,6 +482,46 @@ private:
         }
 
         while (!at(TokenKind::Eof) && !at(TokenKind::RBrace)) {
+            if (at(TokenKind::KwImpl)) {
+                if (abi == Abi::C) {
+                    error(peek(), "'extern \"C\"' can only declare functions");
+                    return false;
+                }
+                auto impl = parse_impl(true);
+                if (!impl) {
+                    return false;
+                }
+                file.impls.push_back(std::move(*impl));
+                continue;
+            }
+
+            if (at(TokenKind::KwStruct) ||
+                (at(TokenKind::KwPub) && peek_n(1).kind == TokenKind::KwStruct)) {
+                if (abi == Abi::C) {
+                    error(peek(), "'extern \"C\"' can only declare functions");
+                    return false;
+                }
+                auto st = parse_struct(true);
+                if (!st) {
+                    return false;
+                }
+                file.structs.push_back(std::move(*st));
+                continue;
+            }
+
+            if (at(TokenKind::KwLet) || (at(TokenKind::KwPub) && peek_n(1).kind == TokenKind::KwLet)) {
+                if (abi == Abi::C) {
+                    error(peek(), "'extern \"C\"' can only declare functions");
+                    return false;
+                }
+                auto st = parse_static(true);
+                if (!st) {
+                    return false;
+                }
+                file.statics.push_back(std::move(*st));
+                continue;
+            }
+
             auto fn = parse_fn(false, true);
             if (!fn) {
                 return false;
@@ -571,7 +623,7 @@ private:
         return tr;
     }
 
-    std::optional<StaticDecl> parse_static() {
+    std::optional<StaticDecl> parse_static(bool is_extern = false) {
         StaticDecl st;
         st.offset = peek().offset;
         st.pub = consume(TokenKind::KwPub);
@@ -590,6 +642,21 @@ private:
                 return std::nullopt;
             }
             st.ty = std::move(*ty);
+        }
+        st.is_extern = is_extern;
+        if (is_extern) {
+            if (!st.ty) {
+                error(peek(), "extern static requires a type annotation");
+                return std::nullopt;
+            }
+            if (at(TokenKind::Equal)) {
+                error(peek(), "extern static cannot have an initializer");
+                return std::nullopt;
+            }
+            if (!expect(TokenKind::Semicolon, "';'")) {
+                return std::nullopt;
+            }
+            return st;
         }
         if (!expect(TokenKind::Equal, "'='")) {
             return std::nullopt;

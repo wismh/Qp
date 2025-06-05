@@ -548,6 +548,8 @@ HirFn lower_fn(const Source& src, FnDecl& fn, DiagnosticEngine& diags, std::stri
 HirStruct lower_struct(const Source& src, StructDecl& st, DiagnosticEngine& diags) {
     HirStruct out;
     out.pub = st.pub;
+    out.is_extern = st.is_extern;
+    out.opaque = st.opaque;
     out.name = std::move(st.name);
     out.offset = st.offset;
     out.fields.reserve(st.fields.size());
@@ -641,12 +643,15 @@ HirModule lower_file(const Source& src, AstFile ast, DiagnosticEngine& diags) {
         HirStatic hs;
         hs.pub = st.pub;
         hs.mut = st.mut;
+        hs.is_extern = st.is_extern;
         hs.name = std::move(st.name);
         hs.offset = st.offset;
         if (st.ty) {
             hs.ty = lower_type(*st.ty);
         }
-        hs.init = lower_expr(src, std::move(st.init), diags);
+        if (st.init) {
+            hs.init = lower_expr(src, std::move(st.init), diags);
+        }
         mod.statics.push_back(std::move(hs));
     }
     mod.traits.reserve(ast.traits.size());
