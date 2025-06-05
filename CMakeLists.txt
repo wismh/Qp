@@ -192,3 +192,27 @@ add_executable(control_host
 target_include_directories(control_host PRIVATE ${CONTROL_GEN_DIR})
 
 add_test(NAME control_host COMMAND control_host)
+
+set(EXTERN_OBJ_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_extern_obj)
+set(EXTERN_OBJ_GEN_H ${EXTERN_OBJ_GEN_DIR}/extern_obj.h)
+set(EXTERN_OBJ_GEN_CPP ${EXTERN_OBJ_GEN_DIR}/extern_obj.cpp)
+
+add_custom_command(
+    OUTPUT ${EXTERN_OBJ_GEN_H} ${EXTERN_OBJ_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${EXTERN_OBJ_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/extern_obj.qp -o ${EXTERN_OBJ_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/extern_obj.qp
+    COMMENT "qpc compile examples/extern_obj.qp"
+    VERBATIM
+)
+
+add_executable(extern_obj_host
+    examples/extern_obj_host/main.cpp
+    ${EXTERN_OBJ_GEN_CPP}
+)
+target_include_directories(extern_obj_host PRIVATE
+    ${EXTERN_OBJ_GEN_DIR}
+    ${CMAKE_SOURCE_DIR}/examples/extern_obj_host
+)
+
+add_test(NAME extern_obj_host COMMAND extern_obj_host)
