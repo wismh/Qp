@@ -648,6 +648,9 @@ void emit_variant(std::ostringstream& header, const HirVariant& en) {
 void emit_structs(std::ostringstream& header, const HirModule& mod,
                   const std::unordered_map<std::string, std::vector<const HirFn*>>& methods) {
     for (const auto& st : mod.structs) {
+        if (st.opaque) {
+            continue;
+        }
         header << "struct " << st.name << " {\n";
         for (const auto& field : st.fields) {
             header << "    " << cpp_type_name(field.ty) << ' ' << field.name << ";\n";
@@ -691,6 +694,14 @@ void emit_module_header(std::ostringstream& header, const HirModule& mod,
     emit_uses(header, mod);
 
     for (const auto& st : mod.statics) {
+        if (st.is_extern) {
+            header << "extern ";
+            if (!st.mut) {
+                header << "const ";
+            }
+            header << cpp_type_name(st.ty) << ' ' << st.name << ";\n";
+            continue;
+        }
         header << "inline ";
         if (!st.mut) {
             header << "const ";
@@ -742,7 +753,7 @@ void emit_module_source(std::ostringstream& source, const Source& src, const Hir
 
     for (const auto& impl : mod.impls) {
         for (const auto& method : impl.methods) {
-            if (is_generic(method)) {
+            if (method.is_extern || is_generic(method)) {
                 continue;
             }
             const auto loc = src.location(method.offset);
@@ -796,6 +807,12 @@ std::string emit_header(const HirModule& mod) {
     if (any_c_abi) {
         header << "}\n\n";
     }
+
+    header << "#if defined(__has_include)\n";
+    header << "#  if __has_include(\"qplus_host.h\")\n";
+    header << "#    include \"qplus_host.h\"\n";
+    header << "#  endif\n";
+    header << "#endif\n\n";
 
     header << "namespace qplus {\n\n";
     header << "using String = std::string;\n";

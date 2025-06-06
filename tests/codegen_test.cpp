@@ -174,3 +174,25 @@ TEST(Codegen, ControlModGenericsAndStatics) {
     EXPECT_NE(compiled.result.output.source.find("World::for_each<Transform, Sprite>()"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("id<std::int32_t>(1)"), std::string::npos);
 }
+
+TEST(Codegen, ExternOpaqueMethodsAndStatic) {
+    auto compiled = qpc::test::compile_string(R"(
+        extern {
+            pub struct Test;
+            impl Test {
+                pub fn add<T>(self, a: T, b: T) -> T;
+                pub fn created() -> i32;
+            }
+            pub let mut test_object: Test;
+        }
+        fn test() -> i32 { test_object.add(3, 5) }
+        fn created() -> i32 { Test.created() }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_EQ(compiled.result.output.header.find("struct Test"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("extern Test test_object;"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("__has_include(\"qplus_host.h\")"), std::string::npos);
+    EXPECT_EQ(compiled.result.output.source.find("Test::add"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("test_object.add<std::int32_t>(3, 5)"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("Test::created()"), std::string::npos);
+}

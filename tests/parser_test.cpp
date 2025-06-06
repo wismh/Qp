@@ -192,3 +192,56 @@ TEST(Parser, ControlModUseAndGenerics) {
     EXPECT_EQ(parsed.ast.impls[0].methods[0].type_params[0].name, "T");
     EXPECT_EQ(*parsed.ast.impls[0].methods[0].type_params[0].bound, "Component");
 }
+
+TEST(Parser, ExternOpaqueStructImplAndStatic) {
+    auto parsed = qpc::test::parse_string(R"(
+        extern {
+            pub struct Test;
+            impl Test {
+                pub fn add<T>(self, a: T, b: T) -> T;
+                pub fn created() -> i32;
+            }
+            pub let mut test_object: Test;
+        }
+        fn test() -> i32 { test_object.add(3, 5) }
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.structs.size(), 1u);
+    EXPECT_TRUE(parsed.ast.structs[0].pub);
+    EXPECT_TRUE(parsed.ast.structs[0].opaque);
+    EXPECT_TRUE(parsed.ast.structs[0].is_extern);
+    EXPECT_EQ(parsed.ast.structs[0].name, "Test");
+    ASSERT_EQ(parsed.ast.impls.size(), 1u);
+    ASSERT_EQ(parsed.ast.impls[0].methods.size(), 2u);
+    EXPECT_TRUE(parsed.ast.impls[0].methods[0].is_extern);
+    EXPECT_EQ(parsed.ast.impls[0].methods[0].self_param, qpc::SelfParam::Value);
+    EXPECT_EQ(parsed.ast.impls[0].methods[0].name, "add");
+    ASSERT_EQ(parsed.ast.impls[0].methods[0].type_params.size(), 1u);
+    EXPECT_EQ(parsed.ast.impls[0].methods[1].self_param, qpc::SelfParam::None);
+    ASSERT_EQ(parsed.ast.statics.size(), 1u);
+    EXPECT_TRUE(parsed.ast.statics[0].is_extern);
+    EXPECT_TRUE(parsed.ast.statics[0].mut);
+    EXPECT_EQ(parsed.ast.statics[0].name, "test_object");
+}
+
+TEST(Parser, ExternCRejectsStruct) {
+    auto parsed = qpc::test::parse_string(R"(
+        extern "C" {
+            struct Test;
+        }
+    )");
+    EXPECT_TRUE(parsed.diags.has_errors());
+    EXPECT_NE(parsed.diags.all().front().message.find("can only declare functions"), std::string::npos);
+}
+
+TEST(Parser, ExternStructMustBeOpaque) {
+    auto parsed = qpc::test::parse_string("extern { struct Test { x: i32 } }");
+    EXPECT_TRUE(parsed.diags.has_errors());
+    EXPECT_NE(parsed.diags.all().front().message.find("';' after opaque struct"), std::string::npos);
+}
+
+TEST(Parser, ExternStaticCannotHaveInitializer) {
+    auto parsed = qpc::test::parse_string("extern { struct Test; let mut x: Test = Test {}; }");
+    EXPECT_TRUE(parsed.diags.has_errors());
+    EXPECT_NE(parsed.diags.all().front().message.find("cannot have an initializer"), std::string::npos);
+}

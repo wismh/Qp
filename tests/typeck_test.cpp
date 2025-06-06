@@ -259,3 +259,63 @@ TEST(Typeck, BreakOutsideLoopIsError) {
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("break/continue"), std::string::npos);
 }
+
+TEST(Typeck, ExternMethodAndInferredGeneric) {
+    auto compiled = qpc::test::compile_string(R"(
+        extern {
+            pub struct Test;
+            impl Test {
+                pub fn add<T>(self, a: T, b: T) -> T;
+                pub fn created() -> i32;
+            }
+            pub let mut test_object: Test;
+        }
+        fn test() -> i32 { test_object.add(3, 5) }
+        fn created() -> i32 { Test.created() }
+        fn explicit() -> i32 { test_object.add<i32>(1, 2) }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, InferGenericFreeFn) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn id<T>(x: T) -> T { x }
+        fn f() -> i32 { id(1) }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, OpaqueFieldAccessIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        extern {
+            struct Test;
+            let mut x: Test;
+        }
+        fn f() -> i32 { x.c }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("opaque"), std::string::npos);
+}
+
+TEST(Typeck, OpaqueConstructIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        extern { struct Test; }
+        fn f() -> Test { Test {} }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("opaque"), std::string::npos);
+}
+
+TEST(Typeck, CannotInferTypeArgument) {
+    auto compiled = qpc::test::compile_string(R"(
+        extern {
+            struct Test;
+            impl Test {
+                fn wrap<T>() -> i32;
+            }
+        }
+        fn f() -> i32 { Test.wrap() }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("cannot infer type argument"), std::string::npos);
+}
