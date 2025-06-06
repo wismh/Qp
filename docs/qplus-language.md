@@ -414,6 +414,13 @@ use util::*;
 
 Модуль → C++ namespace. `use` не впливає на ABI, лише на імена в Q+.
 
+`mod math { ... }` — тіло в цьому файлі. `mod math;` — файл-модуль:
+
+- поруч із коренем компіляції (`app.qp`): `math.qp` або `math/mod.qp`;
+- усередині модуля `math`: `math/vec.qp` або `math/vec/mod.qp`.
+
+Якщо є обидва файли — помилка. Немає жодного — помилка. Цикл (`a` → `b` → `a`) — помилка.
+
 `extern` — оголошення символу, який дає хост (C++):
 
 ```qp
@@ -464,7 +471,7 @@ JIT у debug: panic показує Q+ стек через debug info LLVM.
 
 | Q+ | C++ |
 |---|---|
-| `mod foo` | `namespace foo` |
+| `mod foo` / `mod foo;` | `namespace foo` |
 | `struct S { x: i32 }` | `struct S { int32_t x; }` |
 | `impl S { fn f(self) }` | `S S::f() const` |
 | `fn f(mut self)` | `S::f()` non-const / `S&` |
