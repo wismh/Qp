@@ -546,7 +546,12 @@ private:
             return std::nullopt;
         }
         m.name = std::move(*name);
-        if (!expect(TokenKind::LBrace, "'{'")) {
+        if (consume(TokenKind::Semicolon)) {
+            m.file = true;
+            m.body = std::make_unique<AstFile>();
+            return m;
+        }
+        if (!expect(TokenKind::LBrace, "'{' or ';' after module name")) {
             return std::nullopt;
         }
         m.body = std::make_unique<AstFile>();
