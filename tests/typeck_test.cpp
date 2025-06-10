@@ -319,3 +319,15 @@ TEST(Typeck, CannotInferTypeArgument) {
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("cannot infer type argument"), std::string::npos);
 }
+
+TEST(Typeck, MissingFileModuleIsError) {
+    auto compiled = qpc::test::compile_string("mod no_such_qplus_file_mod;");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("cannot find module"), std::string::npos);
+}
+
+TEST(Typeck, DuplicateModuleIsError) {
+    auto compiled = qpc::test::compile_string("mod a { fn f() {} } mod a { fn g() {} }");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("duplicate module"), std::string::npos);
+}
