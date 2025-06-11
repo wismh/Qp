@@ -216,3 +216,28 @@ target_include_directories(extern_obj_host PRIVATE
 )
 
 add_test(NAME extern_obj_host COMMAND extern_obj_host)
+
+set(MODS_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_mods)
+set(MODS_GEN_H ${MODS_GEN_DIR}/mods.h)
+set(MODS_GEN_CPP ${MODS_GEN_DIR}/mods.cpp)
+
+add_custom_command(
+    OUTPUT ${MODS_GEN_H} ${MODS_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${MODS_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/mods.qp -o ${MODS_GEN_DIR}
+    DEPENDS qpc
+        ${CMAKE_SOURCE_DIR}/examples/mods.qp
+        ${CMAKE_SOURCE_DIR}/examples/math.qp
+        ${CMAKE_SOURCE_DIR}/examples/math/vec.qp
+        ${CMAKE_SOURCE_DIR}/examples/util/mod.qp
+    COMMENT "qpc compile examples/mods.qp"
+    VERBATIM
+)
+
+add_executable(mods_host
+    examples/mods_host/main.cpp
+    ${MODS_GEN_CPP}
+)
+target_include_directories(mods_host PRIVATE ${MODS_GEN_DIR})
+
+add_test(NAME mods_host COMMAND mods_host)
