@@ -245,3 +245,20 @@ TEST(Parser, ExternStaticCannotHaveInitializer) {
     EXPECT_TRUE(parsed.diags.has_errors());
     EXPECT_NE(parsed.diags.all().front().message.find("cannot have an initializer"), std::string::npos);
 }
+
+TEST(Parser, FileModVsInline) {
+    auto parsed = qpc::test::parse_string(R"(
+        pub mod math;
+        mod util {
+            pub fn id(x: i32) -> i32 { x }
+        }
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.mods.size(), 2u);
+    EXPECT_TRUE(parsed.ast.mods[0].pub);
+    EXPECT_TRUE(parsed.ast.mods[0].file);
+    EXPECT_EQ(parsed.ast.mods[0].name, "math");
+    EXPECT_FALSE(parsed.ast.mods[1].file);
+    EXPECT_EQ(parsed.ast.mods[1].name, "util");
+    ASSERT_EQ(parsed.ast.mods[1].body->functions.size(), 1u);
+}
