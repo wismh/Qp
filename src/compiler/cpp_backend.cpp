@@ -741,11 +741,12 @@ void emit_module_header(std::ostringstream& header, const HirModule& mod,
     }
 }
 
-void emit_module_source(std::ostringstream& source, const Source& src, const HirModule& mod,
-                        const std::string& qp_path) {
+void emit_module_source(std::ostringstream& source, const Source& src, const HirModule& mod) {
+    const Source& here = mod.source ? *mod.source : src;
+    const std::string qp_path = line_path(here.path());
     for (const auto& child : mod.mods) {
         source << "namespace " << child.name << " {\n\n";
-        emit_module_source(source, src, child, qp_path);
+        emit_module_source(source, here, child);
         source << "}  // namespace " << child.name << "\n\n";
     }
 
@@ -756,7 +757,7 @@ void emit_module_source(std::ostringstream& source, const Source& src, const Hir
             if (method.is_extern || is_generic(method)) {
                 continue;
             }
-            const auto loc = src.location(method.offset);
+            const auto loc = here.location(method.offset);
             source << "#line " << loc.line << " \"" << qp_path << "\"\n";
             if (impl.trait_name) {
                 emit_operator_signature(source, impl, method);
@@ -772,7 +773,7 @@ void emit_module_source(std::ostringstream& source, const Source& src, const Hir
         if (fn.is_extern || is_generic(fn)) {
             continue;
         }
-        const auto loc = src.location(fn.offset);
+        const auto loc = here.location(fn.offset);
         source << "#line " << loc.line << " \"" << qp_path << "\"\n";
         emit_free_signature(source, fn);
         emit_fn_body(source, fn);
@@ -825,11 +826,10 @@ std::string emit_header(const HirModule& mod) {
 }
 
 std::string emit_source(const Source& src, const HirModule& mod, std::string_view header_name) {
-    const std::string qp_path = line_path(src.path());
     std::ostringstream source;
     source << "#include \"" << header_name << "\"\n\n";
     source << "namespace qplus {\n\n";
-    emit_module_source(source, src, mod, qp_path);
+    emit_module_source(source, src, mod);
     source << "}  // namespace qplus\n";
     return source.str();
 }

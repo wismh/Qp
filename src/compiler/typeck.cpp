@@ -108,7 +108,7 @@ static bool is_op_trait(std::string_view name) {
 class TypeChecker {
 public:
     TypeChecker(const Source& src, HirModule& mod, DiagnosticEngine& diags)
-        : src_(src), mod_(mod), diags_(diags) {}
+        : current_src_(&src), mod_(mod), diags_(diags) {}
 
     void run() {
         collect_tree(mod_, "");
@@ -122,7 +122,7 @@ public:
     }
 
 private:
-    const Source& src_;
+    const Source* current_src_;
     HirModule& mod_;
     DiagnosticEngine& diags_;
     std::unordered_map<std::string, StructInfo> structs_;
@@ -139,8 +139,19 @@ private:
     int loop_depth_ = 0;
 
     void error(std::size_t offset, std::string message) {
-        diags_.error(src_, offset, std::move(message));
+        diags_.error(*current_src_, offset, std::move(message));
     }
+
+    struct SrcGuard {
+        const Source*& slot;
+        const Source* prev;
+        SrcGuard(const Source*& s, const Source* next) : slot(s), prev(s) {
+            if (next) {
+                slot = next;
+            }
+        }
+        ~SrcGuard() { slot = prev; }
+    };
 
     bool resolve_type(Type& ty, std::size_t offset) {
         if (ty.kind == TypeKind::List || ty.kind == TypeKind::Array) {
@@ -195,6 +206,7 @@ private:
     }
 
     void collect_tree(HirModule& m, const std::string& prefix) {
+        SrcGuard src_guard(current_src_, m.source);
         for (auto& tr : m.traits) {
             traits_.insert(qualify(prefix, tr.name));
             traits_.insert(tr.name);
@@ -263,6 +275,7 @@ private:
     }
 
     void apply_uses(HirModule& m, const std::string& prefix) {
+        SrcGuard src_guard(current_src_, m.source);
         for (auto& u : m.uses) {
             if (u.path.empty() && !u.glob) {
                 continue;
@@ -326,6 +339,7 @@ private:
     }
 
     void check_tree(HirModule& m) {
+        SrcGuard src_guard(current_src_, m.source);
         for (auto& st : m.statics) {
             if (st.ty.kind != TypeKind::Unknown) {
                 resolve_type(st.ty, st.offset);

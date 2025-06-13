@@ -12,6 +12,8 @@
 
 namespace qpc {
 
+class Source;
+
 struct HirExpr;
 struct HirStmt;
 struct HirPat;
@@ -330,6 +332,7 @@ struct HirUse {
 
 struct HirModule {
     std::string name;
+    const Source* source = nullptr;
     std::vector<HirUse> uses;
     std::vector<HirModule> mods;
     std::vector<HirStatic> statics;

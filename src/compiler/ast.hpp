@@ -336,11 +336,14 @@ struct UseDecl {
 };
 
 struct AstFile;
+class Source;
 
 struct ModDecl {
     bool pub = false;
+    bool file = false;
     std::string name;
     std::unique_ptr<AstFile> body;
+    const Source* source = nullptr;
     std::size_t offset = 0;
 };
 

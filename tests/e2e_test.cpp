@@ -159,3 +159,61 @@ TEST(E2E, CompileExternObjExampleToFiles) {
     EXPECT_NE(header_text.find("extern Test test_object;"), std::string::npos);
     EXPECT_NE(header_text.find("qplus_host.h"), std::string::npos);
 }
+
+TEST(E2E, CompileModsExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_mods";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input = std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "mods.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "mods.h";
+    const auto source = out_dir / "mods.cpp";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    std::ifstream header_in(header);
+    const auto header_text = std::string((std::istreambuf_iterator<char>(header_in)),
+                                         std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("namespace math"), std::string::npos);
+    EXPECT_NE(header_text.find("namespace vec"), std::string::npos);
+    EXPECT_NE(header_text.find("namespace util"), std::string::npos);
+    EXPECT_NE(header_text.find("std::int32_t run()"), std::string::npos);
+
+    std::ifstream source_in(source);
+    const auto source_text = std::string((std::istreambuf_iterator<char>(source_in)),
+                                         std::istreambuf_iterator<char>());
+    EXPECT_NE(source_text.find("math.qp"), std::string::npos);
+    EXPECT_NE(source_text.find("vec.qp"), std::string::npos);
+    EXPECT_NE(source_text.find("mod.qp"), std::string::npos);
+}
+
+TEST(E2E, FileModCycleIsError) {
+    const auto dir = std::filesystem::temp_directory_path() / "qplus_e2e_mod_cycle";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    {
+        std::ofstream{(dir / "a.qp").string()} << "mod a;\n";
+    }
+
+    qpc::DiagnosticEngine diags;
+    EXPECT_FALSE(qpc::compile_file(dir / "a.qp", dir / "out", diags));
+    ASSERT_FALSE(diags.all().empty());
+    EXPECT_NE(diags.all().front().message.find("cyclic module"), std::string::npos);
+}
+
+TEST(E2E, FileModAmbiguousIsError) {
+    const auto dir = std::filesystem::temp_directory_path() / "qplus_e2e_mod_ambiguous";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir / "foo");
+    {
+        std::ofstream{(dir / "root.qp").string()} << "mod foo;\n";
+        std::ofstream{(dir / "foo.qp").string()} << "pub fn f() -> i32 { 1 }\n";
+        std::ofstream{(dir / "foo" / "mod.qp").string()} << "pub fn f() -> i32 { 2 }\n";
+    }
+
+    qpc::DiagnosticEngine diags;
+    EXPECT_FALSE(qpc::compile_file(dir / "root.qp", dir / "out", diags));
+    ASSERT_FALSE(diags.all().empty());
+    EXPECT_NE(diags.all().front().message.find("has both"), std::string::npos);
+}

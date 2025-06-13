@@ -1,0 +1,8 @@
+mod math;
+mod util;
+use math::*;
+use util::*;
+
+pub fn run() -> i32 {
+    add(2, 3) + twice(4) + one()
+}

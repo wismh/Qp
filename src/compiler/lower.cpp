@@ -634,8 +634,14 @@ HirModule lower_file(const Source& src, AstFile ast, DiagnosticEngine& diags) {
     }
     mod.mods.reserve(ast.mods.size());
     for (auto& nested : ast.mods) {
-        HirModule child = lower_file(src, std::move(*nested.body), diags);
+        if (!nested.body) {
+            diags.error(src, nested.offset, "module '" + nested.name + "' is missing a body");
+            continue;
+        }
+        const Source& child_src = nested.source ? *nested.source : src;
+        HirModule child = lower_file(child_src, std::move(*nested.body), diags);
         child.name = std::move(nested.name);
+        child.source = nested.source;
         mod.mods.push_back(std::move(child));
     }
     mod.statics.reserve(ast.statics.size());
@@ -701,7 +707,9 @@ HirModule lower_file(const Source& src, AstFile ast, DiagnosticEngine& diags) {
 }
 
 HirModule lower(const Source& src, AstFile ast, DiagnosticEngine& diags) {
-    return lower_file(src, std::move(ast), diags);
+    HirModule mod = lower_file(src, std::move(ast), diags);
+    mod.source = &src;
+    return mod;
 }
 
 }  // namespace qpc
