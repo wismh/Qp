@@ -1,38 +1,40 @@
 # Q+ Language Design
 
-**Q+** (QPlus). Файли: `.qp`. Компілятор: `qpc`.
+User guide: [`qplus.md`](qplus.md). This file is the core language and compiler spec.
 
-Q+ — універсальна скриптова мова з синтаксисом, близьким до Rust, без ownership і lifetime. Null дозволений через `T?`. Поліморфізм — через `trait` + `impl`, без ієрархії класів.
+**Q+** (QPlus). Files: `.qp`. Compiler: `qpc`.
 
-Це специфікація ядра мови і трьох шляхів компіляції. Без прив’язки до конкретного рантайму чи рушія.
+Q+ is a general-purpose scripting language with Rust-like syntax and no ownership or lifetimes. Null is allowed through `T?`. Polymorphism is `trait` + `impl`, not class inheritance.
 
----
-
-## 1. Цілі
-
-1. Писати код швидше і безпечніше, ніж на C++, без borrow checker.
-2. Поверхня як у Rust: `fn`, `let`/`mut`, `struct`/`impl`, `match`, модулі.
-3. Три практичні артефакти з одного фронтенда:
-   - **C++ source** → далі звичайний C++ компілятор у native desktop;
-   - **той самий C++** → WASM (Emscripten / clang);
-   - **LLVM JIT** — editor і debug, hot reload.
-
-### Чого немає в ядрі (v0)
-
-Ownership, lifetimes, ручний `free`, спадкування класів, макроси рівня Rust, препроцесор, винятки як основний контроль потоку.
-
-Все, що було б фреймворком (сервіси, контейнери, ECS, скрипти на сутностях) — не частина мови. Це можна пізніше надбудувати бібліотекою.
+This is the spec for the language core and three compilation paths. It is not tied to a particular runtime or engine.
 
 ---
 
-## 2. Три бекенди, один фронтенд
+## 1. Goals
+
+1. Write code faster and safer than C++, without a borrow checker.
+2. A Rust-like surface: `fn`, `let`/`mut`, `struct`/`impl`, `match`, modules.
+3. Three practical artifacts from one frontend:
+   - **C++ source** → a normal C++ compiler for native desktop;
+   - **the same C++** → WASM (Emscripten / clang);
+   - **LLVM JIT** — editor, debug, hot reload.
+
+### Out of core (v0)
+
+Ownership, lifetimes, manual `free`, class inheritance, Rust-level macros, a preprocessor, exceptions as the main control-flow tool.
+
+Framework pieces (services, containers, ECS, entity scripts) are not part of the language. Those can be a library later.
+
+---
+
+## 2. Three backends, one frontend
 
 ```
 .qp ──► lexer ──► parser ──► HIR ──► typeck
                                       │
                     ┌─────────────────┼─────────────────┐
                     ▼                 ▼                 ▼
-              CppBackend        LlvmJitBackend     (немає окремого
+              CppBackend        LlvmJitBackend     (no separate
               .h / .cpp          LLVM IR + JIT      WasmBackend)
                     │                 │
                     ▼                 ▼
@@ -46,98 +48,98 @@ Ownership, lifetimes, ручний `free`, спадкування класів, 
                             .wasm
 ```
 
-Фронтенд (лексер, парсер, HIR, перевірка типів) спільний. Розходяться лише кодогенератори.
+The frontend (lexer, parser, HIR, type checking) is shared. Only code generators diverge.
 
 ### 2.1 AOT: Q+ → C++
 
-Основний шлях для релізу.
+The main release path.
 
 ```
-qpc build src/ -o gen/          # згенерувати C++
+qpc build src/ -o gen/          # emit C++
 clang++ gen/*.cpp runtime/*.cpp -o app
 ```
 
-Чому C++, а не одразу LLVM object:
+Why C++, not LLVM objects first:
 
-- native desktop збирається **тим самим** тулчейном, що й решта проєкту (MSVC / clang / gcc);
-- WASM не потребує другого кодогенератора Q+;
-- згенерований C++ можна читати, ставити breakpoint (з `#line` назад у `.qp`);
-- ABI з існуючим C++ кодом — натуральний (типи, calling convention, лінковка).
+- native desktop uses **the same** toolchain as the rest of the project (MSVC / clang / gcc);
+- WASM does not need a second Q+ code generator;
+- generated C++ is readable; breakpoints work (with `#line` back to `.qp`);
+- ABI with existing C++ is natural (types, calling convention, linking).
 
-Кодогенерація має бути детермінованою і відносно читабельною. Імена: `qplus::mod_name::TypeName`. Файли: один `.qp` модуль → пара `.h` / `.cpp` (або `.hpp` за політикою проєкту).
+Codegen must be deterministic and reasonably readable. Names: `qplus::mod_name::TypeName`. Files: one `.qp` module → a `.h` / `.cpp` pair (or `.hpp` by project policy).
 
-`#line 42 "src/math.qp"` на кожній згенерованій функції, щоб дебагер показував Q+.
+`#line 42 "src/math.qp"` on each generated function so the debugger shows Q+.
 
-### 2.2 WASM: C++ → wasm, не Q+ → wasm
+### 2.2 WASM: C++ → wasm, not Q+ → wasm
 
-Окремий бекенд Q+ → WASM **не робимо**, поки не доведено, що C++-шлях не тягне.
+Do **not** add a Q+ → WASM backend until the C++ path is proven not to be a burden.
 
 ```
 qpc build src/ -o gen/
 emcc gen/*.cpp runtime/*.cpp -o app.wasm
-# або
+# or
 clang++ --target=wasm32-wasi ...
 ```
 
-Обмеження WASM (лінійна пам’ять, немає типових винятків C++, інший лінкер) живуть у **рантаймі** (`runtime/wasm/`), не в синтаксисі мови. Мова одна.
+WASM limits (linear memory, no typical C++ exceptions, a different linker) live in the **runtime** (`runtime/wasm/`), not in the language syntax. The language is one.
 
-Якщо колись знадобиться тонший wasm (менший runtime, GC proposal) — це третій бекенд від того ж HIR. Не зараз.
+If a thinner wasm is needed later (smaller runtime, GC proposal), that is a third backend from the same HIR. Not now.
 
-### 2.3 JIT: LLVM для editor / debug / hot reload
+### 2.3 JIT: LLVM for editor / debug / hot reload
 
-Релізний C++ не вміє підміняти функції на льоту. Для цього — окремий LLVM-бекенд:
+Release C++ cannot replace functions on the fly. That needs a separate LLVM backend:
 
 ```
-HIR ──► LLVM IR ──► ORC JIT ──► адреса функції в процесі редактора
+HIR ──► LLVM IR ──► ORC JIT ──► function address in the editor process
 ```
 
-Редактор і debug-сесія **виконують Q+ через JIT**, а не через попередньо зібраний C++. Hot reload:
+The editor and debug session **run Q+ through the JIT**, not through prebuilt C++. Hot reload:
 
-| Зміна | Поведінка |
+| Change | Behavior |
 |---|---|
-| Тіло `fn` / методу | Перекомпілювати функцію, замінити в JIT. Стан живий. |
-| Нова `fn` у модулі | Додати символ. |
-| Нове поле `struct` / зміна layout | Неможливо безпечно на живих об’єктах → повний reload модуля або сесії. |
-| Зміна сигнатури `fn` | Reload модуля; старі call site невалідні. |
-| Зміна `trait` | Reload усіх impl. |
+| Body of a `fn` / method | Recompile the function, swap it in the JIT. State stays live. |
+| New `fn` in a module | Add the symbol. |
+| New `struct` field / layout change | Not safe on live objects → full module or session reload. |
+| `fn` signature change | Reload the module; old call sites are invalid. |
+| `trait` change | Reload every impl. |
 
-JIT і C++-бекенд зобов’язані дотримуватись **одного ABI** для runtime-типів (`qplus::String`, `Vec<T>`, object header GC), щоб хост на C++ міг викликати JIT-код і навпаки.
+JIT and the C++ backend must share **one ABI** for runtime types (`qplus::String`, `Vec<T>`, GC object header) so a C++ host can call JIT code and vice versa.
 
-`qpc` у режимі editor тримає інкрементальний граф модулів: змінився файл → typeck модуля та імпортерів → codegen лише брудних `fn`.
+In editor mode, `qpc` keeps an incremental module graph: a file changes → typeck that module and its importers → codegen only dirty `fn`s.
 
-### 2.4 Рантайм (C++)
+### 2.4 Runtime (C++)
 
-Одна бібліотека, лінкується і до AOT, і до JIT-хоста:
+One library, linked into both AOT and the JIT host:
 
-- аллокатор / GC (або ARC + cycle check — рішення в §16);
+- allocator / GC (or ARC + cycle check — decided in §13);
 - `String`, `Vec<T>`, `Map<K,V>`, `Set<T>`;
-- panic (стек, повідомлення, `#line`);
-- nullable ptr helpers;
-- точка входу JIT: `qplus_jit_lookup("mod.fn")`.
+- panic (stack, message, `#line`);
+- nullable pointer helpers;
+- JIT entry: `qplus_jit_lookup("mod.fn")`.
 
-Без цього згенерований C++ не самодостатній.
-
----
-
-## 3. Принципи мови
-
-**Явний null.** `T` не буває `null`. `T?` буває. Немає «всі посилання nullable».
-
-**struct — дані, impl — поведінка.** Немає `class`, конструкторів-монстрів і спадкування.
-
-**Значення копіюються, посилання — окремий тип.** Примітиви, `struct`, `enum` — value types. Купа — через `T?` / `new` (див. §5.2).
-
-**Останній вираз блока — його значення.** `return` теж є.
+Without this, generated C++ is not self-contained.
 
 ---
 
-## 4. Лексика
+## 3. Language principles
 
-Коментарі: `//`, `/* */`. Ідентифікатори Unicode. Конвенція: `snake_case` для значень і функцій, `PascalCase` для типів. Ключові слова англійською.
+**Explicit null.** `T` is never `null`. `T?` may be. There is no “every reference is nullable”.
 
-Рядки: `"hello"`, інтерполяція `"hp = ${hp}"`, сирі `#"path\raw"#`.
+**struct is data, impl is behavior.** No `class`, no constructor monsters, no inheritance.
 
-Числа: `10`, `10_000`, `0xFF`, `3.14` (default **`f32`**), `3.14f64`, суфікси `i32`/`u64`.
+**Values copy; a reference is a separate type.** Primitives, `struct`, and `enum` are value types. The heap is `T?` / `new` (see §5.2).
+
+**The last expression of a block is its value.** `return` exists too.
+
+---
+
+## 4. Lexical syntax
+
+Comments: `//`, `/* */`. Unicode identifiers. Convention: `snake_case` for values and functions, `PascalCase` for types. Keywords are English.
+
+Strings: `"hello"`, interpolation `"hp = ${hp}"`, raw `#"path\raw"#`.
+
+Numbers: `10`, `10_000`, `0xFF`, `3.14` (default **`f32`**), `3.14f64`, suffixes `i32`/`u64`.
 
 ```qp
 fn clamp(x: f32, a: f32, b: f32) -> f32 {
@@ -147,22 +149,22 @@ fn clamp(x: f32, a: f32, b: f32) -> f32 {
 
 ---
 
-## 5. Типи
+## 5. Types
 
-### 5.1 Примітиви
+### 5.1 Primitives
 
-| Тип | Опис |
+| Type | Meaning |
 |---|---|
 | `bool` | `true` / `false` |
-| `i8` `i16` `i32` `i64` | знакові |
-| `u8` `u16` `u32` `u64` | беззнакові |
-| `f32` `f64` | float; літерал `3.0` → `f32` |
+| `i8` `i16` `i32` `i64` | signed |
+| `u8` `u16` `u32` `u64` | unsigned |
+| `f32` `f64` | float; literal `3.0` → `f32` |
 | `char` | Unicode scalar |
 | `string` | UTF-8, immutable |
 | `()` | unit |
 | `!` | never |
 
-Інференс локальний. Сигнатури `fn`, публічних полів і `pub`-елементів — обов’язкові.
+Inference is local. Signatures of `fn`s, public fields, and `pub` items are required.
 
 ```qp
 let hp = 100;            // i32
@@ -171,38 +173,38 @@ let speed: f64 = 6.0;
 let name = "Ada";        // string
 ```
 
-### 5.2 Null і купа
+### 5.2 Null and the heap
 
-`null` лише для `T?`.
+`null` is only for `T?`.
 
 ```qp
 let p: Point? = null;
 let p = new Point { x: 1.0, y: 2.0 };   // Point?
 let stack = Point { x: 1.0, y: 2.0 };   // Point (value)
 
-let a: Point = p;        // помилка компіляції
-let a = p!;              // panic, якщо null
-let a = p ?? stack;      // fallback, тип Point
+let a: Point = p;        // compile error
+let a = p!;              // panic if null
+let a = p ?? stack;      // fallback, type Point
 let x = p?.x;            // f32?
 ```
 
-| Синтаксис | Значення |
+| Syntax | Meaning |
 |---|---|
-| `T?` | nullable посилання на heap-`T` |
-| `new T { ... }` | алокація, результат `T?` (або `T`, якщо колись додамо non-null new — не в v0) |
-| `x?.field` / `x?.method()` | null-safe; результат `U?` |
-| `x ?? y` | якщо `x` null — `y` |
+| `T?` | nullable reference to a heap `T` |
+| `new T { ... }` | allocate; result is `T?` (or `T` if non-null `new` is added later — not in v0) |
+| `x?.field` / `x?.method()` | null-safe; result is `U?` |
+| `x ?? y` | if `x` is null, `y` |
 | `x!` | assert non-null |
-| `x?` | propagate null з функції, що повертає `U?` |
-| `if let v = x { }` | у гілці `v: T` |
+| `x?` | propagate null from a function that returns `U?` |
+| `if let v = x { }` | in the branch, `v: T` |
 
-Неявне `T` → `T?` немає: value і reference — різні. Щоб покласти value на купу — `new`.
+There is no implicit `T` → `T?`: value and reference are different. To put a value on the heap, use `new`.
 
-`T?` у C++: `T*` + контракт; у рантаймі об’єкт має header GC. Value `T` у C++: `struct T` by value.
+`T?` in C++: `T*` plus a contract; at runtime the object has a GC header. Value `T` in C++: `struct T` by value.
 
 ### 5.3 `struct`
 
-Іменований продукт. Value type: присвоєння копіює поля.
+A named product. Value type: assignment copies fields.
 
 ```qp
 pub struct Vec2 {
@@ -228,13 +230,13 @@ impl Vec2 {
 }
 ```
 
-- Поля за замовчуванням іммутабельні; `mut` — можна писати.
-- `self` — копія отримувача.
-- `mut self` — ексклюзивний view, зміни видимі викликачеві (для value — як `&mut self` у Rust, без lifetime: передається вказівник у згенерованому C++).
-- Немає спадкування `struct`.
+- Fields are immutable by default; `mut` allows writes.
+- `self` is a copy of the receiver.
+- `mut self` is an exclusive view; changes are visible to the caller (for values, like Rust `&mut self` without lifetimes: a pointer in the generated C++).
+- No `struct` inheritance.
 - Update: `Vec2 { x: 1.0, ..v }`.
 
-У C++:
+In C++:
 
 ```cpp
 struct Vec2 {
@@ -248,7 +250,7 @@ struct Vec2 {
 
 ### 5.4 `enum`
 
-Звичайний C-подібний перелік іменованих констант. Без полів.
+A C-style list of named constants. No fields.
 
 ```qp
 pub enum Color {
@@ -265,13 +267,13 @@ fn is_red(c: Color) -> bool {
 }
 ```
 
-У C++: `enum class Color : std::int32_t { Red = 0, Green = 2, Blue = 3 };`. Значення: `Color::Red`.
+In C++: `enum class Color : std::int32_t { Red = 0, Green = 2, Blue = 3 };`. Values: `Color::Red`.
 
-Якщо потрібні поля — `variant`.
+If you need fields, use `variant`.
 
 ### 5.4.1 `variant`
 
-ADT, як `enum` у Rust.
+An ADT, like Rust `enum`.
 
 ```qp
 pub variant Shape {
@@ -289,9 +291,9 @@ fn area(s: Shape) -> f32 {
 }
 ```
 
-У C++: `std::variant` внутрішніх структур.
+In C++: `std::variant` of inner structs.
 
-### 5.5 Колекції
+### 5.5 Collections
 
 ```qp
 let xs: [i32] = [1, 2, 3];     // Vec
@@ -306,9 +308,9 @@ let map: {string: i32} = {"hp": 10};
 | `[T; N]` | `qplus::Array<T, N>` (`std::array`) |
 | `{K: V}` | `qplus::Dict<K,V>` (`std::map`) |
 | `#{T}` | `qplus::Set<T>` |
-| `(A, B)` | `std::tuple` або struct |
+| `(A, B)` | `std::tuple` or a struct |
 
-### 5.6 Generics і `trait`
+### 5.6 Generics and `trait`
 
 ```qp
 pub trait Add {
@@ -326,7 +328,7 @@ fn twice<T: Add>(x: T) -> T {
 }
 ```
 
-Мономорфізація в C++ (шаблони) і в LLVM JIT (копія функції на набір типів). Dynamic dispatch: `dyn Trait` — fat pointer `(data*, vtable*)`, якщо знадобиться; у v0 можна лише static `T: Trait`.
+Monomorphization in C++ (templates) and in the LLVM JIT (a copy of the function per type set). Dynamic dispatch: `dyn Trait` is a fat pointer `(data*, vtable*)` if needed; v0 is static `T: Trait` only.
 
 Associated types:
 
@@ -337,7 +339,7 @@ pub trait Pool {
 }
 ```
 
-### 5.7 `type` і `Result`
+### 5.7 `type` and `Result`
 
 ```qp
 type Meters = f32;
@@ -357,11 +359,11 @@ fn load(path: string) -> Result<string, string> {
 }
 ```
 
-`?` на `Result` прокидає `Err`. `?` на `T?` прокидає `null`. В одній `fn` не змішувати без явного типу повернення, який це дозволяє (`Result<T?, E>`).
+`?` on `Result` propagates `Err`. `?` on `T?` propagates `null`. Do not mix them in one `fn` unless the return type allows it (`Result<T?, E>`).
 
 ---
 
-## 6. Змінні і контроль потоку
+## 6. Variables and control flow
 
 ```qp
 let x = 1;
@@ -390,11 +392,11 @@ match n {
 }
 ```
 
-Параметр `mut x: T` — локально змінний. `mut self` — див. §5.3.
+A `mut x: T` parameter is locally mutable. `mut self` — see §5.3.
 
 ---
 
-## 7. Функції, видимість, модулі
+## 7. Functions, visibility, modules
 
 ```qp
 pub fn min(a: i32, b: i32) -> i32 {
@@ -402,7 +404,7 @@ pub fn min(a: i32, b: i32) -> i32 {
 }
 ```
 
-Видимість: за замовчуванням модуль; `pub` — зовні.
+Visibility: module by default; `pub` is outside.
 
 ```qp
 mod math;
@@ -412,16 +414,16 @@ use math::Vec2;
 use util::*;
 ```
 
-Модуль → C++ namespace. `use` не впливає на ABI, лише на імена в Q+.
+A module becomes a C++ namespace. `use` does not affect ABI, only names in Q+.
 
-`mod math { ... }` — тіло в цьому файлі. `mod math;` — файл-модуль:
+`mod math { ... }` — body in this file. `mod math;` — a file module:
 
-- поруч із коренем компіляції (`app.qp`): `math.qp` або `math/mod.qp`;
-- усередині модуля `math`: `math/vec.qp` або `math/vec/mod.qp`.
+- next to the compilation root (`app.qp`): `math.qp` or `math/mod.qp`;
+- inside module `math`: `math/vec.qp` or `math/vec/mod.qp`.
 
-Якщо є обидва файли — помилка. Немає жодного — помилка. Цикл (`a` → `b` → `a`) — помилка.
+Both files at once is an error. Neither is an error. A cycle (`a` → `b` → `a`) is an error.
 
-`extern` — оголошення символу, який дає хост (C++):
+`extern` declares a symbol the host (C++) provides:
 
 ```qp
 extern "C" {
@@ -443,31 +445,31 @@ fn demo() -> i32 {
 }
 ```
 
-`extern "C"` — лише вільні функції з C ABI. `extern` без ABI — C++ runtime Q+ (`qplus::...`). Тіло пишеться на C++, не в `.qp`.
+`extern "C"` — free functions with the C ABI only. `extern` with no ABI — Q+ C++ runtime (`qplus::...`). The body is written in C++, not in `.qp`.
 
-`struct Test;` у `extern` — непрозорий тип хоста: Q+ не знає полів і не генерує `struct`. Методи з `impl` теж лише прототипи; виклик `obj.add(3, 5)` іде в C++ як `obj.add<std::int32_t>(3, 5)` (аргументи виводять `T`, або пишеться `add<i32>(...)`). `let` без `=` — `extern` глобаль хоста. Повний тип хост кладе в `qplus_host.h` на include path, у `namespace qplus`.
+`struct Test;` in `extern` is an opaque host type: Q+ does not know the fields and does not emit `struct`. Methods in `impl` are prototypes only; `obj.add(3, 5)` becomes `obj.add<std::int32_t>(3, 5)` in C++ (`T` is inferred from arguments, or write `add<i32>(...)`). `let` without `=` is an `extern` host global. The host puts the complete type in `qplus_host.h` on the include path, in `namespace qplus`.
 
 ---
 
-## 8. Паніка і безпека
+## 8. Panic and safety
 
-У скриптах немає UB. Порушення — `panic`.
+Scripts have no UB. Violations `panic`.
 
-| Ситуація | Результат |
+| Situation | Result |
 |---|---|
-| `x!` коли `x == null` | panic |
-| індекс за межами `[T]` | panic |
-| ділення `i32` на 0 | panic |
-| ділення `f32` на 0 | IEEE |
-| overflow `i32` у debug | panic; у release — wrapping (як `i32` у LLVM) — зафіксувати в реалізації |
+| `x!` when `x == null` | panic |
+| index out of bounds on `[T]` | panic |
+| `i32` division by 0 | panic |
+| `f32` division by 0 | IEEE |
+| `i32` overflow in debug | panic; in release — wrapping (like LLVM `i32`) — lock this in the implementation |
 
-У згенерованому C++ `panic` — функція рантайму, не необроблений C++ exception крізь FFI (можна всередині `throw` і ловити на межі модуля). У WASM — `abort` або JS-host trap, залежно від рантайму.
+In generated C++, `panic` is a runtime function, not an uncaught C++ exception across FFI (you may `throw` internally and catch at the module boundary). On WASM — `abort` or a JS-host trap, depending on the runtime.
 
-JIT у debug: panic показує Q+ стек через debug info LLVM.
+JIT in debug: panic shows the Q+ stack through LLVM debug info.
 
 ---
 
-## 9. Відповідність Q+ → C++ (конспект)
+## 9. Q+ → C++ mapping (summary)
 
 | Q+ | C++ |
 |---|---|
@@ -486,17 +488,17 @@ JIT у debug: panic показує Q+ стек через debug info LLVM.
 | `extern { fn f(); }` | declaration in `qplus::`, body in the host |
 | `extern { struct T; impl T { fn f(self); } let x: T; }` | host type + methods + `extern T x;` |
 | `extern "C" { fn f(); }` | `extern "C"` declaration, body in the host |
-| `trait T` + `impl` | концепт / шаблон, або vtable для `dyn` |
+| `trait T` + `impl` | concept / template, or a vtable for `dyn` |
 | `fn foo<T: Add>` | `template<typename T> requires ...` |
-| `match` | `switch` + accessors union |
+| `match` | `switch` + union accessors |
 | `null` | `nullptr` |
 | `panic` | `qplus::panic(...)` |
 
-Генератор не використовує винятки C++ у публічному ABI Q+-функцій.
+The generator does not use C++ exceptions in the public ABI of Q+ functions.
 
 ---
 
-## 10. Приклад
+## 10. Example
 
 ```qp
 mod geom;
@@ -539,7 +541,7 @@ pub fn longest(a: Vec2?, b: Vec2?) -> Vec2? {
 
 ---
 
-## 11. Ключові слова (v0)
+## 11. Keywords (v0)
 
 ```
 as async break const continue else enum extern false fn for
@@ -547,37 +549,37 @@ if impl in let loop match mod mut new null pub return struct
 trait true type use variant while
 ```
 
-`async` зарезервовано, у v0 не реалізується.
+`async` is reserved and not implemented in v0.
 
-Контекстні: `where`, `for` (у `impl Trait for Type`), `dyn`.
+Contextual: `where`, `for` (in `impl Trait for Type`), `dyn`.
 
 ---
 
-## 12. Етапи реалізації
+## 12. Implementation stages
 
-Порядок важливіший за полноту синтаксису.
+Order matters more than covering every piece of syntax.
 
-1. **Лексер + парсер** підмножини: `fn`, `let`, `struct`, `impl`, `if`/`while`/`return`, виклики, літерали.
-2. **HIR + typeck** для примітивів і `struct`.
-3. **CppBackend**: функції на `i32`/`f32` і value-`struct` → `.cpp`, збірка clang++/MSVC у exe. Перший milestone: `qpc` компілює `fn add(a: i32, b: i32) -> i32` і лінкується з `main.cpp`.
-4. **Рантайм мінімум:** `panic`, `string`, `[T]`.
+1. **Lexer + parser** for a subset: `fn`, `let`, `struct`, `impl`, `if`/`while`/`return`, calls, literals.
+2. **HIR + typeck** for primitives and `struct`.
+3. **CppBackend**: `i32`/`f32` functions and value `struct`s → `.cpp`, built with clang++/MSVC into an exe. First milestone: `qpc` compiles `fn add(a: i32, b: i32) -> i32` and links with `main.cpp`.
+4. **Minimal runtime:** `panic`, `string`, `[T]`.
 5. **`enum` / `variant` + `match`, `T?` + `new`, GC/ARC.**
-6. **Модулі, `use`, `extern`.**
-7. **`trait` + generics** (мономорфізація).
-8. **LlvmJitBackend** на тому ж HIR: виконати `fn` без C++ compile step.
-9. **Hot reload** тіл функцій у JIT (однакова сигнатура).
-10. **WASM** як CI-ціль: той самий `gen/*.cpp` + emcc. Підрізати runtime.
+6. **Modules, `use`, `extern`.**
+7. **`trait` + generics** (monomorphization).
+8. **LlvmJitBackend** on the same HIR: run a `fn` without a C++ compile step.
+9. **Hot reload** of function bodies in the JIT (same signature).
+10. **WASM** as a CI target: the same `gen/*.cpp` + emcc. Trim the runtime.
 
-JIT не блокує крок 3. C++-шлях — джерело правди для семантики; JIT має збігатися по тестах (однакові `.qp` → однаковий результат).
+JIT does not block step 3. The C++ path is the source of truth for semantics; JIT must match on tests (same `.qp` → same result).
 
 ---
 
-## 13. Відкриті рішення
+## 13. Open decisions
 
-1. **GC vs ARC.** Для JIT і WASM простіше стартувати з ARC + заборона циклів (або cycle detector пізніше). AOT C++ тоді генерує `qplus::Rc<T>`. Зафіксувати до кроку 5.
-2. **`new` повертає `T?` чи non-null `T` на купі.** Зараз `T?`. Non-null heap-ref (`Box<T>` / окремий тип) можна додати не ламаючи `T?`.
-3. **Overflow цілих** у release: wrapping vs panic. Пропозиція: wrapping, як LLVM `add`.
-4. **`dyn Trait` у v0 чи лише мономорфізація.** Пропозиція: лише мономорфізація, поки не знадобиться гетерогенний список.
-5. **Імена артефактів:** мова Q+, крейт/компілятор `qpc`, runtime `libqplus`, namespace `qplus`.
+1. **GC vs ARC.** For JIT and WASM it is simpler to start with ARC + no cycles (or a cycle detector later). AOT C++ would then emit `qplus::Rc<T>`. Lock this before step 5.
+2. **Does `new` return `T?` or a non-null heap `T`.** Today `T?`. A non-null heap ref (`Box<T>` / a separate type) can be added without breaking `T?`.
+3. **Integer overflow** in release: wrapping vs panic. Proposal: wrapping, like LLVM `add`.
+4. **`dyn Trait` in v0, or monomorphization only.** Proposal: monomorphization only until a heterogeneous list is needed.
+5. **Artifact names:** language Q+, crate/compiler `qpc`, runtime `libqplus`, namespace `qplus`.
 
-Інваріанти: Rust-подібна поверхня, `struct`/`impl` як основа, null через `T?`, AOT = C++, WASM з того ж C++, hot reload = LLVM JIT.
+Invariants: Rust-like surface, `struct`/`impl` as the base, null through `T?`, AOT = C++, WASM from that C++, hot reload = LLVM JIT.
