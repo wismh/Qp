@@ -26,6 +26,16 @@ Type lower_type(const TypeExpr& te) {
             return Type::array(lower_type(te.args.front()), te.array_len);
         case TypeExpr::Kind::Dict:
             return Type::dict(lower_type(te.args.front()), lower_type(te.args.back()));
+        case TypeExpr::Kind::Fn: {
+            if (te.args.empty()) {
+                return Type::error();
+            }
+            std::vector<Type> params;
+            for (std::size_t i = 0; i + 1 < te.args.size(); ++i) {
+                params.push_back(lower_type(te.args[i]));
+            }
+            return Type::fn(std::move(params), lower_type(te.args.back()));
+        }
     }
     return Type::error();
 }
@@ -397,7 +407,11 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                     out->kind = std::move(lit);
                 } else {
                     HirCall call;
-                    call.callee = callee_name(src, *kind.callee, diags);
+                    if (std::holds_alternative<ExprIdent>(kind.callee->kind)) {
+                        call.callee = callee_name(src, *kind.callee, diags);
+                    } else {
+                        call.callee_expr = lower_expr(src, std::move(kind.callee), diags);
+                    }
                     call.type_args.reserve(kind.type_args.size());
                     for (auto& ta : kind.type_args) {
                         call.type_args.push_back(lower_type(ta));
@@ -501,6 +515,23 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                     lower_expr(src, std::move(kind.start), diags),
                     lower_expr(src, std::move(kind.end), diags),
                 };
+            } else if constexpr (std::is_same_v<K, ExprClosure>) {
+                HirClosure clo;
+                clo.params.reserve(kind.params.size());
+                for (auto& p : kind.params) {
+                    HirParam hp;
+                    hp.name = std::move(p.name);
+                    hp.offset = p.offset;
+                    hp.ty = lower_type(p.ty);
+                    clo.params.push_back(std::move(hp));
+                }
+                if (kind.return_ty) {
+                    clo.return_ty = lower_type(*kind.return_ty);
+                }
+                if (kind.body) {
+                    clo.body = lower_block(src, std::move(*kind.body), diags);
+                }
+                out->kind = std::move(clo);
             }
         },
         expr->kind);

@@ -25,6 +25,18 @@ enum class BinOp { Add, Sub, Mul, Div, Mod, Eq, Ne, Lt, Le, Gt, Ge, And, Or };
 enum class UnOp { Neg, Not };
 enum class SelfKind { None, Value, Mut };
 
+struct HirParam {
+    std::string name;
+    Type ty;
+    std::size_t offset = 0;
+};
+
+struct HirBlock {
+    std::vector<HirStmtPtr> stmts;
+    HirExprPtr tail;
+    std::size_t offset = 0;
+};
+
 struct HirLitInt {
     std::int64_t value = 0;
     bool unsuffixed = true;
@@ -66,6 +78,7 @@ struct HirUnary {
 
 struct HirCall {
     std::string callee;
+    HirExprPtr callee_expr;
     std::vector<Type> type_args;
     std::vector<HirExprPtr> args;
 };
@@ -173,13 +186,19 @@ struct HirRange {
     HirExprPtr end;
 };
 
+struct HirClosure {
+    std::vector<HirParam> params;
+    Type return_ty = Type::unknown();
+    HirBlock body;
+};
+
 struct HirExpr {
     Type ty;
     std::size_t offset = 0;
     std::variant<HirLitInt, HirLitFloat, HirLitBool, HirLitChar, HirLitString, HirVar, HirBinary,
                  HirUnary, HirCall, HirAssign, HirFieldAccess, HirIndex, HirStructLit, HirEnumLit,
                  HirMethodCall, HirFieldAssign, HirIndexAssign, HirMatch, HirListLit, HirDictLit,
-                 HirIf, HirRange>
+                 HirIf, HirRange, HirClosure>
         kind;
 };
 
@@ -217,18 +236,6 @@ struct HirContinue {};
 struct HirStmt {
     std::size_t offset = 0;
     std::variant<HirLet, HirReturn, HirExprStmt, HirWhile, HirFor, HirBreak, HirContinue> kind;
-};
-
-struct HirBlock {
-    std::vector<HirStmtPtr> stmts;
-    HirExprPtr tail;
-    std::size_t offset = 0;
-};
-
-struct HirParam {
-    std::string name;
-    Type ty;
-    std::size_t offset = 0;
 };
 
 struct HirTypeParam {
