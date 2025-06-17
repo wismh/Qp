@@ -12,7 +12,7 @@
 namespace qpc {
 
 struct TypeExpr {
-    enum class Kind { Named, Unit, List, Array, Dict };
+    enum class Kind { Named, Unit, List, Array, Dict, Fn };
 
     Kind kind = Kind::Named;
     std::string name;
@@ -162,11 +162,23 @@ struct ExprRange {
     ExprPtr end;
 };
 
+struct ClosureParam {
+    std::string name;
+    TypeExpr ty;
+    std::size_t offset = 0;
+};
+
+struct ExprClosure {
+    std::vector<ClosureParam> params;
+    std::optional<TypeExpr> return_ty;
+    std::unique_ptr<Block> body;
+};
+
 struct Expr {
     std::size_t offset = 0;
     std::variant<LitInt, LitFloat, LitBool, LitChar, LitString, ExprIdent, ExprPath, ExprBinary,
                  ExprUnary, ExprCall, ExprAssign, ExprField, ExprIndex, ExprStructLit, ExprMatch,
-                 ExprListLit, ExprDictLit, ExprIf, ExprRange>
+                 ExprListLit, ExprDictLit, ExprIf, ExprRange, ExprClosure>
         kind;
 };
 
