@@ -15,6 +15,9 @@ namespace {
 
 const HirModule* g_mod = nullptr;
 
+void emit_expr(std::ostringstream& out, const HirExpr& expr);
+void emit_stmt(std::ostringstream& out, const HirStmt& stmt);
+
 bool is_c_enum_in(const HirModule& mod, const std::string& name) {
     for (const auto& en : mod.enums) {
         if (en.name == name) {
@@ -297,8 +300,14 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 emit_expr(out, *kind.operand);
                 out << ')';
             } else if constexpr (std::is_same_v<K, HirCall>) {
-                out << kind.callee;
-                emit_type_args(out, kind.type_args);
+                if (kind.callee_expr) {
+                    out << '(';
+                    emit_expr(out, *kind.callee_expr);
+                    out << ')';
+                } else {
+                    out << kind.callee;
+                    emit_type_args(out, kind.type_args);
+                }
                 out << '(';
                 emit_comma_list(out, kind.args);
                 out << ')';
@@ -462,6 +471,29 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 emit_if(out, kind, expr.ty);
             } else if constexpr (std::is_same_v<K, HirRange>) {
                 emit_expr(out, *kind.start);
+            } else if constexpr (std::is_same_v<K, HirClosure>) {
+                out << cpp_type_name(expr.ty) << "([=](";
+                emit_params(out, kind.params);
+                out << ')';
+                if (kind.return_ty != Type::unit()) {
+                    out << " -> " << cpp_type_name(kind.return_ty);
+                }
+                out << " {\n";
+                for (const auto& stmt : kind.body.stmts) {
+                    emit_stmt(out, *stmt);
+                }
+                if (kind.body.tail) {
+                    if (kind.return_ty == Type::unit() || kind.body.tail->ty == Type::unit()) {
+                        out << "        ";
+                        emit_expr(out, *kind.body.tail);
+                        out << ";\n";
+                    } else {
+                        out << "        return ";
+                        emit_expr(out, *kind.body.tail);
+                        out << ";\n";
+                    }
+                }
+                out << "    })";
             }
         },
         expr.kind);
@@ -787,6 +819,7 @@ std::string emit_header(const HirModule& mod) {
     header << "#include <array>\n";
     header << "#include <cstdint>\n";
     header << "#include <cstdlib>\n";
+    header << "#include <functional>\n";
     header << "#include <map>\n";
     header << "#include <string>\n";
     header << "#include <variant>\n";
@@ -819,7 +852,8 @@ std::string emit_header(const HirModule& mod) {
     header << "using String = std::string;\n";
     header << "template <typename T>\nusing List = std::vector<T>;\n";
     header << "template <typename T, std::size_t N>\nusing Array = std::array<T, N>;\n";
-    header << "template <typename K, typename V>\nusing Dict = std::map<K, V>;\n\n";
+    header << "template <typename K, typename V>\nusing Dict = std::map<K, V>;\n";
+    header << "template <typename T>\nusing Fn = std::function<T>;\n\n";
     emit_module_header(header, mod, methods);
     header << "}  // namespace qplus\n";
     return header.str();
