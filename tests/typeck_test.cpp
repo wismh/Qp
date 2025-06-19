@@ -331,3 +331,38 @@ TEST(Typeck, DuplicateModuleIsError) {
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("duplicate module"), std::string::npos);
 }
+
+TEST(Typeck, ClosureCallAndCapture) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn apply(f: fn(i32) -> i32, x: i32) -> i32 { f(x) }
+        fn twice(n: i32) -> i32 {
+            let f = |x: i32| x + x;
+            f(n)
+        }
+        fn capture(n: i32) -> i32 {
+            let f = || n;
+            f()
+        }
+        fn go() -> i32 {
+            apply(|x: i32| x + 1, 4) + twice(4) + capture(1) + (|x: i32| x)(2)
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, ClosureArityMismatch) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn f() -> i32 {
+            let add = |a: i32, b: i32| a + b;
+            add(1)
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("expects 2 argument"), std::string::npos);
+}
+
+TEST(Typeck, LocalIsNotCallable) {
+    auto compiled = qpc::test::compile_string("fn f() -> i32 { let x = 1; x(2) }");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("is not callable"), std::string::npos);
+}
