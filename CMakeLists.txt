@@ -241,3 +241,24 @@ add_executable(mods_host
 target_include_directories(mods_host PRIVATE ${MODS_GEN_DIR})
 
 add_test(NAME mods_host COMMAND mods_host)
+
+set(CLOSURES_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_closures)
+set(CLOSURES_GEN_H ${CLOSURES_GEN_DIR}/closures.h)
+set(CLOSURES_GEN_CPP ${CLOSURES_GEN_DIR}/closures.cpp)
+
+add_custom_command(
+    OUTPUT ${CLOSURES_GEN_H} ${CLOSURES_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CLOSURES_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/closures.qp -o ${CLOSURES_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/closures.qp
+    COMMENT "qpc compile examples/closures.qp"
+    VERBATIM
+)
+
+add_executable(closures_host
+    examples/closures_host/main.cpp
+    ${CLOSURES_GEN_CPP}
+)
+target_include_directories(closures_host PRIVATE ${CLOSURES_GEN_DIR})
+
+add_test(NAME closures_host COMMAND closures_host)
