@@ -64,6 +64,7 @@ enum class TokenKind {
     Ge,
     AmpAmp,
     PipePipe,
+    Pipe,
     Bang,
     DotDot,
 };
@@ -219,6 +220,8 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'&&'";
         case TokenKind::PipePipe:
             return "'||'";
+        case TokenKind::Pipe:
+            return "'|'";
         case TokenKind::Bang:
             return "'!'";
         case TokenKind::DotDot:

@@ -120,8 +120,9 @@ namespace {
         case '!':
             return TokenKind::Bang;
         case '&':
-        case '|':
             return TokenKind::Eof;
+        case '|':
+            return TokenKind::Pipe;
         case ':':
             return TokenKind::Colon;
         case ',':

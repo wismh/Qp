@@ -217,3 +217,26 @@ TEST(E2E, FileModAmbiguousIsError) {
     ASSERT_FALSE(diags.all().empty());
     EXPECT_NE(diags.all().front().message.find("has both"), std::string::npos);
 }
+
+TEST(E2E, CompileClosuresExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_closures";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input =
+        std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "closures.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "closures.h";
+    const auto source = out_dir / "closures.cpp";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    ASSERT_TRUE(std::filesystem::exists(source));
+
+    std::ifstream header_in(header);
+    const std::string header_text((std::istreambuf_iterator<char>(header_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("std::int32_t apply_add()"), std::string::npos);
+    EXPECT_NE(header_text.find("Fn<std::int32_t(std::int32_t)> f"), std::string::npos);
+    EXPECT_NE(header_text.find("using Fn = std::function<T>;"), std::string::npos);
+}

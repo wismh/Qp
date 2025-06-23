@@ -1,0 +1,30 @@
+pub fn apply_add() -> i32 {
+    let add = |a: i32, b: i32| a + b;
+    add(2, 3)
+}
+
+pub fn twice(n: i32) -> i32 {
+    let f = |x: i32| x + x;
+    f(n)
+}
+
+pub fn apply(f: fn(i32) -> i32, x: i32) -> i32 {
+    f(x)
+}
+
+pub fn inc_via_apply() -> i32 {
+    apply(|x: i32| x + 1, 4)
+}
+
+pub fn capture(n: i32) -> i32 {
+    let f = || n;
+    f()
+}
+
+pub fn immediate() -> i32 {
+    (|x: i32| x + 1)(2)
+}
+
+pub fn run() -> i32 {
+    apply_add() + twice(4) + inc_via_apply() + capture(1) + immediate()
+}

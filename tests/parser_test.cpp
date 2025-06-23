@@ -1,6 +1,7 @@
 #include "helpers.hpp"
 
 #include <gtest/gtest.h>
+#include <variant>
 
 TEST(Parser, PubFnAdd) {
     auto parsed = qpc::test::parse_string("pub fn add(a: i32, b: i32) -> i32 { a + b }");
@@ -261,4 +262,35 @@ TEST(Parser, FileModVsInline) {
     EXPECT_FALSE(parsed.ast.mods[1].file);
     EXPECT_EQ(parsed.ast.mods[1].name, "util");
     ASSERT_EQ(parsed.ast.mods[1].body->functions.size(), 1u);
+}
+
+TEST(Parser, ClosureAndFnType) {
+    auto parsed = qpc::test::parse_string(R"(
+        fn apply(f: fn(i32) -> i32, x: i32) -> i32 {
+            let add = |a: i32, b: i32| a + b;
+            let k = || 1;
+            f(x) + add(1, 2) + k() + (|n: i32| n)(3)
+        }
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.functions.size(), 1u);
+    EXPECT_EQ(parsed.ast.functions[0].params[0].ty.kind, qpc::TypeExpr::Kind::Fn);
+    ASSERT_EQ(parsed.ast.functions[0].body.stmts.size(), 2u);
+    const auto* let0 = std::get_if<qpc::StmtLet>(&parsed.ast.functions[0].body.stmts[0]->kind);
+    ASSERT_NE(let0, nullptr);
+    EXPECT_TRUE(std::holds_alternative<qpc::ExprClosure>(let0->init->kind));
+    const auto* clo = std::get_if<qpc::ExprClosure>(&let0->init->kind);
+    ASSERT_NE(clo, nullptr);
+    ASSERT_EQ(clo->params.size(), 2u);
+    EXPECT_EQ(clo->params[0].name, "a");
+    const auto* let1 = std::get_if<qpc::StmtLet>(&parsed.ast.functions[0].body.stmts[1]->kind);
+    ASSERT_NE(let1, nullptr);
+    const auto* empty = std::get_if<qpc::ExprClosure>(&let1->init->kind);
+    ASSERT_NE(empty, nullptr);
+    EXPECT_TRUE(empty->params.empty());
+}
+
+TEST(Parser, ClosureMissingParamTypeIsError) {
+    auto parsed = qpc::test::parse_string("fn f() -> i32 { let g = |x| x; g(1) }");
+    EXPECT_TRUE(parsed.diags.has_errors());
 }
