@@ -449,6 +449,18 @@ fn demo() -> i32 {
 
 `struct Test;` in `extern` is an opaque host type: Q+ does not know the fields and does not emit `struct`. Methods in `impl` are prototypes only; `obj.add(3, 5)` becomes `obj.add<std::int32_t>(3, 5)` in C++ (`T` is inferred from arguments, or write `add<i32>(...)`). `let` without `=` is an `extern` host global. The host puts the complete type in `qplus_host.h` on the include path, in `namespace qplus`.
 
+### 7.1 Closures
+
+```qp
+let add = |a: i32, b: i32| a + b;
+let f: fn(i32) -> i32 = |x: i32| x + 1;
+let k = || 1;
+add(1, 2);
+(|x: i32| x + 1)(3);
+```
+
+Parameter types are required. Capture is by copy (`[=]` in C++). The type is `fn(T, U) -> R`, mapped to `qplus::Fn<R(T, U)>` (`std::function`).
+
 ---
 
 ## 8. Panic and safety
@@ -483,6 +495,7 @@ JIT in debug: panic shows the Q+ stack through LLVM debug info.
 | `[T]` | `qplus::List<T>` |
 | `[T; N]` | `qplus::Array<T, N>` |
 | `{K: V}` | `qplus::Dict<K, V>` |
+| `fn(T) -> R` / `|x: T| ...` | `qplus::Fn<R(T)>` (`std::function`) |
 | `enum E { A, B }` | `enum class E` |
 | `variant E { A, B { x } }` | `std::variant` tagged union |
 | `extern { fn f(); }` | declaration in `qplus::`, body in the host |

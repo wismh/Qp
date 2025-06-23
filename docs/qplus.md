@@ -48,6 +48,15 @@ fn steps(n: i32) -> i32 {
 
 You can omit the type on `let` when the initializer makes it obvious. Parameter types and `->` are required.
 
+Closures are `|x: i32| x + 1`. Capture is by copy. The type is `fn(i32) -> i32`.
+
+```qp
+fn twice(n: i32) -> i32 {
+    let f = |x: i32| x + x;
+    f(n)
+}
+```
+
 ---
 
 ## Types
@@ -61,6 +70,7 @@ You can omit the type on `let` when the initializer makes it obvious. Parameter 
 | `char` | `'a'` |
 | `string` | `"hello"` |
 | `()` | unit; you can omit `-> ()` |
+| `fn(i32) -> i32` | closure / function value |
 
 Strings concatenate with `+`:
 
@@ -391,7 +401,6 @@ Examples live in [`examples/`](../examples/).
 These are in the language design, but do not use them yet:
 
 - `T?`, `null`, `new`, `if let`
-- closures
 - generic `struct`
 - a separate package system / a JIT or WASM backend of its own
 - string interpolation, tuples `(A, B)`, `Result` / `?`

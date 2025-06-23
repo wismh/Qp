@@ -196,3 +196,20 @@ TEST(Codegen, ExternOpaqueMethodsAndStatic) {
     EXPECT_NE(compiled.result.output.source.find("test_object.add<std::int32_t>(3, 5)"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("Test::created()"), std::string::npos);
 }
+
+TEST(Codegen, ClosureLambdaAndFnAlias) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn twice(n: i32) -> i32 {
+            let f = |x: i32| x + x;
+            f(n)
+        }
+        pub fn apply(g: fn(i32) -> i32, x: i32) -> i32 { g(x) }
+        pub fn one() -> i32 { let k = || 1; k() + (|| 2)() }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("#include <functional>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("using Fn = std::function<T>;"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("Fn<std::int32_t(std::int32_t)> g"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("[=]"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("Fn<std::int32_t(std::int32_t)>"), std::string::npos);
+}

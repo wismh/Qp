@@ -907,6 +907,40 @@ private:
         TypeExpr ty;
         ty.offset = peek().offset;
 
+        if (consume(TokenKind::KwFn)) {
+            if (!expect(TokenKind::LParen, "'(' after 'fn'")) {
+                return std::nullopt;
+            }
+            ty.kind = TypeExpr::Kind::Fn;
+            if (!at(TokenKind::RParen)) {
+                while (true) {
+                    auto arg = parse_type();
+                    if (!arg) {
+                        return std::nullopt;
+                    }
+                    ty.args.push_back(std::move(*arg));
+                    if (!consume(TokenKind::Comma)) {
+                        break;
+                    }
+                    if (at(TokenKind::RParen)) {
+                        break;
+                    }
+                }
+            }
+            if (!expect(TokenKind::RParen, "')' in fn type")) {
+                return std::nullopt;
+            }
+            if (!expect(TokenKind::Arrow, "'->' in fn type")) {
+                return std::nullopt;
+            }
+            auto ret = parse_type();
+            if (!ret) {
+                return std::nullopt;
+            }
+            ty.args.push_back(std::move(*ret));
+            return ty;
+        }
+
         if (consume(TokenKind::LParen)) {
             if (!expect(TokenKind::RParen, "')' after '(' in type")) {
                 return std::nullopt;
@@ -1441,6 +1475,71 @@ private:
         return pat;
     }
 
+    std::optional<ExprPtr> parse_closure() {
+        const std::size_t off = peek().offset;
+        if (!expect(TokenKind::Pipe, "'|'")) {
+            return std::nullopt;
+        }
+        ExprClosure clo;
+        if (!at(TokenKind::Pipe)) {
+            while (true) {
+                ClosureParam p;
+                p.offset = peek().offset;
+                auto name = take_ident("closure parameter");
+                if (!name) {
+                    return std::nullopt;
+                }
+                p.name = std::move(*name);
+                if (!expect(TokenKind::Colon, "':' after closure parameter")) {
+                    return std::nullopt;
+                }
+                auto ty = parse_type();
+                if (!ty) {
+                    return std::nullopt;
+                }
+                p.ty = std::move(*ty);
+                clo.params.push_back(std::move(p));
+                if (!consume(TokenKind::Comma)) {
+                    break;
+                }
+                if (at(TokenKind::Pipe)) {
+                    break;
+                }
+            }
+        }
+        if (!expect(TokenKind::Pipe, "'|' after closure parameters")) {
+            return std::nullopt;
+        }
+        if (consume(TokenKind::Arrow)) {
+            auto ret = parse_type();
+            if (!ret) {
+                return std::nullopt;
+            }
+            clo.return_ty = std::move(*ret);
+            auto body = parse_block();
+            if (!body) {
+                return std::nullopt;
+            }
+            clo.body = std::make_unique<Block>(std::move(*body));
+        } else if (at(TokenKind::LBrace)) {
+            auto body = parse_block();
+            if (!body) {
+                return std::nullopt;
+            }
+            clo.body = std::make_unique<Block>(std::move(*body));
+        } else {
+            auto tail = parse_expr();
+            if (!tail) {
+                return std::nullopt;
+            }
+            Block body;
+            body.offset = (*tail)->offset;
+            body.tail = std::move(*tail);
+            clo.body = std::make_unique<Block>(std::move(body));
+        }
+        return make_expr(off, std::move(clo));
+    }
+
     std::optional<ExprPtr> parse_if() {
         const std::size_t off = peek().offset;
         if (!expect(TokenKind::KwIf, "'if'")) {
@@ -1546,6 +1645,44 @@ private:
     std::optional<ExprPtr> parse_primary(bool allow_struct = true) {
         if (at(TokenKind::KwIf)) {
             return parse_if();
+        }
+
+        if (at(TokenKind::Pipe)) {
+            return parse_closure();
+        }
+
+        if (at(TokenKind::PipePipe)) {
+            const std::size_t off = peek().offset;
+            advance();
+            ExprClosure clo;
+            if (consume(TokenKind::Arrow)) {
+                auto ret = parse_type();
+                if (!ret) {
+                    return std::nullopt;
+                }
+                clo.return_ty = std::move(*ret);
+                auto body = parse_block();
+                if (!body) {
+                    return std::nullopt;
+                }
+                clo.body = std::make_unique<Block>(std::move(*body));
+            } else if (at(TokenKind::LBrace)) {
+                auto body = parse_block();
+                if (!body) {
+                    return std::nullopt;
+                }
+                clo.body = std::make_unique<Block>(std::move(*body));
+            } else {
+                auto tail = parse_expr();
+                if (!tail) {
+                    return std::nullopt;
+                }
+                Block body;
+                body.offset = (*tail)->offset;
+                body.tail = std::move(*tail);
+                clo.body = std::make_unique<Block>(std::move(body));
+            }
+            return make_expr(off, std::move(clo));
         }
 
         if (at(TokenKind::KwMatch)) {

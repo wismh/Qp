@@ -143,5 +143,16 @@ TEST(Lexer, ControlModAndCompareTokens) {
     EXPECT_EQ(tokens[14].kind, TokenKind::PipePipe);
     EXPECT_EQ(tokens[15].kind, TokenKind::Bang);
     EXPECT_EQ(tokens[16].kind, TokenKind::DotDot);
-    EXPECT_EQ(tokens[17].kind, TokenKind::Eof);
+        EXPECT_EQ(tokens[17].kind, TokenKind::Eof);
+}
+
+TEST(Lexer, PipeAndOr) {
+    auto src = Source::from_string("t.qp", "| ||");
+    DiagnosticEngine diags;
+    const auto tokens = lex(src, diags);
+    ASSERT_FALSE(diags.has_errors());
+    ASSERT_EQ(tokens.size(), 3u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::Pipe);
+    EXPECT_EQ(tokens[1].kind, TokenKind::PipePipe);
+    EXPECT_EQ(tokens[2].kind, TokenKind::Eof);
 }

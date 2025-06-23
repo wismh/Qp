@@ -29,6 +29,7 @@ enum class TypeKind {
     List,
     Array,
     Dict,
+    Fn,
 };
 
 struct Type {
@@ -75,6 +76,14 @@ struct Type {
         t.kind = TypeKind::Dict;
         t.args.push_back(std::move(key));
         t.args.push_back(std::move(value));
+        return t;
+    }
+
+    static Type fn(std::vector<Type> params, Type ret) {
+        Type t;
+        t.kind = TypeKind::Fn;
+        t.args = std::move(params);
+        t.args.push_back(std::move(ret));
         return t;
     }
 
@@ -193,6 +202,18 @@ inline std::string type_name(const Type& ty) {
             return "[" + type_name(ty.elem()) + "; " + std::to_string(ty.size) + "]";
         case TypeKind::Dict:
             return "{" + type_name(ty.key()) + ": " + type_name(ty.value()) + "}";
+        case TypeKind::Fn: {
+            std::string out = "fn(";
+            for (std::size_t i = 0; i + 1 < ty.args.size(); ++i) {
+                if (i != 0) {
+                    out += ", ";
+                }
+                out += type_name(ty.args[i]);
+            }
+            out += ") -> ";
+            out += ty.args.empty() ? "()" : type_name(ty.args.back());
+            return out;
+        }
     }
     return "<invalid>";
 }
@@ -235,6 +256,19 @@ inline std::string cpp_type_name(const Type& ty) {
             return "Array<" + cpp_type_name(ty.elem()) + ", " + std::to_string(ty.size) + ">";
         case TypeKind::Dict:
             return "Dict<" + cpp_type_name(ty.key()) + ", " + cpp_type_name(ty.value()) + ">";
+        case TypeKind::Fn: {
+            std::string out = "Fn<";
+            out += ty.args.empty() ? "void" : cpp_type_name(ty.args.back());
+            out += '(';
+            for (std::size_t i = 0; i + 1 < ty.args.size(); ++i) {
+                if (i != 0) {
+                    out += ", ";
+                }
+                out += cpp_type_name(ty.args[i]);
+            }
+            out += ")>";
+            return out;
+        }
         default:
             return "void";
     }

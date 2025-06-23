@@ -172,6 +172,18 @@ private:
             const bool ok_val = resolve_type(ty.args[1], offset);
             return ok_key && ok_val;
         }
+        if (ty.kind == TypeKind::Fn) {
+            if (ty.args.empty()) {
+                error(offset, "invalid fn type");
+                ty = Type::error();
+                return false;
+            }
+            bool ok = true;
+            for (auto& arg : ty.args) {
+                ok = resolve_type(arg, offset) && ok;
+            }
+            return ok;
+        }
         if (ty.kind != TypeKind::Named) {
             return ty != Type::error();
         }
@@ -847,11 +859,18 @@ private:
 
     void check_return(std::size_t offset, HirReturn& ret) {
         if (ret.value) {
+            if (current_ret_.kind == TypeKind::Unknown) {
+                current_ret_ = check_expr(*ret.value);
+                return;
+            }
             expect_expr(*ret.value, current_ret_, ret.value->offset, "return value");
             return;
         }
-        if (current_ret_ != Type::unit()) {
+        if (current_ret_.kind != TypeKind::Unknown && current_ret_ != Type::unit()) {
             error(offset, "missing return value");
+        }
+        if (current_ret_.kind == TypeKind::Unknown) {
+            current_ret_ = Type::unit();
         }
     }
 
@@ -906,6 +925,8 @@ private:
                     ty = check_if(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirRange>) {
                     ty = check_range(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirClosure>) {
+                    ty = check_closure(kind, expr.offset);
                 }
             },
             expr.kind);
@@ -1111,6 +1132,49 @@ private:
         return lo;
     }
 
+    Type check_closure(HirClosure& clo, std::size_t offset) {
+        const Type saved_ret = current_ret_;
+        push_scope();
+        std::vector<Type> params;
+        for (auto& p : clo.params) {
+            resolve_type(p.ty, p.offset);
+            declare(p.name, Binding{p.ty, true}, p.offset);
+            params.push_back(p.ty);
+        }
+        if (clo.return_ty.kind != TypeKind::Unknown) {
+            resolve_type(clo.return_ty, offset);
+            current_ret_ = clo.return_ty;
+        } else {
+            current_ret_ = Type::unknown();
+        }
+        for (auto& stmt : clo.body.stmts) {
+            check_stmt(*stmt);
+        }
+        Type ret = Type::unit();
+        if (clo.body.tail) {
+            if (clo.return_ty.kind != TypeKind::Unknown) {
+                expect_expr(*clo.body.tail, clo.return_ty, clo.body.tail->offset, "closure body");
+                ret = clo.return_ty;
+            } else {
+                ret = check_expr(*clo.body.tail);
+                clo.return_ty = ret;
+            }
+        } else if (clo.return_ty.kind != TypeKind::Unknown && clo.return_ty != Type::unit()) {
+            if (!ends_with_return(clo.body)) {
+                error(offset, "closure is missing a return value");
+            }
+            ret = clo.return_ty;
+        } else if (clo.return_ty.kind == TypeKind::Unknown) {
+            ret = current_ret_.kind == TypeKind::Unknown ? Type::unit() : current_ret_;
+            clo.return_ty = ret;
+        } else {
+            ret = clo.return_ty;
+        }
+        pop_scope();
+        current_ret_ = saved_ret;
+        return Type::fn(std::move(params), std::move(ret));
+    }
+
     Type check_unary(HirUnary& un, std::size_t offset) {
         const Type inner = check_expr(*un.operand);
         if (un.op == UnOp::Not) {
@@ -1235,9 +1299,49 @@ private:
         return lhs;
     }
 
+    Type check_fn_value_call(const Type& fn_ty, HirCall& call, std::size_t offset, std::string callee) {
+        const std::size_t nparams = fn_ty.args.size() - 1;
+        if (call.args.size() != nparams) {
+            error(offset, callee + " expects " + std::to_string(nparams) + " argument(s), got " +
+                              std::to_string(call.args.size()));
+        }
+        const std::size_t n = std::min(call.args.size(), nparams);
+        for (std::size_t i = 0; i < n; ++i) {
+            expect_expr(*call.args[i], fn_ty.args[i], call.args[i]->offset, "argument");
+        }
+        for (std::size_t i = n; i < call.args.size(); ++i) {
+            check_expr(*call.args[i]);
+        }
+        return fn_ty.args.back();
+    }
+
     Type check_call(HirCall& call, std::size_t offset) {
+        if (call.callee_expr) {
+            const Type fn_ty = check_expr(*call.callee_expr);
+            if (fn_ty.kind != TypeKind::Fn || fn_ty.args.empty()) {
+                if (fn_ty != Type::error()) {
+                    error(offset, "value of type '" + type_name(fn_ty) + "' is not callable");
+                }
+                for (auto& arg : call.args) {
+                    check_expr(*arg);
+                }
+                return Type::error();
+            }
+            return check_fn_value_call(fn_ty, call, offset, "closure");
+        }
+
         auto it = sigs_.find(call.callee);
         if (it == sigs_.end()) {
+            if (auto* b = lookup(call.callee)) {
+                if (b->ty.kind == TypeKind::Fn && !b->ty.args.empty()) {
+                    return check_fn_value_call(b->ty, call, offset, "closure '" + call.callee + "'");
+                }
+                error(offset, "value of type '" + type_name(b->ty) + "' is not callable");
+                for (auto& arg : call.args) {
+                    check_expr(*arg);
+                }
+                return Type::error();
+            }
             error(offset, "unknown function '" + call.callee + "'");
             for (auto& arg : call.args) {
                 check_expr(*arg);
