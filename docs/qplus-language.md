@@ -374,6 +374,8 @@ const MAX: i32 = 4;
 
 if y > 2 { ... } else { ... }
 
+`return` leaves the enclosing function, including from an `if` branch. Do not treat `if` as a C++ lambda; it is ordinary control flow.
+
 while y > 0 { y -= 1; }
 
 for i in 0..10 { ... }

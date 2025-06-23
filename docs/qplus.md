@@ -74,11 +74,18 @@ fn greet(name: string) -> string {
 
 ## Control flow
 
-`if` is an expression. Both branches must have the same type when the `if` produces a value.
+`if` is an expression. Both branches must have the same type when the `if` produces a value. `return` inside an `if` leaves the function.
 
 ```qp
 fn clamp(x: i32, lo: i32, hi: i32) -> i32 {
     if x < lo { lo } else if x > hi { hi } else { x }
+}
+
+fn abs(x: i32) -> i32 {
+    if x < 0 {
+        return 0 - x;
+    }
+    x
 }
 ```
 
