@@ -331,3 +331,24 @@ TEST(Typeck, DuplicateModuleIsError) {
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("duplicate module"), std::string::npos);
 }
+
+TEST(Typeck, ReturnInIfUnifiesWithElse) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn abs(x: i32) -> i32 {
+            if x < 0 {
+                return 0 - x;
+            }
+            x
+        }
+        fn sign(x: i32) -> i32 {
+            if x < 0 {
+                return 0 - 1;
+            } else if x == 0 {
+                return 0;
+            } else {
+                1
+            }
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
