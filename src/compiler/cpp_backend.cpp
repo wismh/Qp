@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <format>
 #include <sstream>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
@@ -14,6 +15,11 @@ namespace qpc {
 namespace {
 
 const HirModule* g_mod = nullptr;
+int g_if_tmp = 0;
+std::ostringstream* g_preamble = nullptr;
+
+void emit_expr(std::ostringstream& out, const HirExpr& expr);
+void emit_stmt(std::ostringstream& out, const HirStmt& stmt);
 
 void emit_expr(std::ostringstream& out, const HirExpr& expr);
 void emit_stmt(std::ostringstream& out, const HirStmt& stmt);
@@ -236,33 +242,80 @@ void emit_int_lit(std::ostringstream& out, const HirLitInt& lit) {
     }
 }
 
-void emit_if(std::ostringstream& out, const HirIf& iff, const Type& ty) {
-    const bool valued =
-        ty.kind != TypeKind::Unit && ty.kind != TypeKind::Error && ty.kind != TypeKind::Unknown;
-    out << "([&]() {\n";
-    out << "        if (";
+bool is_true_lit(const HirExpr& expr) {
+    const auto* b = std::get_if<HirLitBool>(&expr.kind);
+    return b && b->value;
+}
+
+bool is_unitish(const Type& ty) {
+    return ty.kind == TypeKind::Unit || ty.kind == TypeKind::Error || ty.kind == TypeKind::Unknown ||
+           ty.kind == TypeKind::Never;
+}
+
+enum class IfSink { Stmt, Return, Assign };
+
+void emit_if_stmt(std::ostringstream& out, const HirIf& iff, IfSink sink, const std::string& dest,
+                  bool chained = false);
+
+void emit_if_value(std::ostringstream& out, const HirExpr& expr, IfSink sink, const std::string& dest) {
+    if (const auto* inner = std::get_if<HirIf>(&expr.kind)) {
+        emit_if_stmt(out, *inner, sink, dest, false);
+        return;
+    }
+    if (sink == IfSink::Return && !is_unitish(expr.ty)) {
+        out << "        return ";
+        emit_expr(out, expr);
+        out << ";\n";
+        return;
+    }
+    if (sink == IfSink::Assign && !is_unitish(expr.ty)) {
+        out << "        " << dest << " = ";
+        emit_expr(out, expr);
+        out << ";\n";
+        return;
+    }
+    out << "        ";
+    emit_expr(out, expr);
+    out << ";\n";
+}
+
+void emit_if_stmt(std::ostringstream& out, const HirIf& iff, IfSink sink, const std::string& dest,
+                  bool chained) {
+    if (!chained) {
+        out << "    ";
+    }
+    out << "if (";
     emit_expr(out, *iff.cond);
     out << ") {\n";
     for (const auto& stmt : iff.then_stmts) {
         emit_stmt(out, *stmt);
     }
     if (iff.then_tail) {
-        out << (valued ? "            return " : "            ");
-        emit_expr(out, *iff.then_tail);
-        out << ";\n";
+        emit_if_value(out, *iff.then_tail, sink, dest);
     }
-    out << "        }";
+    out << "    }";
     if (iff.else_expr) {
-        out << " else {\n";
-        out << (valued ? "            return " : "            ");
-        emit_expr(out, *iff.else_expr);
-        out << ";\n        }";
+        if (const auto* ei = std::get_if<HirIf>(&iff.else_expr->kind); ei && !is_true_lit(*ei->cond)) {
+            out << " else ";
+            emit_if_stmt(out, *ei, sink, dest, true);
+        } else {
+            out << " else {\n";
+            if (const auto* always = std::get_if<HirIf>(&iff.else_expr->kind); always && is_true_lit(*always->cond)) {
+                for (const auto& stmt : always->then_stmts) {
+                    emit_stmt(out, *stmt);
+                }
+                if (always->then_tail) {
+                    emit_if_value(out, *always->then_tail, sink, dest);
+                }
+            } else {
+                emit_if_value(out, *iff.else_expr, sink, dest);
+            }
+            out << "    }";
+        }
     }
-    out << "\n";
-    if (valued) {
-        out << "        std::abort();\n";
+    if (!chained) {
+        out << "\n";
     }
-    out << "    }())";
 }
 
 void emit_expr(std::ostringstream& out, const HirExpr& expr) {
@@ -468,7 +521,16 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 }
                 out << "        std::abort();\n    }())";
             } else if constexpr (std::is_same_v<K, HirIf>) {
-                emit_if(out, kind, expr.ty);
+                if (!g_preamble) {
+                    emit_if_stmt(out, kind, is_unitish(expr.ty) ? IfSink::Stmt : IfSink::Return, {});
+                } else if (is_unitish(expr.ty)) {
+                    emit_if_stmt(*g_preamble, kind, IfSink::Stmt, {});
+                } else {
+                    const std::string tmp = "__qif" + std::to_string(++g_if_tmp);
+                    *g_preamble << "    " << cpp_type_name(expr.ty) << ' ' << tmp << ";\n";
+                    emit_if_stmt(*g_preamble, kind, IfSink::Assign, tmp, false);
+                    out << tmp;
+                }
             } else if constexpr (std::is_same_v<K, HirRange>) {
                 emit_expr(out, *kind.start);
             } else if constexpr (std::is_same_v<K, HirClosure>) {
@@ -504,20 +566,35 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
         [&](auto&& kind) {
             using K = std::decay_t<decltype(kind)>;
             if constexpr (std::is_same_v<K, HirLet>) {
-                out << "    " << cpp_type_name(kind.ty) << ' ' << kind.name << " = ";
-                emit_expr(out, *kind.init);
-                out << ";\n";
-            } else if constexpr (std::is_same_v<K, HirReturn>) {
-                out << "    return";
-                if (kind.value) {
-                    out << ' ';
-                    emit_expr(out, *kind.value);
+                if (const auto* iff = std::get_if<HirIf>(&kind.init->kind)) {
+                    out << "    " << cpp_type_name(kind.ty) << ' ' << kind.name << ";\n";
+                    emit_if_stmt(out, *iff, IfSink::Assign, kind.name, false);
+                } else {
+                    out << "    " << cpp_type_name(kind.ty) << ' ' << kind.name << " = ";
+                    emit_expr(out, *kind.init);
+                    out << ";\n";
                 }
-                out << ";\n";
+            } else if constexpr (std::is_same_v<K, HirReturn>) {
+                if (kind.value) {
+                    if (const auto* iff = std::get_if<HirIf>(&kind.value->kind)) {
+                        emit_if_stmt(out, *iff, IfSink::Return, {}, false);
+                    } else {
+                        out << "    return ";
+                        emit_expr(out, *kind.value);
+                        out << ";\n";
+                    }
+                } else {
+                    out << "    return;\n";
+                }
             } else if constexpr (std::is_same_v<K, HirExprStmt>) {
-                out << "    ";
-                emit_expr(out, *kind.expr);
-                out << ";\n";
+                if (const auto* iff = std::get_if<HirIf>(&kind.expr->kind)) {
+                    emit_if_stmt(out, *iff, is_unitish(kind.expr->ty) ? IfSink::Stmt : IfSink::Return, {},
+                                 false);
+                } else {
+                    out << "    ";
+                    emit_expr(out, *kind.expr);
+                    out << ";\n";
+                }
             } else if constexpr (std::is_same_v<K, HirWhile>) {
                 out << "    while (";
                 emit_expr(out, *kind.cond);
@@ -562,6 +639,8 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
 }
 
 void emit_fn_body(std::ostringstream& out, const HirFn& fn, bool operator_self = false) {
+    g_preamble = &out;
+    g_if_tmp = 0;
     out << " {\n";
     if (!operator_self) {
         if (fn.self_kind == SelfKind::Value) {
@@ -574,18 +653,24 @@ void emit_fn_body(std::ostringstream& out, const HirFn& fn, bool operator_self =
         emit_stmt(out, *stmt);
     }
     if (fn.body.tail) {
-        const bool unit_tail = fn.return_ty == Type::unit() || fn.body.tail->ty == Type::unit();
-        if (unit_tail) {
-            out << "    ";
-            emit_expr(out, *fn.body.tail);
-            out << ";\n";
+        if (const auto* iff = std::get_if<HirIf>(&fn.body.tail->kind)) {
+            const bool unit_tail = fn.return_ty == Type::unit() || is_unitish(fn.body.tail->ty);
+            emit_if_stmt(out, *iff, unit_tail ? IfSink::Stmt : IfSink::Return, {}, false);
         } else {
-            out << "    return ";
-            emit_expr(out, *fn.body.tail);
-            out << ";\n";
+            const bool unit_tail = fn.return_ty == Type::unit() || fn.body.tail->ty == Type::unit();
+            if (unit_tail) {
+                out << "    ";
+                emit_expr(out, *fn.body.tail);
+                out << ";\n";
+            } else {
+                out << "    return ";
+                emit_expr(out, *fn.body.tail);
+                out << ";\n";
+            }
         }
     }
     out << "}\n\n";
+    g_preamble = nullptr;
 }
 
 void emit_free_signature(std::ostringstream& out, const HirFn& fn) {
