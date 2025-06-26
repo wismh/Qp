@@ -62,6 +62,14 @@ You can omit the type on `let` when the initializer makes it obvious. Parameter 
 | `string` | `"hello"` |
 | `()` | unit; you can omit `-> ()` |
 
+`as` converts between numbers, `bool`/`char` and integers, and a C-style `enum` to an integer:
+
+```qp
+fn widen(x: i32) -> i64 {
+    x as i64
+}
+```
+
 Strings concatenate with `+`:
 
 ```qp
