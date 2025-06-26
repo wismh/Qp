@@ -213,3 +213,21 @@ TEST(Codegen, ClosureLambdaAndFnAlias) {
     EXPECT_NE(compiled.result.output.source.find("[=]"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("Fn<std::int32_t(std::int32_t)>"), std::string::npos);
 }
+
+TEST(Codegen, ReturnInIfIsNotALambda) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn abs(x: i32) -> i32 {
+            if x < 0 {
+                return 0 - x;
+            }
+            x
+        }
+        fn pick(c: bool, a: i32, b: i32) -> i32 {
+            if c { a } else { b }
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_EQ(compiled.result.output.source.find("([&]()"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("if ("), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("return (0 - x);"), std::string::npos);
+}

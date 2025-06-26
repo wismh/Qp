@@ -188,6 +188,33 @@ TEST(E2E, CompileModsExampleToFiles) {
     EXPECT_NE(source_text.find("mod.qp"), std::string::npos);
 }
 
+TEST(E2E, CompileEarlyReturnExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_early_return";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input =
+        std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "early_return.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "early_return.h";
+    const auto source = out_dir / "early_return.cpp";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    ASSERT_TRUE(std::filesystem::exists(source));
+
+    std::ifstream header_in(header);
+    const std::string header_text((std::istreambuf_iterator<char>(header_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("std::int32_t abs(std::int32_t x)"), std::string::npos);
+
+    std::ifstream source_in(source);
+    const std::string source_text((std::istreambuf_iterator<char>(source_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_EQ(source_text.find("([&]()"), std::string::npos);
+    EXPECT_NE(source_text.find("if ("), std::string::npos);
+}
+
 TEST(E2E, FileModCycleIsError) {
     const auto dir = std::filesystem::temp_directory_path() / "qplus_e2e_mod_cycle";
     std::filesystem::remove_all(dir);

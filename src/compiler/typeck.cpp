@@ -1079,10 +1079,16 @@ private:
         Type then_ty = Type::unit();
         if (iff.then_tail) {
             then_ty = check_expr(*iff.then_tail);
+        } else if (!iff.then_stmts.empty() &&
+                   std::holds_alternative<HirReturn>(iff.then_stmts.back()->kind)) {
+            then_ty = Type::never();
         }
         pop_scope();
 
         if (!iff.else_expr) {
+            if (then_ty.kind == TypeKind::Never) {
+                return then_ty;
+            }
             if (then_ty != Type::unit() && then_ty != Type::error()) {
                 if (std::holds_alternative<HirLitBool>(iff.cond->kind) &&
                     std::get<HirLitBool>(iff.cond->kind).value) {
@@ -1096,6 +1102,12 @@ private:
         Type else_ty = check_expr(*iff.else_expr);
         if (then_ty == Type::error() || else_ty == Type::error()) {
             return Type::error();
+        }
+        if (then_ty.kind == TypeKind::Never) {
+            return else_ty;
+        }
+        if (else_ty.kind == TypeKind::Never) {
+            return then_ty;
         }
         if (then_ty != else_ty) {
             if (iff.then_tail && coerce_lit(*iff.then_tail, else_ty)) {
@@ -1904,7 +1916,8 @@ private:
         if (coerce_collection(expr, expected)) {
             return;
         }
-        if (got == expected || got == Type::error() || expected == Type::error()) {
+        if (got == expected || got == Type::error() || expected == Type::error() ||
+            got.kind == TypeKind::Never) {
             return;
         }
         if (coerce_lit(expr, expected)) {

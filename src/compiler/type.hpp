@@ -30,6 +30,7 @@ enum class TypeKind {
     Array,
     Dict,
     Fn,
+    Never,
 };
 
 struct Type {
@@ -55,6 +56,7 @@ struct Type {
     static Type f32() { return {TypeKind::F32, {}}; }
     static Type f64() { return {TypeKind::F64, {}}; }
     static Type named(std::string n) { return {TypeKind::Named, std::move(n)}; }
+    static Type never() { return {TypeKind::Never, {}}; }
 
     static Type list(Type elem) {
         Type t;
@@ -214,6 +216,8 @@ inline std::string type_name(const Type& ty) {
             out += ty.args.empty() ? "()" : type_name(ty.args.back());
             return out;
         }
+        case TypeKind::Never:
+            return "!";
     }
     return "<invalid>";
 }

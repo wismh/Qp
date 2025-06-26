@@ -262,3 +262,24 @@ add_executable(closures_host
 target_include_directories(closures_host PRIVATE ${CLOSURES_GEN_DIR})
 
 add_test(NAME closures_host COMMAND closures_host)
+
+set(EARLY_RETURN_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_early_return)
+set(EARLY_RETURN_GEN_H ${EARLY_RETURN_GEN_DIR}/early_return.h)
+set(EARLY_RETURN_GEN_CPP ${EARLY_RETURN_GEN_DIR}/early_return.cpp)
+
+add_custom_command(
+    OUTPUT ${EARLY_RETURN_GEN_H} ${EARLY_RETURN_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${EARLY_RETURN_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/early_return.qp -o ${EARLY_RETURN_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/early_return.qp
+    COMMENT "qpc compile examples/early_return.qp"
+    VERBATIM
+)
+
+add_executable(early_return_host
+    examples/early_return_host/main.cpp
+    ${EARLY_RETURN_GEN_CPP}
+)
+target_include_directories(early_return_host PRIVATE ${EARLY_RETURN_GEN_DIR})
+
+add_test(NAME early_return_host COMMAND early_return_host)
