@@ -94,6 +94,9 @@ namespace {
     if (text == "trait") {
         return TokenKind::KwTrait;
     }
+    if (text == "as") {
+        return TokenKind::KwAs;
+    }
     return TokenKind::Ident;
 }
 
