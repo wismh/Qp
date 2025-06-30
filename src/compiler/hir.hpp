@@ -173,13 +173,18 @@ struct HirRange {
     HirExprPtr end;
 };
 
+struct HirCast {
+    HirExprPtr expr;
+    Type ty;
+};
+
 struct HirExpr {
     Type ty;
     std::size_t offset = 0;
     std::variant<HirLitInt, HirLitFloat, HirLitBool, HirLitChar, HirLitString, HirVar, HirBinary,
                  HirUnary, HirCall, HirAssign, HirFieldAccess, HirIndex, HirStructLit, HirEnumLit,
                  HirMethodCall, HirFieldAssign, HirIndexAssign, HirMatch, HirListLit, HirDictLit,
-                 HirIf, HirRange>
+                 HirIf, HirRange, HirCast>
         kind;
 };
 
