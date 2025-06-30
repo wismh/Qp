@@ -262,3 +262,10 @@ TEST(Parser, FileModVsInline) {
     EXPECT_EQ(parsed.ast.mods[1].name, "util");
     ASSERT_EQ(parsed.ast.mods[1].body->functions.size(), 1u);
 }
+
+TEST(Parser, AsCast) {
+    auto parsed = qpc::test::parse_string("fn widen(x: i32) -> i64 { x as i64 }");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_TRUE(parsed.ast.functions[0].body.tail);
+    EXPECT_TRUE(std::holds_alternative<qpc::ExprCast>(parsed.ast.functions[0].body.tail->kind));
+}

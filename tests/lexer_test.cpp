@@ -145,3 +145,13 @@ TEST(Lexer, ControlModAndCompareTokens) {
     EXPECT_EQ(tokens[16].kind, TokenKind::DotDot);
     EXPECT_EQ(tokens[17].kind, TokenKind::Eof);
 }
+
+TEST(Lexer, AsKeyword) {
+    auto src = Source::from_string("t.qp", "as");
+    DiagnosticEngine diags;
+    const auto tokens = lex(src, diags);
+    ASSERT_FALSE(diags.has_errors());
+    ASSERT_EQ(tokens.size(), 2u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::KwAs);
+    EXPECT_EQ(tokens[1].kind, TokenKind::Eof);
+}

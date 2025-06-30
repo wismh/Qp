@@ -331,3 +331,20 @@ TEST(Typeck, DuplicateModuleIsError) {
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("duplicate module"), std::string::npos);
 }
+
+TEST(Typeck, AsCastOk) {
+    auto compiled = qpc::test::compile_string(R"(
+        enum Color { Red, Green }
+        fn widen(x: i32) -> i64 { x as i64 }
+        fn trunc(x: f32) -> i32 { x as i32 }
+        fn flag(b: bool) -> i32 { b as i32 }
+        fn code(c: Color) -> i32 { c as i32 }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, AsCastStringIsError) {
+    auto compiled = qpc::test::compile_string("fn f(s: string) -> i32 { s as i32 }");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("cannot cast"), std::string::npos);
+}

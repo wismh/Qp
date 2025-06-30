@@ -196,3 +196,9 @@ TEST(Codegen, ExternOpaqueMethodsAndStatic) {
     EXPECT_NE(compiled.result.output.source.find("test_object.add<std::int32_t>(3, 5)"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("Test::created()"), std::string::npos);
 }
+
+TEST(Codegen, AsCast) {
+    auto compiled = qpc::test::compile_string("fn widen(x: i32) -> i64 { x as i64 }");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("static_cast<std::int64_t>(x)"), std::string::npos);
+}
