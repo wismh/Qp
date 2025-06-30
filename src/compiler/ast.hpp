@@ -162,11 +162,16 @@ struct ExprRange {
     ExprPtr end;
 };
 
+struct ExprCast {
+    ExprPtr expr;
+    TypeExpr ty;
+};
+
 struct Expr {
     std::size_t offset = 0;
     std::variant<LitInt, LitFloat, LitBool, LitChar, LitString, ExprIdent, ExprPath, ExprBinary,
                  ExprUnary, ExprCall, ExprAssign, ExprField, ExprIndex, ExprStructLit, ExprMatch,
-                 ExprListLit, ExprDictLit, ExprIf, ExprRange>
+                 ExprListLit, ExprDictLit, ExprIf, ExprRange, ExprCast>
         kind;
 };
 
