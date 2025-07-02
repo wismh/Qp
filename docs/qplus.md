@@ -72,6 +72,14 @@ fn twice(n: i32) -> i32 {
 | `()` | unit; you can omit `-> ()` |
 | `fn(i32) -> i32` | closure / function value |
 
+`as` converts between numbers, `bool`/`char` and integers, and a C-style `enum` to an integer:
+
+```qp
+fn widen(x: i32) -> i64 {
+    x as i64
+}
+```
+
 Strings concatenate with `+`:
 
 ```qp

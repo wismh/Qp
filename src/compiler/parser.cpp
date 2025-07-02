@@ -1311,6 +1311,16 @@ private:
                 }
                 continue;
             }
+            if (at(TokenKind::KwAs)) {
+                const std::size_t off = peek().offset;
+                advance();
+                auto ty = parse_type();
+                if (!ty) {
+                    return std::nullopt;
+                }
+                expr = make_expr(off, ExprCast{std::move(*expr), std::move(*ty)});
+                continue;
+            }
             break;
         }
         return expr;

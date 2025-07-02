@@ -283,3 +283,24 @@ add_executable(early_return_host
 target_include_directories(early_return_host PRIVATE ${EARLY_RETURN_GEN_DIR})
 
 add_test(NAME early_return_host COMMAND early_return_host)
+
+set(CASTS_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_casts)
+set(CASTS_GEN_H ${CASTS_GEN_DIR}/casts.h)
+set(CASTS_GEN_CPP ${CASTS_GEN_DIR}/casts.cpp)
+
+add_custom_command(
+    OUTPUT ${CASTS_GEN_H} ${CASTS_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CASTS_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/casts.qp -o ${CASTS_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/casts.qp
+    COMMENT "qpc compile examples/casts.qp"
+    VERBATIM
+)
+
+add_executable(casts_host
+    examples/casts_host/main.cpp
+    ${CASTS_GEN_CPP}
+)
+target_include_directories(casts_host PRIVATE ${CASTS_GEN_DIR})
+
+add_test(NAME casts_host COMMAND casts_host)
