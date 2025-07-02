@@ -556,6 +556,10 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                     }
                 }
                 out << "    })";
+            } else if constexpr (std::is_same_v<K, HirCast>) {
+                out << "static_cast<" << cpp_type_name(expr.ty) << ">(";
+                emit_expr(out, *kind.expr);
+                out << ')';
             }
         },
         expr.kind);

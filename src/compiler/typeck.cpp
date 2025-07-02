@@ -927,6 +927,8 @@ private:
                     ty = check_range(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirClosure>) {
                     ty = check_closure(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirCast>) {
+                    ty = check_cast(kind, expr.offset);
                 }
             },
             expr.kind);
@@ -1185,6 +1187,37 @@ private:
         pop_scope();
         current_ret_ = saved_ret;
         return Type::fn(std::move(params), std::move(ret));
+    }
+
+    bool can_cast(const Type& from, const Type& to) const {
+        if (from == to || from == Type::error() || to == Type::error()) {
+            return true;
+        }
+        if (is_numeric(from) && is_numeric(to)) {
+            return true;
+        }
+        if (from == Type::boolean() && is_int(to)) {
+            return true;
+        }
+        if (from == Type::char_() && is_int(to)) {
+            return true;
+        }
+        if (is_int(from) && to == Type::char_()) {
+            return true;
+        }
+        if (from.kind == TypeKind::Named && c_enums_.contains(from.name) && is_int(to)) {
+            return true;
+        }
+        return false;
+    }
+
+    Type check_cast(HirCast& c, std::size_t offset) {
+        const Type from = check_expr(*c.expr);
+        if (!can_cast(from, c.ty)) {
+            error(offset, "cannot cast '" + type_name(from) + "' as '" + type_name(c.ty) + "'");
+            return Type::error();
+        }
+        return c.ty;
     }
 
     Type check_unary(HirUnary& un, std::size_t offset) {

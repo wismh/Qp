@@ -37,6 +37,7 @@ enum class TokenKind {
     KwMod,
     KwUse,
     KwTrait,
+    KwAs,
     LParen,
     RParen,
     LBracket,
@@ -166,6 +167,8 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'use'";
         case TokenKind::KwTrait:
             return "'trait'";
+        case TokenKind::KwAs:
+            return "'as'";
         case TokenKind::LParen:
             return "'('";
         case TokenKind::RParen:

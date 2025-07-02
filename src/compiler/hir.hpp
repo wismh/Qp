@@ -192,13 +192,18 @@ struct HirClosure {
     HirBlock body;
 };
 
+struct HirCast {
+    HirExprPtr expr;
+    Type ty;
+};
+
 struct HirExpr {
     Type ty;
     std::size_t offset = 0;
     std::variant<HirLitInt, HirLitFloat, HirLitBool, HirLitChar, HirLitString, HirVar, HirBinary,
                  HirUnary, HirCall, HirAssign, HirFieldAccess, HirIndex, HirStructLit, HirEnumLit,
                  HirMethodCall, HirFieldAssign, HirIndexAssign, HirMatch, HirListLit, HirDictLit,
-                 HirIf, HirRange, HirClosure>
+                 HirIf, HirRange, HirClosure, HirCast>
         kind;
 };
 

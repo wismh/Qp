@@ -532,6 +532,11 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                     clo.body = lower_block(src, std::move(*kind.body), diags);
                 }
                 out->kind = std::move(clo);
+            } else if constexpr (std::is_same_v<K, ExprCast>) {
+                out->kind = HirCast{
+                    lower_expr(src, std::move(kind.expr), diags),
+                    lower_type(kind.ty),
+                };
             }
         },
         expr->kind);

@@ -173,6 +173,13 @@ let speed: f64 = 6.0;
 let name = "Ada";        // string
 ```
 
+`as` is an explicit conversion: numeric types, `bool`/`char` to an integer, integer to `char`, and a C-style `enum` to an integer. There is no implicit widening.
+
+```qp
+let n: i64 = 1 as i64;
+let c: i32 = Color::Red as i32;
+```
+
 ### 5.2 Null and the heap
 
 `null` is only for `T?`.
