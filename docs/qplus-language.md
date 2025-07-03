@@ -200,7 +200,7 @@ let x = p?.x;            // f32?
 
 There is no implicit `T` → `T?`: value and reference are different. To put a value on the heap, use `new`.
 
-`T?` in C++: `T*` plus a contract; at runtime the object has a GC header. Value `T` in C++: `struct T` by value.
+`T?` in C++: `T*` plus a contract. `null` is `nullptr`. `p!` is `unwrap(p)` (abort if null). Value `T` in C++: `struct T` by value.
 
 ### 5.3 `struct`
 

@@ -61,6 +61,15 @@ You can omit the type on `let` when the initializer makes it obvious. Parameter 
 | `char` | `'a'` |
 | `string` | `"hello"` |
 | `()` | unit; you can omit `-> ()` |
+| `T?` | nullable pointer to `T`; only this may be `null` |
+
+`null` is only for `T?`. `p!` panics if `p` is `null`.
+
+```qp
+fn or_zero(p: i32?) -> i32 {
+    if p == null { 0 } else { p! }
+}
+```
 
 Strings concatenate with `+`:
 
@@ -390,7 +399,7 @@ Examples live in [`examples/`](../examples/).
 
 These are in the language design, but do not use them yet:
 
-- `T?`, `null`, `new`, `if let`
+- `new`, `if let`, `?.`, `??`
 - closures
 - generic `struct`
 - a separate package system / a JIT or WASM backend of its own
