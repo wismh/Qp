@@ -26,6 +26,8 @@ Type lower_type(const TypeExpr& te) {
             return Type::array(lower_type(te.args.front()), te.array_len);
         case TypeExpr::Kind::Dict:
             return Type::dict(lower_type(te.args.front()), lower_type(te.args.back()));
+        case TypeExpr::Kind::Nullable:
+            return Type::nullable(lower_type(te.args.front()));
     }
     return Type::error();
 }
@@ -345,6 +347,8 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
             } else if constexpr (std::is_same_v<K, LitString>) {
                 out->ty = Type::string();
                 out->kind = HirLitString{unescape_string(kind.raw, src, expr->offset, diags)};
+            } else if constexpr (std::is_same_v<K, LitNull>) {
+                out->kind = HirLitNull{};
             } else if constexpr (std::is_same_v<K, ExprIdent>) {
                 out->kind = HirVar{std::move(kind.name)};
             } else if constexpr (std::is_same_v<K, ExprPath>) {
@@ -501,6 +505,8 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                     lower_expr(src, std::move(kind.start), diags),
                     lower_expr(src, std::move(kind.end), diags),
                 };
+            } else if constexpr (std::is_same_v<K, ExprUnwrap>) {
+                out->kind = HirUnwrap{lower_expr(src, std::move(kind.expr), diags)};
             }
         },
         expr->kind);

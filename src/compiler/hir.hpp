@@ -49,6 +49,8 @@ struct HirLitString {
     std::string value;
 };
 
+struct HirLitNull {};
+
 struct HirVar {
     std::string name;
 };
@@ -173,13 +175,17 @@ struct HirRange {
     HirExprPtr end;
 };
 
+struct HirUnwrap {
+    HirExprPtr expr;
+};
+
 struct HirExpr {
     Type ty;
     std::size_t offset = 0;
-    std::variant<HirLitInt, HirLitFloat, HirLitBool, HirLitChar, HirLitString, HirVar, HirBinary,
+    std::variant<HirLitInt, HirLitFloat, HirLitBool, HirLitChar, HirLitString, HirLitNull, HirVar, HirBinary,
                  HirUnary, HirCall, HirAssign, HirFieldAccess, HirIndex, HirStructLit, HirEnumLit,
                  HirMethodCall, HirFieldAssign, HirIndexAssign, HirMatch, HirListLit, HirDictLit,
-                 HirIf, HirRange>
+                 HirIf, HirRange, HirUnwrap>
         kind;
 };
 
