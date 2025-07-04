@@ -29,6 +29,7 @@ enum class TypeKind {
     List,
     Array,
     Dict,
+    Nullable,
 };
 
 struct Type {
@@ -75,6 +76,13 @@ struct Type {
         t.kind = TypeKind::Dict;
         t.args.push_back(std::move(key));
         t.args.push_back(std::move(value));
+        return t;
+    }
+
+    static Type nullable(Type inner) {
+        Type t;
+        t.kind = TypeKind::Nullable;
+        t.args.push_back(std::move(inner));
         return t;
     }
 
@@ -193,6 +201,8 @@ inline std::string type_name(const Type& ty) {
             return "[" + type_name(ty.elem()) + "; " + std::to_string(ty.size) + "]";
         case TypeKind::Dict:
             return "{" + type_name(ty.key()) + ": " + type_name(ty.value()) + "}";
+        case TypeKind::Nullable:
+            return type_name(ty.elem()) + "?";
     }
     return "<invalid>";
 }
@@ -235,6 +245,8 @@ inline std::string cpp_type_name(const Type& ty) {
             return "Array<" + cpp_type_name(ty.elem()) + ", " + std::to_string(ty.size) + ">";
         case TypeKind::Dict:
             return "Dict<" + cpp_type_name(ty.key()) + ", " + cpp_type_name(ty.value()) + ">";
+        case TypeKind::Nullable:
+            return cpp_type_name(ty.elem()) + "*";
         default:
             return "void";
     }

@@ -904,6 +904,21 @@ private:
     }
 
     std::optional<TypeExpr> parse_type() {
+        auto ty = parse_bare_type();
+        if (!ty) {
+            return std::nullopt;
+        }
+        while (consume(TokenKind::Question)) {
+            TypeExpr wrapped;
+            wrapped.kind = TypeExpr::Kind::Nullable;
+            wrapped.offset = ty->offset;
+            wrapped.args.push_back(std::move(*ty));
+            ty = std::move(wrapped);
+        }
+        return ty;
+    }
+
+    std::optional<TypeExpr> parse_bare_type() {
         TypeExpr ty;
         ty.offset = peek().offset;
 
@@ -1277,6 +1292,12 @@ private:
                 }
                 continue;
             }
+            if (at(TokenKind::Bang)) {
+                const std::size_t off = peek().offset;
+                advance();
+                expr = make_expr(off, ExprUnwrap{std::move(*expr)});
+                continue;
+            }
             break;
         }
         return expr;
@@ -1557,6 +1578,12 @@ private:
             const bool value = at(TokenKind::KwTrue);
             advance();
             return make_expr(off, LitBool{value});
+        }
+
+        if (at(TokenKind::KwNull)) {
+            const std::size_t off = peek().offset;
+            advance();
+            return make_expr(off, LitNull{});
         }
 
         if (at(TokenKind::String)) {
