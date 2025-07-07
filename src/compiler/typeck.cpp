@@ -154,7 +154,7 @@ private:
     };
 
     bool resolve_type(Type& ty, std::size_t offset) {
-        if (ty.kind == TypeKind::List || ty.kind == TypeKind::Array) {
+        if (ty.kind == TypeKind::List || ty.kind == TypeKind::Array || ty.kind == TypeKind::Nullable) {
             if (ty.args.empty()) {
                 error(offset, "invalid collection type");
                 ty = Type::error();
@@ -872,6 +872,8 @@ private:
                     ty = Type::char_();
                 } else if constexpr (std::is_same_v<K, HirLitString>) {
                     ty = Type::string();
+                } else if constexpr (std::is_same_v<K, HirLitNull>) {
+                    ty = Type::unknown();
                 } else if constexpr (std::is_same_v<K, HirVar>) {
                     ty = check_var(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirBinary>) {
@@ -906,6 +908,8 @@ private:
                     ty = check_if(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirRange>) {
                     ty = check_range(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirUnwrap>) {
+                    ty = check_unwrap(kind, expr.offset);
                 }
             },
             expr.kind);
@@ -1111,6 +1115,17 @@ private:
         return lo;
     }
 
+    Type check_unwrap(HirUnwrap& un, std::size_t offset) {
+        const Type inner = check_expr(*un.expr);
+        if (inner.kind == TypeKind::Nullable) {
+            return inner.elem();
+        }
+        if (inner != Type::error()) {
+            error(offset, "unwrap '!' requires a '" + type_name(inner) + "?' value");
+        }
+        return Type::error();
+    }
+
     Type check_unary(HirUnary& un, std::size_t offset) {
         const Type inner = check_expr(*un.operand);
         if (un.op == UnOp::Not) {
@@ -1152,6 +1167,10 @@ private:
                 return true;
             }
         }
+        if (std::holds_alternative<HirLitNull>(expr.kind) && expected.kind == TypeKind::Nullable) {
+            expr.ty = expected;
+            return true;
+        }
         return false;
     }
 
@@ -1168,6 +1187,24 @@ private:
             } else if (coerce_lit(*bin.rhs, lhs)) {
                 rhs = lhs;
             }
+        }
+
+        if (is_eq_op(bin.op) && (lhs.kind == TypeKind::Nullable || rhs.kind == TypeKind::Nullable ||
+                                 std::holds_alternative<HirLitNull>(bin.lhs->kind) ||
+                                 std::holds_alternative<HirLitNull>(bin.rhs->kind))) {
+            if (lhs.kind == TypeKind::Unknown && rhs.kind == TypeKind::Nullable) {
+                bin.lhs->ty = rhs;
+                lhs = rhs;
+            }
+            if (rhs.kind == TypeKind::Unknown && lhs.kind == TypeKind::Nullable) {
+                bin.rhs->ty = lhs;
+                rhs = lhs;
+            }
+            if (lhs.kind == TypeKind::Nullable && rhs.kind == TypeKind::Nullable && lhs == rhs) {
+                return Type::boolean();
+            }
+            error(offset, "cannot compare '" + type_name(lhs) + "' and '" + type_name(rhs) + "'");
+            return Type::error();
         }
 
         if (bin.op == BinOp::Add && lhs == Type::string() && rhs == Type::string()) {
@@ -1187,6 +1224,7 @@ private:
             }
             const bool comparable =
                 is_numeric(lhs) || lhs == Type::boolean() || lhs == Type::char_() || lhs == Type::string() ||
+                lhs.kind == TypeKind::Nullable ||
                 (lhs.kind == TypeKind::Named && c_enums_.contains(lhs.name));
             if (is_ord_op(bin.op) && !is_numeric(lhs)) {
                 error(offset, "cannot ordered-compare '" + type_name(lhs) + "'");
