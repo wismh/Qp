@@ -262,3 +262,15 @@ TEST(Parser, FileModVsInline) {
     EXPECT_EQ(parsed.ast.mods[1].name, "util");
     ASSERT_EQ(parsed.ast.mods[1].body->functions.size(), 1u);
 }
+
+TEST(Parser, NullableAndNull) {
+    auto parsed = qpc::test::parse_string(R"(
+        fn or_zero(p: i32?) -> i32 {
+            if p == null { 0 } else { p! }
+        }
+        fn none() -> i32? { null }
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    EXPECT_EQ(parsed.ast.functions[0].params[0].ty.kind, qpc::TypeExpr::Kind::Nullable);
+    EXPECT_TRUE(std::holds_alternative<qpc::LitNull>(parsed.ast.functions[1].body.tail->kind));
+}
