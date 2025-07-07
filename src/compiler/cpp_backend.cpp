@@ -284,6 +284,8 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 out << "char32_t(" << static_cast<std::uint32_t>(kind.value) << ")";
             } else if constexpr (std::is_same_v<K, HirLitString>) {
                 out << "String(\"" << cpp_escape(kind.value) << "\")";
+            } else if constexpr (std::is_same_v<K, HirLitNull>) {
+                out << "nullptr";
             } else if constexpr (std::is_same_v<K, HirVar>) {
                 out << kind.name;
             } else if constexpr (std::is_same_v<K, HirBinary>) {
@@ -462,6 +464,10 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 emit_if(out, kind, expr.ty);
             } else if constexpr (std::is_same_v<K, HirRange>) {
                 emit_expr(out, *kind.start);
+            } else if constexpr (std::is_same_v<K, HirUnwrap>) {
+                out << "unwrap(";
+                emit_expr(out, *kind.expr);
+                out << ')';
             }
         },
         expr.kind);
@@ -820,6 +826,7 @@ std::string emit_header(const HirModule& mod) {
     header << "template <typename T>\nusing List = std::vector<T>;\n";
     header << "template <typename T, std::size_t N>\nusing Array = std::array<T, N>;\n";
     header << "template <typename K, typename V>\nusing Dict = std::map<K, V>;\n\n";
+    header << "template <typename T>\nT unwrap(T* p) {\n    if (p == nullptr) {\n        std::abort();\n    }\n    return *p;\n}\n\n";
     emit_module_header(header, mod, methods);
     header << "}  // namespace qplus\n";
     return header.str();
