@@ -71,12 +71,21 @@ fn twice(n: i32) -> i32 {
 | `string` | `"hello"` |
 | `()` | unit; you can omit `-> ()` |
 | `fn(i32) -> i32` | closure / function value |
+| `T?` | nullable pointer to `T`; only this may be `null` |
 
 `as` converts between numbers, `bool`/`char` and integers, and a C-style `enum` to an integer:
 
 ```qp
 fn widen(x: i32) -> i64 {
     x as i64
+}
+```
+
+`null` is only for `T?`. `p!` panics if `p` is `null`.
+
+```qp
+fn or_zero(p: i32?) -> i32 {
+    if p == null { 0 } else { p! }
 }
 ```
 
@@ -415,7 +424,7 @@ Examples live in [`examples/`](../examples/).
 
 These are in the language design, but do not use them yet:
 
-- `T?`, `null`, `new`, `if let`
+- `new`, `if let`, `?.`, `??`
 - generic `struct`
 - a separate package system / a JIT or WASM backend of its own
 - string interpolation, tuples `(A, B)`, `Result` / `?`

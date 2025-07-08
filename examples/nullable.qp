@@ -1,0 +1,15 @@
+pub fn or_zero(p: i32?) -> i32 {
+    if p == null {
+        0
+    } else {
+        p!
+    }
+}
+
+pub fn none() -> i32? {
+    null
+}
+
+pub fn is_none(p: i32?) -> bool {
+    p == null
+}

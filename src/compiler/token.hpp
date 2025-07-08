@@ -38,6 +38,7 @@ enum class TokenKind {
     KwUse,
     KwTrait,
     KwAs,
+    KwNull,
     LParen,
     RParen,
     LBracket,
@@ -67,7 +68,8 @@ enum class TokenKind {
     PipePipe,
     Pipe,
     Bang,
-    DotDot,
+        DotDot,
+    Question,
 };
 
 struct Token {
@@ -169,6 +171,8 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'trait'";
         case TokenKind::KwAs:
             return "'as'";
+        case TokenKind::KwNull:
+            return "'null'";
         case TokenKind::LParen:
             return "'('";
         case TokenKind::RParen:
@@ -229,6 +233,8 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'!'";
         case TokenKind::DotDot:
             return "'..'";
+        case TokenKind::Question:
+            return "'?'";
     }
     return "token";
 }

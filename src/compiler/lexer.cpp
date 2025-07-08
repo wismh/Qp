@@ -97,6 +97,9 @@ namespace {
     if (text == "as") {
         return TokenKind::KwAs;
     }
+    if (text == "null") {
+        return TokenKind::KwNull;
+    }
     return TokenKind::Ident;
 }
 
@@ -144,6 +147,8 @@ namespace {
             return TokenKind::Slash;
         case '%':
             return TokenKind::Percent;
+        case '?':
+            return TokenKind::Question;
         default:
             return TokenKind::Eof;
     }

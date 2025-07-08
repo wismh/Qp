@@ -36,6 +36,8 @@ Type lower_type(const TypeExpr& te) {
             }
             return Type::fn(std::move(params), lower_type(te.args.back()));
         }
+        case TypeExpr::Kind::Nullable:
+            return Type::nullable(lower_type(te.args.front()));
     }
     return Type::error();
 }
@@ -355,6 +357,8 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
             } else if constexpr (std::is_same_v<K, LitString>) {
                 out->ty = Type::string();
                 out->kind = HirLitString{unescape_string(kind.raw, src, expr->offset, diags)};
+            } else if constexpr (std::is_same_v<K, LitNull>) {
+                out->kind = HirLitNull{};
             } else if constexpr (std::is_same_v<K, ExprIdent>) {
                 out->kind = HirVar{std::move(kind.name)};
             } else if constexpr (std::is_same_v<K, ExprPath>) {
@@ -537,6 +541,8 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                     lower_expr(src, std::move(kind.expr), diags),
                     lower_type(kind.ty),
                 };
+            } else if constexpr (std::is_same_v<K, ExprUnwrap>) {
+                out->kind = HirUnwrap{lower_expr(src, std::move(kind.expr), diags)};
             }
         },
         expr->kind);

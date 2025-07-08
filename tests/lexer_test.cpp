@@ -166,3 +166,15 @@ TEST(Lexer, AsKeyword) {
     EXPECT_EQ(tokens[0].kind, TokenKind::KwAs);
     EXPECT_EQ(tokens[1].kind, TokenKind::Eof);
 }
+
+TEST(Lexer, NullAndQuestion) {
+    auto src = Source::from_string("t.qp", "null i32?");
+    DiagnosticEngine diags;
+    const auto tokens = lex(src, diags);
+    ASSERT_FALSE(diags.has_errors()) << diags.all().front().message;
+    ASSERT_EQ(tokens.size(), 4u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::KwNull);
+    EXPECT_EQ(tokens[1].kind, TokenKind::Ident);
+    EXPECT_EQ(tokens[2].kind, TokenKind::Question);
+    EXPECT_EQ(tokens[3].kind, TokenKind::Eof);
+}

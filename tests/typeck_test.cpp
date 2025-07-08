@@ -350,6 +350,16 @@ TEST(Typeck, ClosureCallAndCapture) {
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
 
+TEST(Typeck, NullableNullAndUnwrap) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn or_zero(p: i32?) -> i32 {
+            if p == null { 0 } else { p! }
+        }
+        fn none() -> i32? { null }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
 TEST(Typeck, AsCastOk) {
     auto compiled = qpc::test::compile_string(R"(
         enum Color { Red, Green }
@@ -403,4 +413,15 @@ TEST(Typeck, AsCastStringIsError) {
     auto compiled = qpc::test::compile_string("fn f(s: string) -> i32 { s as i32 }");
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("cannot cast"), std::string::npos);
+}
+
+TEST(Typeck, NullNeedsNullable) {
+    auto compiled = qpc::test::compile_string("fn f() -> i32 { null }");
+    EXPECT_FALSE(compiled.result.ok);
+}
+
+TEST(Typeck, UnwrapNonNullableIsError) {
+    auto compiled = qpc::test::compile_string("fn f(x: i32) -> i32 { x! }");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("unwrap"), std::string::npos);
 }
