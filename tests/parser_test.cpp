@@ -301,3 +301,15 @@ TEST(Parser, AsCast) {
     ASSERT_TRUE(parsed.ast.functions[0].body.tail);
     EXPECT_TRUE(std::holds_alternative<qpc::ExprCast>(parsed.ast.functions[0].body.tail->kind));
 }
+
+TEST(Parser, NullableAndNull) {
+    auto parsed = qpc::test::parse_string(R"(
+        fn or_zero(p: i32?) -> i32 {
+            if p == null { 0 } else { p! }
+        }
+        fn none() -> i32? { null }
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    EXPECT_EQ(parsed.ast.functions[0].params[0].ty.kind, qpc::TypeExpr::Kind::Nullable);
+    EXPECT_TRUE(std::holds_alternative<qpc::LitNull>(parsed.ast.functions[1].body.tail->kind));
+}

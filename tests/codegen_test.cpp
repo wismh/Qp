@@ -237,3 +237,18 @@ TEST(Codegen, AsCast) {
     ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
     EXPECT_NE(compiled.result.output.source.find("static_cast<std::int64_t>(x)"), std::string::npos);
 }
+
+TEST(Codegen, NullableNullAndUnwrap) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn or_zero(p: i32?) -> i32 {
+            if p == null { 0 } else { p! }
+        }
+        fn none() -> i32? { null }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("std::int32_t* p"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("std::int32_t* none()"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("T unwrap(T* p)"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("nullptr"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("unwrap(p)"), std::string::npos);
+}

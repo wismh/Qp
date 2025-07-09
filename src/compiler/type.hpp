@@ -31,6 +31,7 @@ enum class TypeKind {
     Dict,
     Fn,
     Never,
+    Nullable,
 };
 
 struct Type {
@@ -86,6 +87,13 @@ struct Type {
         t.kind = TypeKind::Fn;
         t.args = std::move(params);
         t.args.push_back(std::move(ret));
+        return t;
+    }
+
+    static Type nullable(Type inner) {
+        Type t;
+        t.kind = TypeKind::Nullable;
+        t.args.push_back(std::move(inner));
         return t;
     }
 
@@ -218,6 +226,8 @@ inline std::string type_name(const Type& ty) {
         }
         case TypeKind::Never:
             return "!";
+        case TypeKind::Nullable:
+            return type_name(ty.elem()) + "?";
     }
     return "<invalid>";
 }
@@ -273,6 +283,8 @@ inline std::string cpp_type_name(const Type& ty) {
             out += ")>";
             return out;
         }
+        case TypeKind::Nullable:
+            return cpp_type_name(ty.elem()) + "*";
         default:
             return "void";
     }

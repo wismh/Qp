@@ -304,3 +304,24 @@ add_executable(casts_host
 target_include_directories(casts_host PRIVATE ${CASTS_GEN_DIR})
 
 add_test(NAME casts_host COMMAND casts_host)
+
+set(NULLABLE_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_nullable)
+set(NULLABLE_GEN_H ${NULLABLE_GEN_DIR}/nullable.h)
+set(NULLABLE_GEN_CPP ${NULLABLE_GEN_DIR}/nullable.cpp)
+
+add_custom_command(
+    OUTPUT ${NULLABLE_GEN_H} ${NULLABLE_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${NULLABLE_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/nullable.qp -o ${NULLABLE_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/nullable.qp
+    COMMENT "qpc compile examples/nullable.qp"
+    VERBATIM
+)
+
+add_executable(nullable_host
+    examples/nullable_host/main.cpp
+    ${NULLABLE_GEN_CPP}
+)
+target_include_directories(nullable_host PRIVATE ${NULLABLE_GEN_DIR})
+
+add_test(NAME nullable_host COMMAND nullable_host)
