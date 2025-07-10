@@ -39,6 +39,7 @@ enum class TokenKind {
     KwTrait,
     KwAs,
     KwNull,
+    KwNew,
     LParen,
     RParen,
     LBracket,
@@ -173,6 +174,8 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'as'";
         case TokenKind::KwNull:
             return "'null'";
+        case TokenKind::KwNew:
+            return "'new'";
         case TokenKind::LParen:
             return "'('";
         case TokenKind::RParen:
