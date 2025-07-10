@@ -1416,6 +1416,43 @@ private:
         return make_expr(off, std::move(lit));
     }
 
+    std::optional<ExprPtr> parse_new() {
+        const std::size_t off = peek().offset;
+        advance();
+        std::vector<std::string> path;
+        auto first = take_ident("type name after 'new'");
+        if (!first) {
+            return std::nullopt;
+        }
+        path.push_back(std::move(*first));
+        while (consume(TokenKind::ColonColon)) {
+            auto part = take_ident("type path");
+            if (!part) {
+                return std::nullopt;
+            }
+            path.push_back(std::move(*part));
+        }
+        if (!at(TokenKind::LBrace)) {
+            error(peek(), "expected '{' after 'new Type'");
+            return std::nullopt;
+        }
+        auto lit = parse_struct_lit(off, std::move(path));
+        if (!lit) {
+            return std::nullopt;
+        }
+        auto* st = std::get_if<ExprStructLit>(&(*lit)->kind);
+        if (!st) {
+            error(peek(), "expected struct literal after 'new'");
+            return std::nullopt;
+        }
+        ExprNew n;
+        n.path = std::move(st->path);
+        n.name = n.path.empty() ? st->name : n.path.back();
+        n.fields = std::move(st->fields);
+        (*lit)->kind = std::move(n);
+        return lit;
+    }
+
     static bool is_type_suffix(std::string_view text) {
         return text == "i8" || text == "i16" || text == "i32" || text == "i64" || text == "u8" ||
                text == "u16" || text == "u32" || text == "u64" || text == "f32" || text == "f64" ||
@@ -1714,6 +1751,10 @@ private:
                 clo.body = std::make_unique<Block>(std::move(body));
             }
             return make_expr(off, std::move(clo));
+        }
+
+        if (at(TokenKind::KwNew)) {
+            return parse_new();
         }
 
         if (at(TokenKind::KwMatch)) {

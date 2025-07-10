@@ -185,11 +185,17 @@ struct ExprUnwrap {
     ExprPtr expr;
 };
 
+struct ExprNew {
+    std::string name;
+    std::vector<std::string> path;
+    std::vector<StructLitField> fields;
+};
+
 struct Expr {
     std::size_t offset = 0;
     std::variant<LitInt, LitFloat, LitBool, LitChar, LitString, LitNull, ExprIdent, ExprPath, ExprBinary,
                  ExprUnary, ExprCall, ExprAssign, ExprField, ExprIndex, ExprStructLit, ExprMatch,
-                 ExprListLit, ExprDictLit, ExprIf, ExprRange, ExprClosure, ExprCast, ExprUnwrap>
+                 ExprListLit, ExprDictLit, ExprIf, ExprRange, ExprClosure, ExprCast, ExprUnwrap, ExprNew>
         kind;
 };
 
