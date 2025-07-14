@@ -252,3 +252,14 @@ TEST(Codegen, NullableNullAndUnwrap) {
     EXPECT_NE(compiled.result.output.source.find("nullptr"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("unwrap(p)"), std::string::npos);
 }
+
+TEST(Codegen, NewAllocAndGc) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { mut x: i32, mut y: i32 }
+        fn origin() -> Point? { new Point { x: 1, y: 2 } }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("T* alloc(T value)"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("gc_collect"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("alloc(Point{"), std::string::npos);
+}
