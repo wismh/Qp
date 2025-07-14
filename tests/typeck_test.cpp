@@ -360,6 +360,23 @@ TEST(Typeck, NullableNullAndUnwrap) {
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
 
+TEST(Typeck, NewStructIsNullable) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { mut x: i32, mut y: i32 }
+        fn origin() -> Point? { new Point { x: 0, y: 0 } }
+        fn get_x(p: Point?) -> i32 { if p == null { 0 } else { p!.x } }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, NewCannotImplicitlyUnwrap) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { mut x: i32, mut y: i32 }
+        fn origin() -> Point { new Point { x: 0, y: 0 } }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+}
+
 TEST(Typeck, AsCastOk) {
     auto compiled = qpc::test::compile_string(R"(
         enum Color { Red, Green }

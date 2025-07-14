@@ -313,3 +313,13 @@ TEST(Parser, NullableAndNull) {
     EXPECT_EQ(parsed.ast.functions[0].params[0].ty.kind, qpc::TypeExpr::Kind::Nullable);
     EXPECT_TRUE(std::holds_alternative<qpc::LitNull>(parsed.ast.functions[1].body.tail->kind));
 }
+
+TEST(Parser, NewStruct) {
+    auto parsed = qpc::test::parse_string(R"(
+        struct Point { mut x: i32, mut y: i32 }
+        fn origin() -> Point? { new Point { x: 0, y: 0 } }
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_TRUE(parsed.ast.functions[0].body.tail);
+    EXPECT_TRUE(std::holds_alternative<qpc::ExprNew>(parsed.ast.functions[0].body.tail->kind));
+}

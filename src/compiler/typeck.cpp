@@ -933,6 +933,8 @@ private:
                     ty = check_cast(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirUnwrap>) {
                     ty = check_unwrap(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirNew>) {
+                    ty = check_new(kind, expr.offset);
                 }
             },
             expr.kind);
@@ -1233,6 +1235,18 @@ private:
             error(offset, "unwrap '!' requires a '" + type_name(inner) + "?' value");
         }
         return Type::error();
+    }
+
+    Type check_new(HirNew& n, std::size_t offset) {
+        HirStructLit lit;
+        lit.name = n.name;
+        lit.fields = std::move(n.fields);
+        const Type inner = check_struct_lit(lit, offset);
+        n.fields = std::move(lit.fields);
+        if (inner.kind == TypeKind::Error) {
+            return Type::error();
+        }
+        return Type::nullable(inner);
     }
 
     Type check_unary(HirUnary& un, std::size_t offset) {

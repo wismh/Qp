@@ -178,3 +178,13 @@ TEST(Lexer, NullAndQuestion) {
     EXPECT_EQ(tokens[2].kind, TokenKind::Question);
     EXPECT_EQ(tokens[3].kind, TokenKind::Eof);
 }
+
+TEST(Lexer, NewKeyword) {
+    auto src = Source::from_string("t.qp", "new");
+    DiagnosticEngine diags;
+    const auto tokens = lex(src, diags);
+    ASSERT_FALSE(diags.has_errors());
+    ASSERT_EQ(tokens.size(), 2u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::KwNew);
+    EXPECT_EQ(tokens[1].kind, TokenKind::Eof);
+}
