@@ -394,6 +394,16 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                     emit_expr(out, *kind.fields[i].value);
                 }
                 out << '}';
+            } else if constexpr (std::is_same_v<K, HirNew>) {
+                out << "alloc(" << kind.name << '{';
+                for (std::size_t i = 0; i < kind.fields.size(); ++i) {
+                    if (i != 0) {
+                        out << ", ";
+                    }
+                    out << '.' << kind.fields[i].name << " = ";
+                    emit_expr(out, *kind.fields[i].value);
+                }
+                out << "})";
             } else if constexpr (std::is_same_v<K, HirEnumLit>) {
                 if (is_c_enum_name(kind.enum_name)) {
                     out << kind.enum_name << "::" << kind.variant;
@@ -912,13 +922,20 @@ std::string emit_header(const HirModule& mod) {
     std::ostringstream header;
     header << "#pragma once\n\n";
     header << "#include <array>\n";
+    header << "#include <cstddef>\n";
     header << "#include <cstdint>\n";
     header << "#include <cstdlib>\n";
     header << "#include <functional>\n";
     header << "#include <map>\n";
+    header << "#include <new>\n";
     header << "#include <string>\n";
     header << "#include <variant>\n";
-    header << "#include <vector>\n\n";
+    header << "#include <vector>\n";
+    header << "#if defined(_MSC_VER)\n";
+    header << "#  include <intrin.h>\n";
+    header << "#elif defined(__unix__)\n";
+    header << "#  include <pthread.h>\n";
+    header << "#endif\n\n";
 
     bool any_c_abi = false;
     for (const auto& fn : mod.functions) {
@@ -950,6 +967,149 @@ std::string emit_header(const HirModule& mod) {
     header << "template <typename K, typename V>\nusing Dict = std::map<K, V>;\n";
     header << "template <typename T>\nusing Fn = std::function<T>;\n\n";
     header << "template <typename T>\nT unwrap(T* p) {\n    if (p == nullptr) {\n        std::abort();\n    }\n    return *p;\n}\n\n";
+    header << R"cpp(struct GcHeader {
+    GcHeader* next;
+    std::size_t size;
+    bool marked;
+    void (*dtor)(void*);
+};
+
+inline GcHeader* gc_head = nullptr;
+inline std::size_t gc_bytes = 0;
+inline std::size_t gc_allocs = 0;
+
+inline void* gc_payload(GcHeader* h) {
+    return reinterpret_cast<char*>(h) + sizeof(GcHeader);
+}
+
+inline char* gc_stack_high() {
+#if defined(_MSC_VER) && defined(_M_X64)
+    auto* teb = reinterpret_cast<char*>(__readgsqword(0x30));
+    return *reinterpret_cast<char**>(teb + 0x08);
+#elif defined(_MSC_VER) && defined(_M_IX86)
+    auto* teb = reinterpret_cast<char*>(__readfsdword(0x18));
+    return *reinterpret_cast<char**>(teb + 0x04);
+#elif defined(__unix__)
+    pthread_attr_t attr;
+    pthread_getattr_np(pthread_self(), &attr);
+    void* addr = nullptr;
+    std::size_t size = 0;
+    pthread_attr_getstack(&attr, &addr, &size);
+    pthread_attr_destroy(&attr);
+    return static_cast<char*>(addr) + size;
+#else
+    volatile char here;
+    return const_cast<char*>(&here);
+#endif
+}
+
+inline bool gc_points_at(GcHeader* h, const void* word) {
+    auto* p = static_cast<const char*>(word);
+    auto* pay = static_cast<const char*>(gc_payload(h));
+    return p >= pay && p < pay + static_cast<std::ptrdiff_t>(h->size);
+}
+
+inline void gc_mark_range(const void* lo, const void* hi) {
+    auto* b = static_cast<const char*>(lo);
+    auto* e = static_cast<const char*>(hi);
+    if (b > e) {
+        const char* t = b;
+        b = e;
+        e = t;
+    }
+    const auto align = static_cast<std::uintptr_t>(sizeof(void*) - 1);
+    b = reinterpret_cast<const char*>(reinterpret_cast<std::uintptr_t>(b) & ~align);
+    for (auto* p = b; p + sizeof(void*) <= e; p += sizeof(void*)) {
+        void* word = *reinterpret_cast<void* const*>(p);
+        for (GcHeader* h = gc_head; h != nullptr; h = h->next) {
+            if (!h->marked && gc_points_at(h, word)) {
+                h->marked = true;
+            }
+        }
+    }
+}
+
+inline std::size_t gc_marked_count() {
+    std::size_t n = 0;
+    for (GcHeader* h = gc_head; h != nullptr; h = h->next) {
+        if (h->marked) {
+            ++n;
+        }
+    }
+    return n;
+}
+
+inline void gc_collect() {
+    for (GcHeader* h = gc_head; h != nullptr; h = h->next) {
+        h->marked = false;
+    }
+    volatile char here;
+    gc_mark_range(const_cast<char*>(&here), gc_stack_high());
+    std::size_t marked = 0;
+    std::size_t next_marked = gc_marked_count();
+    while (next_marked > marked) {
+        marked = next_marked;
+        for (GcHeader* h = gc_head; h != nullptr; h = h->next) {
+            if (!h->marked) {
+                continue;
+            }
+            auto* pay = static_cast<char*>(gc_payload(h));
+            gc_mark_range(pay, pay + h->size);
+        }
+        next_marked = gc_marked_count();
+    }
+    GcHeader* prev = nullptr;
+    GcHeader* h = gc_head;
+    while (h != nullptr) {
+        GcHeader* nxt = h->next;
+        if (!h->marked) {
+            if (h->dtor != nullptr) {
+                h->dtor(gc_payload(h));
+            }
+            gc_bytes -= h->size;
+            std::free(h);
+            if (prev != nullptr) {
+                prev->next = nxt;
+            } else {
+                gc_head = nxt;
+            }
+        } else {
+            prev = h;
+        }
+        h = nxt;
+    }
+}
+
+inline std::size_t gc_live() {
+    std::size_t n = 0;
+    for (GcHeader* h = gc_head; h != nullptr; h = h->next) {
+        ++n;
+    }
+    return n;
+}
+
+template <typename T>
+T* alloc(T value) {
+    ++gc_allocs;
+    if (gc_allocs % 64 == 0) {
+        gc_collect();
+    }
+    auto* mem = static_cast<GcHeader*>(std::malloc(sizeof(GcHeader) + sizeof(T)));
+    if (mem == nullptr) {
+        std::abort();
+    }
+    mem->next = gc_head;
+    mem->size = sizeof(T);
+    mem->marked = false;
+    mem->dtor = [](void* p) { static_cast<T*>(p)->~T(); };
+    gc_head = mem;
+    gc_bytes += sizeof(T);
+    T* payload = static_cast<T*>(gc_payload(mem));
+    new (payload) T(std::move(value));
+    return payload;
+}
+
+)cpp";
     emit_module_header(header, mod, methods);
     header << "}  // namespace qplus\n";
     return header.str();
