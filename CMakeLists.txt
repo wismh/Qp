@@ -325,3 +325,24 @@ add_executable(nullable_host
 target_include_directories(nullable_host PRIVATE ${NULLABLE_GEN_DIR})
 
 add_test(NAME nullable_host COMMAND nullable_host)
+
+set(HEAP_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_heap)
+set(HEAP_GEN_H ${HEAP_GEN_DIR}/heap.h)
+set(HEAP_GEN_CPP ${HEAP_GEN_DIR}/heap.cpp)
+
+add_custom_command(
+    OUTPUT ${HEAP_GEN_H} ${HEAP_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${HEAP_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/heap.qp -o ${HEAP_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/heap.qp
+    COMMENT "qpc compile examples/heap.qp"
+    VERBATIM
+)
+
+add_executable(heap_host
+    examples/heap_host/main.cpp
+    ${HEAP_GEN_CPP}
+)
+target_include_directories(heap_host PRIVATE ${HEAP_GEN_DIR})
+
+add_test(NAME heap_host COMMAND heap_host)
