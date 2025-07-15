@@ -81,11 +81,11 @@ fn widen(x: i32) -> i64 {
 }
 ```
 
-`null` is only for `T?`. `p!` panics if `p` is `null`.
+`null` is only for `T?`. `p!` panics if `p` is `null`. `if let v = p { }` binds `v: T` when `p` is not `null`.
 
 ```qp
 fn or_zero(p: i32?) -> i32 {
-    if p == null { 0 } else { p! }
+    if let v = p { v } else { 0 }
 }
 ```
 
@@ -101,7 +101,7 @@ fn greet(name: string) -> string {
 
 ## Control flow
 
-`if` is an expression. Both branches must have the same type when the `if` produces a value. `return` inside an `if` leaves the function.
+`if` is an expression. Both branches must have the same type when the `if` produces a value. `return` inside an `if` leaves the function. `if let v = x { }` is the same `if`, with `v: T` bound when `x` is `T?` and not `null`.
 
 ```qp
 fn clamp(x: i32, lo: i32, hi: i32) -> i32 {
@@ -424,7 +424,7 @@ Examples live in [`examples/`](../examples/).
 
 These are in the language design, but do not use them yet:
 
-- `new`, `if let`, `?.`, `??`
+- `?.`, `??`
 - generic `struct`
 - a separate package system / a JIT or WASM backend of its own
 - string interpolation, tuples `(A, B)`, `Result` / `?`
