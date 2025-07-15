@@ -203,13 +203,18 @@ struct HirUnwrap {
     HirExprPtr expr;
 };
 
+struct HirNew {
+    std::string name;
+    std::vector<HirStructLitField> fields;
+};
+
 struct HirExpr {
     Type ty;
     std::size_t offset = 0;
     std::variant<HirLitInt, HirLitFloat, HirLitBool, HirLitChar, HirLitString, HirLitNull, HirVar, HirBinary,
                  HirUnary, HirCall, HirAssign, HirFieldAccess, HirIndex, HirStructLit, HirEnumLit,
                  HirMethodCall, HirFieldAssign, HirIndexAssign, HirMatch, HirListLit, HirDictLit,
-                 HirIf, HirRange, HirClosure, HirCast, HirUnwrap>
+                 HirIf, HirRange, HirClosure, HirCast, HirUnwrap, HirNew>
         kind;
 };
 

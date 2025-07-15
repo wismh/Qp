@@ -207,7 +207,9 @@ let x = p?.x;            // f32?
 
 There is no implicit `T` → `T?`: value and reference are different. To put a value on the heap, use `new`.
 
-`T?` in C++: `T*` plus a contract. `null` is `nullptr`. `p!` is `unwrap(p)` (abort if null). Value `T` in C++: `struct T` by value.
+`T?` in C++: `T*` plus a contract. `null` is `nullptr`. `p!` is `unwrap(p)` (abort if null). `new T { }` is `qplus::alloc(T{...})`. Value `T` in C++: `struct T` by value.
+
+v0 GC is conservative mark-sweep over `alloc` objects. Host C++ must keep live `T*` on the stack (or they may be collected).
 
 ### 5.3 `struct`
 
@@ -598,7 +600,7 @@ JIT does not block step 3. The C++ path is the source of truth for semantics; JI
 
 ## 13. Open decisions
 
-1. **GC vs ARC.** For JIT and WASM it is simpler to start with ARC + no cycles (or a cycle detector later). AOT C++ would then emit `qplus::Rc<T>`. Lock this before step 5.
+1. **GC vs ARC.** v0 AOT uses conservative mark-sweep (`qplus::alloc` / `qplus::gc_collect`) so `T?` can stay `T*`. JIT/WASM may still switch to ARC + no cycles later.
 2. **Does `new` return `T?` or a non-null heap `T`.** Today `T?`. A non-null heap ref (`Box<T>` / a separate type) can be added without breaking `T?`.
 3. **Integer overflow** in release: wrapping vs panic. Proposal: wrapping, like LLVM `add`.
 4. **`dyn Trait` in v0, or monomorphization only.** Proposal: monomorphization only until a heterogeneous list is needed.

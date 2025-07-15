@@ -543,6 +543,17 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                 };
             } else if constexpr (std::is_same_v<K, ExprUnwrap>) {
                 out->kind = HirUnwrap{lower_expr(src, std::move(kind.expr), diags)};
+            } else if constexpr (std::is_same_v<K, ExprNew>) {
+                HirNew n;
+                n.name = kind.name.empty() && !kind.path.empty() ? kind.path.back() : std::move(kind.name);
+                n.fields.reserve(kind.fields.size());
+                for (auto& field : kind.fields) {
+                    n.fields.push_back(HirStructLitField{
+                        std::move(field.name),
+                        lower_expr(src, std::move(field.value), diags),
+                    });
+                }
+                out->kind = std::move(n);
             }
         },
         expr->kind);

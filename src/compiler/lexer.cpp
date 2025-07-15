@@ -100,6 +100,9 @@ namespace {
     if (text == "null") {
         return TokenKind::KwNull;
     }
+    if (text == "new") {
+        return TokenKind::KwNew;
+    }
     return TokenKind::Ident;
 }
 
