@@ -313,3 +313,12 @@ TEST(Parser, NullableAndNull) {
     EXPECT_EQ(parsed.ast.functions[0].params[0].ty.kind, qpc::TypeExpr::Kind::Nullable);
     EXPECT_TRUE(std::holds_alternative<qpc::LitNull>(parsed.ast.functions[1].body.tail->kind));
 }
+
+TEST(Parser, IfLet) {
+    auto parsed = qpc::test::parse_string("fn or_zero(p: i32?) -> i32 { if let v = p { v } else { 0 } }");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_TRUE(parsed.ast.functions[0].body.tail);
+    const auto* iff = std::get_if<qpc::ExprIf>(&parsed.ast.functions[0].body.tail->kind);
+    ASSERT_NE(iff, nullptr);
+    EXPECT_EQ(iff->let_name, "v");
+}

@@ -360,6 +360,18 @@ TEST(Typeck, NullableNullAndUnwrap) {
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
 
+TEST(Typeck, IfLetBindsInner) {
+    auto compiled = qpc::test::compile_string(
+        "fn or_zero(p: i32?) -> i32 { if let v = p { v } else { 0 } }");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, IfLetRequiresNullable) {
+    auto compiled = qpc::test::compile_string("fn f(x: i32) -> i32 { if let v = x { v } else { 0 } }");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("if-let"), std::string::npos);
+}
+
 TEST(Typeck, AsCastOk) {
     auto compiled = qpc::test::compile_string(R"(
         enum Color { Red, Green }

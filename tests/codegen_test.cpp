@@ -252,3 +252,11 @@ TEST(Codegen, NullableNullAndUnwrap) {
     EXPECT_NE(compiled.result.output.source.find("nullptr"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("unwrap(p)"), std::string::npos);
 }
+
+TEST(Codegen, IfLet) {
+    auto compiled = qpc::test::compile_string(
+        "fn or_zero(p: i32?) -> i32 { if let v = p { v } else { 0 } }");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("!= nullptr"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("const auto v = *"), std::string::npos);
+}
