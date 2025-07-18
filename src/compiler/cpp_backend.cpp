@@ -281,12 +281,24 @@ void emit_if_value(std::ostringstream& out, const HirExpr& expr, IfSink sink, co
 
 void emit_if_stmt(std::ostringstream& out, const HirIf& iff, IfSink sink, const std::string& dest,
                   bool chained) {
-    if (!chained) {
-        out << "    ";
+    std::string let_tmp;
+    if (!iff.let_name.empty()) {
+        let_tmp = "__qlet" + std::to_string(++g_if_tmp);
+        if (!chained) {
+            out << "    ";
+        }
+        out << cpp_type_name(iff.cond->ty) << ' ' << let_tmp << " = ";
+        emit_expr(out, *iff.cond);
+        out << ";\n    if (" << let_tmp << " != nullptr) {\n";
+        out << "        const auto " << iff.let_name << " = *" << let_tmp << ";\n";
+    } else {
+        if (!chained) {
+            out << "    ";
+        }
+        out << "if (";
+        emit_expr(out, *iff.cond);
+        out << ") {\n";
     }
-    out << "if (";
-    emit_expr(out, *iff.cond);
-    out << ") {\n";
     for (const auto& stmt : iff.then_stmts) {
         emit_stmt(out, *stmt);
     }
@@ -295,7 +307,8 @@ void emit_if_stmt(std::ostringstream& out, const HirIf& iff, IfSink sink, const 
     }
     out << "    }";
     if (iff.else_expr) {
-        if (const auto* ei = std::get_if<HirIf>(&iff.else_expr->kind); ei && !is_true_lit(*ei->cond)) {
+        if (const auto* ei = std::get_if<HirIf>(&iff.else_expr->kind);
+            ei && !is_true_lit(*ei->cond) && ei->let_name.empty()) {
             out << " else ";
             emit_if_stmt(out, *ei, sink, dest, true);
         } else {
@@ -307,6 +320,8 @@ void emit_if_stmt(std::ostringstream& out, const HirIf& iff, IfSink sink, const 
                 if (always->then_tail) {
                     emit_if_value(out, *always->then_tail, sink, dest);
                 }
+            } else if (const auto* inner_if = std::get_if<HirIf>(&iff.else_expr->kind)) {
+                emit_if_stmt(out, *inner_if, sink, dest, false);
             } else {
                 emit_if_value(out, *iff.else_expr, sink, dest);
             }
