@@ -1,0 +1,19 @@
+pub fn or_zero(p: i32?) -> i32 {
+    if let v = p {
+        v
+    } else {
+        0
+    }
+}
+
+pub fn both(a: i32?, b: i32?) -> i32 {
+    if let x = a {
+        if let y = b {
+            x + y
+        } else {
+            x
+        }
+    } else {
+        0
+    }
+}

@@ -507,6 +507,7 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
             } else if constexpr (std::is_same_v<K, ExprIf>) {
                 HirIf hi;
                 hi.cond = lower_expr(src, std::move(kind.cond), diags);
+                hi.let_name = std::move(kind.let_name);
                 auto then_b = lower_block(src, std::move(*kind.then_block), diags);
                 hi.then_stmts = std::move(then_b.stmts);
                 hi.then_tail = std::move(then_b.tail);

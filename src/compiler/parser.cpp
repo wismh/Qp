@@ -1613,6 +1613,17 @@ private:
         if (!expect(TokenKind::KwIf, "'if'")) {
             return std::nullopt;
         }
+        ExprIf node;
+        if (consume(TokenKind::KwLet)) {
+            auto name = take_ident("binding after 'if let'");
+            if (!name) {
+                return std::nullopt;
+            }
+            node.let_name = std::move(*name);
+            if (!expect(TokenKind::Equal, "'=' after if-let binding")) {
+                return std::nullopt;
+            }
+        }
         auto cond = parse_expr(false);
         if (!cond) {
             return std::nullopt;
@@ -1621,7 +1632,6 @@ private:
         if (!then_block) {
             return std::nullopt;
         }
-        ExprIf node;
         node.cond = std::move(*cond);
         node.then_block = std::make_unique<Block>(std::move(*then_block));
         if (consume(TokenKind::KwElse)) {

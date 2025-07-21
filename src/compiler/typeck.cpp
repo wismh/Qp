@@ -1079,8 +1079,19 @@ private:
     }
 
     Type check_if(HirIf& iff, std::size_t offset) {
-        expect_expr(*iff.cond, Type::boolean(), iff.cond->offset, "if condition");
+        Type cond_ty = Type::error();
+        if (!iff.let_name.empty()) {
+            cond_ty = check_expr(*iff.cond);
+            if (cond_ty.kind != TypeKind::Nullable && cond_ty != Type::error()) {
+                error(iff.cond->offset, "if-let requires a '" + type_name(cond_ty) + "?' value");
+            }
+        } else {
+            expect_expr(*iff.cond, Type::boolean(), iff.cond->offset, "if condition");
+        }
         push_scope();
+        if (!iff.let_name.empty() && cond_ty.kind == TypeKind::Nullable) {
+            declare(iff.let_name, Binding{cond_ty.elem(), false}, iff.cond->offset);
+        }
         for (auto& s : iff.then_stmts) {
             check_stmt(*s);
         }
