@@ -325,3 +325,24 @@ add_executable(nullable_host
 target_include_directories(nullable_host PRIVATE ${NULLABLE_GEN_DIR})
 
 add_test(NAME nullable_host COMMAND nullable_host)
+
+set(IF_LET_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_if_let)
+set(IF_LET_GEN_H ${IF_LET_GEN_DIR}/if_let.h)
+set(IF_LET_GEN_CPP ${IF_LET_GEN_DIR}/if_let.cpp)
+
+add_custom_command(
+    OUTPUT ${IF_LET_GEN_H} ${IF_LET_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${IF_LET_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/if_let.qp -o ${IF_LET_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/if_let.qp
+    COMMENT "qpc compile examples/if_let.qp"
+    VERBATIM
+)
+
+add_executable(if_let_host
+    examples/if_let_host/main.cpp
+    ${IF_LET_GEN_CPP}
+)
+target_include_directories(if_let_host PRIVATE ${IF_LET_GEN_DIR})
+
+add_test(NAME if_let_host COMMAND if_let_host)
