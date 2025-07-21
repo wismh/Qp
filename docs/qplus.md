@@ -81,11 +81,24 @@ fn widen(x: i32) -> i64 {
 }
 ```
 
-`null` is only for `T?`. `p!` panics if `p` is `null`.
+`null` is only for `T?`. `p!` panics if `p` is `null`. `p?.x` and `p?.method()` are null-safe and yield `U?`. `p ?? y` uses `y` when `p` is `null`.
 
 ```qp
 fn or_zero(p: i32?) -> i32 {
     if p == null { 0 } else { p! }
+}
+
+struct Point {
+    mut x: i32,
+    mut y: i32,
+}
+
+fn get_x(p: Point?) -> i32? {
+    p?.x
+}
+
+fn or_x(p: Point?, d: i32) -> i32 {
+    p?.x ?? d
 }
 ```
 
@@ -424,7 +437,7 @@ Examples live in [`examples/`](../examples/).
 
 These are in the language design, but do not use them yet:
 
-- `new`, `if let`, `?.`, `??`
+- `new`, `if let`
 - generic `struct`
 - a separate package system / a JIT or WASM backend of its own
 - string interpolation, tuples `(A, B)`, `Result` / `?`
