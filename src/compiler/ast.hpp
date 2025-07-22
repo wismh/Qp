@@ -112,6 +112,7 @@ struct ExprAssign {
 struct ExprField {
     ExprPtr base;
     std::string name;
+    bool null_safe = false;
 };
 
 struct StructLitField {
@@ -185,11 +186,16 @@ struct ExprUnwrap {
     ExprPtr expr;
 };
 
+struct ExprCoalesce {
+    ExprPtr lhs;
+    ExprPtr rhs;
+};
+
 struct Expr {
     std::size_t offset = 0;
     std::variant<LitInt, LitFloat, LitBool, LitChar, LitString, LitNull, ExprIdent, ExprPath, ExprBinary,
                  ExprUnary, ExprCall, ExprAssign, ExprField, ExprIndex, ExprStructLit, ExprMatch,
-                 ExprListLit, ExprDictLit, ExprIf, ExprRange, ExprClosure, ExprCast, ExprUnwrap>
+                 ExprListLit, ExprDictLit, ExprIf, ExprRange, ExprClosure, ExprCast, ExprUnwrap, ExprCoalesce>
         kind;
 };
 

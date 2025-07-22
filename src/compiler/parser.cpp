@@ -1205,27 +1205,29 @@ private:
         switch (kind) {
             case TokenKind::Equal:
                 return 1;
-            case TokenKind::PipePipe:
+            case TokenKind::QuestionQuestion:
                 return 2;
-            case TokenKind::AmpAmp:
+            case TokenKind::PipePipe:
                 return 3;
+            case TokenKind::AmpAmp:
+                return 4;
             case TokenKind::EqEq:
             case TokenKind::BangEq:
-                return 4;
+                return 5;
             case TokenKind::Lt:
             case TokenKind::Le:
             case TokenKind::Gt:
             case TokenKind::Ge:
-                return 5;
-            case TokenKind::DotDot:
                 return 6;
+            case TokenKind::DotDot:
+                return 7;
             case TokenKind::Plus:
             case TokenKind::Minus:
-                return 7;
+                return 8;
             case TokenKind::Star:
             case TokenKind::Slash:
             case TokenKind::Percent:
-                return 8;
+                return 9;
             default:
                 return -1;
         }
@@ -1261,6 +1263,14 @@ private:
                     return std::nullopt;
                 }
                 left = make_expr(op_off, ExprRange{std::move(*left), std::move(*rhs)});
+                continue;
+            }
+            if (op == TokenKind::QuestionQuestion) {
+                auto rhs = parse_prec(bp + 1, allow_struct);
+                if (!rhs) {
+                    return std::nullopt;
+                }
+                left = make_expr(op_off, ExprCoalesce{std::move(*left), std::move(*rhs)});
                 continue;
             }
 
@@ -1313,7 +1323,14 @@ private:
                 }
             }
             if (at(TokenKind::Dot)) {
-                expr = parse_field(std::move(*expr));
+                expr = parse_field(std::move(*expr), false);
+                if (!expr) {
+                    return std::nullopt;
+                }
+                continue;
+            }
+            if (at(TokenKind::QuestionDot)) {
+                expr = parse_field(std::move(*expr), true);
                 if (!expr) {
                     return std::nullopt;
                 }
@@ -1360,7 +1377,7 @@ private:
         return make_expr(off, ExprIndex{std::move(base), std::move(*index)});
     }
 
-    std::optional<ExprPtr> parse_field(ExprPtr base) {
+    std::optional<ExprPtr> parse_field(ExprPtr base, bool null_safe) {
         const std::size_t off = peek().offset;
         advance();
 
@@ -1368,7 +1385,7 @@ private:
         if (!name) {
             return std::nullopt;
         }
-        return make_expr(off, ExprField{std::move(base), std::move(*name)});
+        return make_expr(off, ExprField{std::move(base), std::move(*name), null_safe});
     }
 
     std::optional<ExprPtr> parse_call(ExprPtr callee, std::vector<TypeExpr> type_args) {
