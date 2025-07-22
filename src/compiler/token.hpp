@@ -68,8 +68,10 @@ enum class TokenKind {
     PipePipe,
     Pipe,
     Bang,
-        DotDot,
+    DotDot,
     Question,
+    QuestionDot,
+    QuestionQuestion,
 };
 
 struct Token {
@@ -235,6 +237,10 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'..'";
         case TokenKind::Question:
             return "'?'";
+        case TokenKind::QuestionDot:
+            return "'?.'";
+        case TokenKind::QuestionQuestion:
+            return "'??'";
     }
     return "token";
 }
