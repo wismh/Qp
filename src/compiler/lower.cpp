@@ -385,10 +385,12 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
             } else if constexpr (std::is_same_v<K, ExprCall>) {
                 if (auto* field = std::get_if<ExprField>(&kind.callee->kind)) {
                     std::string method = std::move(field->name);
+                    const bool null_safe = field->null_safe;
                     HirExprPtr receiver = lower_expr(src, std::move(field->base), diags);
                     HirMethodCall call;
                     call.receiver = std::move(receiver);
                     call.method = std::move(method);
+                    call.null_safe = null_safe;
                     call.type_args.reserve(kind.type_args.size());
                     for (auto& ta : kind.type_args) {
                         call.type_args.push_back(lower_type(ta));
@@ -447,6 +449,7 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                 out->kind = HirFieldAccess{
                     lower_expr(src, std::move(kind.base), diags),
                     std::move(kind.name),
+                    kind.null_safe,
                 };
             } else if constexpr (std::is_same_v<K, ExprIndex>) {
                 out->kind = HirIndex{
@@ -543,6 +546,11 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                 };
             } else if constexpr (std::is_same_v<K, ExprUnwrap>) {
                 out->kind = HirUnwrap{lower_expr(src, std::move(kind.expr), diags)};
+            } else if constexpr (std::is_same_v<K, ExprCoalesce>) {
+                out->kind = HirCoalesce{
+                    lower_expr(src, std::move(kind.lhs), diags),
+                    lower_expr(src, std::move(kind.rhs), diags),
+                };
             }
         },
         expr->kind);

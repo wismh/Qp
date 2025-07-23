@@ -93,6 +93,8 @@ struct HirAssign {
 struct HirFieldAccess {
     HirExprPtr base;
     std::string name;
+    bool null_safe = false;
+    bool take_addr = false;
 };
 
 struct HirStructLitField {
@@ -119,6 +121,8 @@ struct HirMethodCall {
     std::vector<Type> type_args;
     std::vector<HirExprPtr> args;
     bool associated = false;
+    bool null_safe = false;
+    bool wrap_ret = false;
 };
 
 struct HirFieldAssign {
@@ -203,13 +207,18 @@ struct HirUnwrap {
     HirExprPtr expr;
 };
 
+struct HirCoalesce {
+    HirExprPtr lhs;
+    HirExprPtr rhs;
+};
+
 struct HirExpr {
     Type ty;
     std::size_t offset = 0;
     std::variant<HirLitInt, HirLitFloat, HirLitBool, HirLitChar, HirLitString, HirLitNull, HirVar, HirBinary,
                  HirUnary, HirCall, HirAssign, HirFieldAccess, HirIndex, HirStructLit, HirEnumLit,
                  HirMethodCall, HirFieldAssign, HirIndexAssign, HirMatch, HirListLit, HirDictLit,
-                 HirIf, HirRange, HirClosure, HirCast, HirUnwrap>
+                 HirIf, HirRange, HirClosure, HirCast, HirUnwrap, HirCoalesce>
         kind;
 };
 
