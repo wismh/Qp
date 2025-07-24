@@ -933,6 +933,8 @@ private:
                     ty = check_cast(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirUnwrap>) {
                     ty = check_unwrap(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirCoalesce>) {
+                    ty = check_coalesce(kind, expr.offset);
                 }
             },
             expr.kind);
@@ -1235,6 +1237,36 @@ private:
         return Type::error();
     }
 
+    static Type as_nullable(Type t) {
+        if (t.kind == TypeKind::Nullable || t.kind == TypeKind::Error) {
+            return t;
+        }
+        return Type::nullable(std::move(t));
+    }
+
+    Type check_coalesce(HirCoalesce& c, std::size_t offset) {
+        const Type lhs = check_expr(*c.lhs);
+        Type rhs = check_expr(*c.rhs);
+        if (lhs.kind != TypeKind::Nullable) {
+            if (lhs != Type::error()) {
+                error(offset, "'??' requires a '" + type_name(lhs) + "?' value on the left");
+            }
+            return Type::error();
+        }
+        const Type inner = lhs.elem();
+        if (rhs != inner && rhs != Type::error()) {
+            if (coerce_lit(*c.rhs, inner)) {
+                rhs = inner;
+            }
+        }
+        if (rhs != inner && rhs != Type::error()) {
+            error(offset, "'??' fallback has type '" + type_name(rhs) + "', expected '" + type_name(inner) +
+                              "'");
+            return Type::error();
+        }
+        return inner;
+    }
+
     Type check_unary(HirUnary& un, std::size_t offset) {
         const Type inner = check_expr(*un.operand);
         if (un.op == UnOp::Not) {
@@ -1486,22 +1518,36 @@ private:
 
     Type check_field(HirFieldAccess& field, std::size_t offset) {
         const Type base_ty = check_expr(*field.base);
-        const StructInfo* st = struct_of(base_ty);
+        Type struct_ty = base_ty;
+        if (field.null_safe) {
+            if (base_ty.kind != TypeKind::Nullable) {
+                if (base_ty != Type::error()) {
+                    error(offset, "'?.' requires a '" + type_name(base_ty) + "?' value");
+                }
+                return Type::error();
+            }
+            struct_ty = base_ty.elem();
+        }
+        const StructInfo* st = struct_of(struct_ty);
         if (!st) {
-            if (base_ty != Type::error()) {
-                error(offset, "field access requires a struct, found '" + type_name(base_ty) + "'");
+            if (struct_ty != Type::error()) {
+                error(offset, "field access requires a struct, found '" + type_name(struct_ty) + "'");
             }
             return Type::error();
         }
         if (st->opaque) {
-            error(offset, "cannot access fields of opaque type '" + type_name(base_ty) + "'");
+            error(offset, "cannot access fields of opaque type '" + type_name(struct_ty) + "'");
             return Type::error();
         }
 
         const FieldInfo* info = find_field(*st, field.name);
         if (!info) {
-            error(offset, "unknown field '" + field.name + "' on '" + type_name(base_ty) + "'");
+            error(offset, "unknown field '" + field.name + "' on '" + type_name(struct_ty) + "'");
             return Type::error();
+        }
+        if (field.null_safe) {
+            field.take_addr = info->ty.kind != TypeKind::Nullable;
+            return as_nullable(info->ty);
         }
         return info->ty;
     }
@@ -1572,6 +1618,26 @@ private:
         }
         call.associated = associated;
 
+        if (call.null_safe) {
+            if (associated) {
+                error(offset, "cannot use '?.' on an associated function");
+                for (auto& arg : call.args) {
+                    check_expr(*arg);
+                }
+                return Type::error();
+            }
+            if (recv_ty.kind != TypeKind::Nullable) {
+                if (recv_ty != Type::error()) {
+                    error(offset, "'?.' requires a '" + type_name(recv_ty) + "?' value");
+                }
+                for (auto& arg : call.args) {
+                    check_expr(*arg);
+                }
+                return Type::error();
+            }
+            recv_ty = recv_ty.elem();
+        }
+
         if (recv_ty.kind != TypeKind::Named) {
             if (recv_ty != Type::error()) {
                 error(offset, "method call requires a struct, found '" + type_name(recv_ty) + "'");
@@ -1624,7 +1690,12 @@ private:
         for (std::size_t i = 0; i < n; ++i) {
             expect_expr(*call.args[i], subst_type(sig.params[i], mapping), call.args[i]->offset, "argument");
         }
-        return subst_type(sig.ret, mapping);
+        Type ret = subst_type(sig.ret, mapping);
+        if (call.null_safe) {
+            call.wrap_ret = ret.kind != TypeKind::Nullable;
+            return as_nullable(std::move(ret));
+        }
+        return ret;
     }
 
     Type check_field_assign(HirFieldAssign& as, std::size_t offset) {
