@@ -371,8 +371,19 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 emit_expr(out, *kind.value);
                 out << ')';
             } else if constexpr (std::is_same_v<K, HirFieldAccess>) {
-                emit_receiver(out, *kind.base);
-                out << '.' << kind.name;
+                if (kind.null_safe) {
+                    const std::string tmp = "__qn" + std::to_string(++g_if_tmp);
+                    out << "([&]() { " << cpp_type_name(kind.base->ty) << ' ' << tmp << " = ";
+                    emit_expr(out, *kind.base);
+                    out << "; return " << tmp << " == nullptr ? nullptr : ";
+                    if (kind.take_addr) {
+                        out << "&";
+                    }
+                    out << tmp << "->" << kind.name << "; }())";
+                } else {
+                    emit_receiver(out, *kind.base);
+                    out << '.' << kind.name;
+                }
             } else if constexpr (std::is_same_v<K, HirIndex>) {
                 emit_receiver(out, *kind.base);
                 if (kind.base->ty.kind == TypeKind::Dict) {
@@ -419,12 +430,31 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                     out << "}}";
                 }
             } else if constexpr (std::is_same_v<K, HirMethodCall>) {
-                emit_receiver(out, *kind.receiver);
-                out << (kind.associated ? "::" : ".") << kind.method;
-                emit_type_args(out, kind.type_args);
-                out << '(';
-                emit_comma_list(out, kind.args);
-                out << ')';
+                if (kind.null_safe) {
+                    const std::string tmp = "__qn" + std::to_string(++g_if_tmp);
+                    out << "([&]() { " << cpp_type_name(kind.receiver->ty) << ' ' << tmp << " = ";
+                    emit_expr(out, *kind.receiver);
+                    out << "; return " << tmp << " == nullptr ? nullptr : ";
+                    if (kind.wrap_ret) {
+                        out << "nullable_of(";
+                    }
+                    out << tmp << "->" << kind.method;
+                    emit_type_args(out, kind.type_args);
+                    out << '(';
+                    emit_comma_list(out, kind.args);
+                    out << ')';
+                    if (kind.wrap_ret) {
+                        out << ")";
+                    }
+                    out << "; }())";
+                } else {
+                    emit_receiver(out, *kind.receiver);
+                    out << (kind.associated ? "::" : ".") << kind.method;
+                    emit_type_args(out, kind.type_args);
+                    out << '(';
+                    emit_comma_list(out, kind.args);
+                    out << ')';
+                }
             } else if constexpr (std::is_same_v<K, HirFieldAssign>) {
                 out << '(';
                 emit_receiver(out, *kind.base);
@@ -566,6 +596,13 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 out << "unwrap(";
                 emit_expr(out, *kind.expr);
                 out << ')';
+            } else if constexpr (std::is_same_v<K, HirCoalesce>) {
+                const std::string tmp = "__qn" + std::to_string(++g_if_tmp);
+                out << "([&]() { " << cpp_type_name(kind.lhs->ty) << ' ' << tmp << " = ";
+                emit_expr(out, *kind.lhs);
+                out << "; return " << tmp << " == nullptr ? ";
+                emit_expr(out, *kind.rhs);
+                out << " : *" << tmp << "; }())";
             }
         },
         expr.kind);
@@ -916,6 +953,7 @@ std::string emit_header(const HirModule& mod) {
     header << "#include <cstdlib>\n";
     header << "#include <functional>\n";
     header << "#include <map>\n";
+    header << "#include <new>\n";
     header << "#include <string>\n";
     header << "#include <variant>\n";
     header << "#include <vector>\n\n";
@@ -950,6 +988,7 @@ std::string emit_header(const HirModule& mod) {
     header << "template <typename K, typename V>\nusing Dict = std::map<K, V>;\n";
     header << "template <typename T>\nusing Fn = std::function<T>;\n\n";
     header << "template <typename T>\nT unwrap(T* p) {\n    if (p == nullptr) {\n        std::abort();\n    }\n    return *p;\n}\n\n";
+    header << "template <typename T>\nT* nullable_of(T v) {\n    return new T(std::move(v));\n}\n\n";
     emit_module_header(header, mod, methods);
     header << "}  // namespace qplus\n";
     return header.str();
