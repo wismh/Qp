@@ -360,6 +360,24 @@ TEST(Typeck, NullableNullAndUnwrap) {
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
 
+TEST(Typeck, NullSafeAndCoalesce) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { mut x: i32, mut y: i32 }
+        fn get_x(p: Point?) -> i32? { p?.x }
+        fn or_x(p: Point?, d: i32) -> i32 { p?.x ?? d }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, QuestionDotRequiresNullable) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { mut x: i32, mut y: i32 }
+        fn f(p: Point) -> i32? { p?.x }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("'?.'"), std::string::npos);
+}
+
 TEST(Typeck, AsCastOk) {
     auto compiled = qpc::test::compile_string(R"(
         enum Color { Red, Green }
