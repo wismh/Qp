@@ -1,0 +1,12 @@
+pub struct Point {
+    mut x: i32,
+    mut y: i32,
+}
+
+pub fn get_x(p: Point?) -> i32? {
+    p?.x
+}
+
+pub fn or_x(p: Point?, d: i32) -> i32 {
+    p?.x ?? d
+}

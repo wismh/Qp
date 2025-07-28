@@ -81,7 +81,7 @@ fn widen(x: i32) -> i64 {
 }
 ```
 
-`null` is only for `T?`. `p!` panics if `p` is `null`. `new T { ... }` allocates a heap `T` and returns `T?`. The C++ runtime is a conservative mark-sweep GC (`qplus::alloc`, `qplus::gc_collect`). `if let v = p { }` binds `v: T` when `p` is not `null`.
+`null` is only for `T?`. `p!` panics if `p` is `null`. `new T { ... }` allocates a heap `T` and returns `T?`. The C++ runtime is a conservative mark-sweep GC (`qplus::alloc`, `qplus::gc_collect`). `if let v = p { }` binds `v: T` when `p` is not `null`. `p?.x` and `p?.method()` are null-safe and yield `U?`. `p ?? y` uses `y` when `p` is `null`.
 
 ```qp
 fn or_zero(p: i32?) -> i32 {
@@ -95,6 +95,14 @@ struct Point {
 
 fn origin() -> Point? {
     new Point { x: 0, y: 0 }
+}
+
+fn get_x(p: Point?) -> i32? {
+    p?.x
+}
+
+fn or_x(p: Point?, d: i32) -> i32 {
+    p?.x ?? d
 }
 ```
 
@@ -433,7 +441,6 @@ Examples live in [`examples/`](../examples/).
 
 These are in the language design, but do not use them yet:
 
-- `?.`, `??`
 - generic `struct`
 - a separate package system / a JIT or WASM backend of its own
 - string interpolation, tuples `(A, B)`, `Result` / `?`

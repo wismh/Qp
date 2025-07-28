@@ -369,6 +369,15 @@ TEST(Typeck, NewStructIsNullable) {
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
 
+TEST(Typeck, NullSafeAndCoalesce) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { mut x: i32, mut y: i32 }
+        fn get_x(p: Point?) -> i32? { p?.x }
+        fn or_x(p: Point?, d: i32) -> i32 { p?.x ?? d }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
 TEST(Typeck, NewCannotImplicitlyUnwrap) {
     auto compiled = qpc::test::compile_string(R"(
         struct Point { mut x: i32, mut y: i32 }
@@ -387,6 +396,15 @@ TEST(Typeck, IfLetRequiresNullable) {
     auto compiled = qpc::test::compile_string("fn f(x: i32) -> i32 { if let v = x { v } else { 0 } }");
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("if-let"), std::string::npos);
+}
+
+TEST(Typeck, QuestionDotRequiresNullable) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { mut x: i32, mut y: i32 }
+        fn f(p: Point) -> i32? { p?.x }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("'?.'"), std::string::npos);
 }
 
 TEST(Typeck, AsCastOk) {

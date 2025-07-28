@@ -271,3 +271,14 @@ TEST(Codegen, IfLet) {
     EXPECT_NE(compiled.result.output.source.find("!= nullptr"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("const auto v = *"), std::string::npos);
 }
+
+TEST(Codegen, NullSafeAndCoalesce) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { mut x: i32, mut y: i32 }
+        fn get_x(p: Point?) -> i32? { p?.x }
+        fn or_x(p: Point?, d: i32) -> i32 { p?.x ?? d }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("->x"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("== nullptr"), std::string::npos);
+}

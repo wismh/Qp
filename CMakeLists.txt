@@ -367,3 +367,24 @@ add_executable(if_let_host
 target_include_directories(if_let_host PRIVATE ${IF_LET_GEN_DIR})
 
 add_test(NAME if_let_host COMMAND if_let_host)
+
+set(NULL_OPS_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_null_ops)
+set(NULL_OPS_GEN_H ${NULL_OPS_GEN_DIR}/null_ops.h)
+set(NULL_OPS_GEN_CPP ${NULL_OPS_GEN_DIR}/null_ops.cpp)
+
+add_custom_command(
+    OUTPUT ${NULL_OPS_GEN_H} ${NULL_OPS_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${NULL_OPS_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/null_ops.qp -o ${NULL_OPS_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/null_ops.qp
+    COMMENT "qpc compile examples/null_ops.qp"
+    VERBATIM
+)
+
+add_executable(null_ops_host
+    examples/null_ops_host/main.cpp
+    ${NULL_OPS_GEN_CPP}
+)
+target_include_directories(null_ops_host PRIVATE ${NULL_OPS_GEN_DIR})
+
+add_test(NAME null_ops_host COMMAND null_ops_host)

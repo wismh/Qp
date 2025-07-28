@@ -349,6 +349,16 @@ struct Lexer {
             i += 2;
             return;
         }
+        if (ahead() == '?' && ahead(1) == '?') {
+            push(TokenKind::QuestionQuestion, i, i + 2);
+            i += 2;
+            return;
+        }
+        if (ahead() == '?' && ahead(1) == '.') {
+            push(TokenKind::QuestionDot, i, i + 2);
+            i += 2;
+            return;
+        }
 
         const TokenKind kind = single_punct(text[i]);
         if (kind == TokenKind::Eof) {
