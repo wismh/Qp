@@ -81,11 +81,19 @@ fn widen(x: i32) -> i64 {
 }
 ```
 
-`null` is only for `T?`. `p!` panics if `p` is `null`.
+`null` is only for `T?`. `p!` panics if `p` is `null`. `p?` returns `null` from a function that returns `U?`.
 
 ```qp
 fn or_zero(p: i32?) -> i32 {
     if p == null { 0 } else { p! }
+}
+
+fn sum(a: i32?, b: i32?) -> i32? {
+    if a? + b? == 0 {
+        null
+    } else {
+        a
+    }
 }
 ```
 
@@ -427,6 +435,6 @@ These are in the language design, but do not use them yet:
 - `new`, `if let`, `?.`, `??`
 - generic `struct`
 - a separate package system / a JIT or WASM backend of its own
-- string interpolation, tuples `(A, B)`, `Result` / `?`
+- string interpolation, tuples `(A, B)`, `Result`
 
 There is no borrow checker, no classes, and no C++ exceptions in the Q+ public ABI.
