@@ -286,6 +286,24 @@ TEST(E2E, CompileIfLetExampleToFiles) {
     EXPECT_NE(header_text.find("std::int32_t or_zero(std::int32_t* p)"), std::string::npos);
 }
 
+TEST(E2E, CompileNullOpsExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_null_ops";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input =
+        std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "null_ops.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "null_ops.h";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    std::ifstream header_in(header);
+    const std::string header_text((std::istreambuf_iterator<char>(header_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("std::int32_t* get_x(Point* p)"), std::string::npos);
+}
+
 TEST(E2E, FileModCycleIsError) {
     const auto dir = std::filesystem::temp_directory_path() / "qplus_e2e_mod_cycle";
     std::filesystem::remove_all(dir);
