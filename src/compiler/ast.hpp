@@ -185,11 +185,15 @@ struct ExprUnwrap {
     ExprPtr expr;
 };
 
+struct ExprTry {
+    ExprPtr expr;
+};
+
 struct Expr {
     std::size_t offset = 0;
     std::variant<LitInt, LitFloat, LitBool, LitChar, LitString, LitNull, ExprIdent, ExprPath, ExprBinary,
                  ExprUnary, ExprCall, ExprAssign, ExprField, ExprIndex, ExprStructLit, ExprMatch,
-                 ExprListLit, ExprDictLit, ExprIf, ExprRange, ExprClosure, ExprCast, ExprUnwrap>
+                 ExprListLit, ExprDictLit, ExprIf, ExprRange, ExprClosure, ExprCast, ExprUnwrap, ExprTry>
         kind;
 };
 
