@@ -543,6 +543,8 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                 };
             } else if constexpr (std::is_same_v<K, ExprUnwrap>) {
                 out->kind = HirUnwrap{lower_expr(src, std::move(kind.expr), diags)};
+            } else if constexpr (std::is_same_v<K, ExprTry>) {
+                out->kind = HirTry{lower_expr(src, std::move(kind.expr), diags)};
             }
         },
         expr->kind);
