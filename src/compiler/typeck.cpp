@@ -933,6 +933,8 @@ private:
                     ty = check_cast(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirUnwrap>) {
                     ty = check_unwrap(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirTry>) {
+                    ty = check_try(kind, expr.offset);
                 }
             },
             expr.kind);
@@ -1233,6 +1235,27 @@ private:
             error(offset, "unwrap '!' requires a '" + type_name(inner) + "?' value");
         }
         return Type::error();
+    }
+
+    Type check_try(HirTry& t, std::size_t offset) {
+        const Type inner = check_expr(*t.expr);
+        if (inner.kind != TypeKind::Nullable) {
+            if (inner != Type::error()) {
+                error(offset, "'?' requires a '" + type_name(inner) + "?' value");
+            }
+            return Type::error();
+        }
+        if (current_ret_.kind == TypeKind::Unknown) {
+            current_ret_ = inner;
+        } else if (current_ret_.kind != TypeKind::Nullable) {
+            error(offset, "'?' requires a function that returns '" + type_name(inner) + "'");
+            return Type::error();
+        } else if (current_ret_ != inner) {
+            error(offset, "'?' has type '" + type_name(inner) + "', but the function returns '" +
+                              type_name(current_ret_) + "'");
+            return Type::error();
+        }
+        return inner.elem();
     }
 
     Type check_unary(HirUnary& un, std::size_t offset) {
