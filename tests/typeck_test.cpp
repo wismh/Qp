@@ -360,6 +360,21 @@ TEST(Typeck, NullableNullAndUnwrap) {
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
 
+TEST(Typeck, TryPropagatesNull) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn sum(a: i32?, b: i32?) -> i32? {
+            if a? + b? == 0 { null } else { a }
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, TryRequiresNullableReturn) {
+    auto compiled = qpc::test::compile_string("fn f(a: i32?) -> i32 { a? }");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("'?'"), std::string::npos);
+}
+
 TEST(Typeck, AsCastOk) {
     auto compiled = qpc::test::compile_string(R"(
         enum Color { Red, Green }
