@@ -282,3 +282,14 @@ TEST(Codegen, NullSafeAndCoalesce) {
     EXPECT_NE(compiled.result.output.source.find("->x"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("== nullptr"), std::string::npos);
 }
+
+TEST(Codegen, TryOperator) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn sum(a: i32?, b: i32?) -> i32? {
+            if a? + b? == 0 { null } else { a }
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("== nullptr"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("return nullptr;"), std::string::npos);
+}

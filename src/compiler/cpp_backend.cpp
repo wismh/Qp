@@ -17,9 +17,11 @@ namespace {
 const HirModule* g_mod = nullptr;
 int g_if_tmp = 0;
 std::ostringstream* g_preamble = nullptr;
+std::unordered_map<const HirExpr*, std::string> g_try_tmps;
 
 void emit_expr(std::ostringstream& out, const HirExpr& expr);
 void emit_stmt(std::ostringstream& out, const HirStmt& stmt);
+void emit_try_setup(std::ostringstream& out, const HirExpr& expr);
 
 void emit_expr(std::ostringstream& out, const HirExpr& expr);
 void emit_stmt(std::ostringstream& out, const HirStmt& stmt);
@@ -262,6 +264,7 @@ void emit_if_value(std::ostringstream& out, const HirExpr& expr, IfSink sink, co
         emit_if_stmt(out, *inner, sink, dest, false);
         return;
     }
+    emit_try_setup(out, expr);
     if (sink == IfSink::Return && !is_unitish(expr.ty)) {
         out << "        return ";
         emit_expr(out, expr);
@@ -281,6 +284,7 @@ void emit_if_value(std::ostringstream& out, const HirExpr& expr, IfSink sink, co
 
 void emit_if_stmt(std::ostringstream& out, const HirIf& iff, IfSink sink, const std::string& dest,
                   bool chained) {
+    emit_try_setup(out, *iff.cond);
     std::string let_tmp;
     if (!iff.let_name.empty()) {
         let_tmp = "__qlet" + std::to_string(++g_if_tmp);
@@ -628,6 +632,103 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 out << "; return " << tmp << " == nullptr ? ";
                 emit_expr(out, *kind.rhs);
                 out << " : *" << tmp << "; }())";
+            } else if constexpr (std::is_same_v<K, HirTry>) {
+                auto it = g_try_tmps.find(&expr);
+                if (it != g_try_tmps.end()) {
+                    out << "(*" << it->second << ")";
+                } else {
+                    out << "unwrap(";
+                    emit_expr(out, *kind.expr);
+                    out << ')';
+                }
+            }
+        },
+        expr.kind);
+}
+
+void emit_try_setup(std::ostringstream& out, const HirExpr& expr) {
+    if (g_try_tmps.contains(&expr)) {
+        return;
+    }
+    std::visit(
+        [&](auto&& kind) {
+            using K = std::decay_t<decltype(kind)>;
+            if constexpr (std::is_same_v<K, HirTry>) {
+                emit_try_setup(out, *kind.expr);
+                const std::string tmp = "__qt" + std::to_string(++g_if_tmp);
+                g_try_tmps[&expr] = tmp;
+                out << "    " << cpp_type_name(kind.expr->ty) << ' ' << tmp << " = ";
+                emit_expr(out, *kind.expr);
+                out << ";\n    if (" << tmp << " == nullptr) {\n        return nullptr;\n    }\n";
+            } else if constexpr (std::is_same_v<K, HirBinary>) {
+                emit_try_setup(out, *kind.lhs);
+                emit_try_setup(out, *kind.rhs);
+            } else if constexpr (std::is_same_v<K, HirUnary>) {
+                emit_try_setup(out, *kind.operand);
+            } else if constexpr (std::is_same_v<K, HirCall>) {
+                if (kind.callee_expr) {
+                    emit_try_setup(out, *kind.callee_expr);
+                }
+                for (const auto& arg : kind.args) {
+                    emit_try_setup(out, *arg);
+                }
+            } else if constexpr (std::is_same_v<K, HirAssign>) {
+                emit_try_setup(out, *kind.value);
+            } else if constexpr (std::is_same_v<K, HirFieldAccess>) {
+                emit_try_setup(out, *kind.base);
+            } else if constexpr (std::is_same_v<K, HirIndex>) {
+                emit_try_setup(out, *kind.base);
+                emit_try_setup(out, *kind.index);
+            } else if constexpr (std::is_same_v<K, HirStructLit>) {
+                for (const auto& field : kind.fields) {
+                    emit_try_setup(out, *field.value);
+                }
+            } else if constexpr (std::is_same_v<K, HirNew>) {
+                for (const auto& field : kind.fields) {
+                    emit_try_setup(out, *field.value);
+                }
+            } else if constexpr (std::is_same_v<K, HirEnumLit>) {
+                for (const auto& field : kind.fields) {
+                    emit_try_setup(out, *field.value);
+                }
+                for (const auto& arg : kind.args) {
+                    emit_try_setup(out, *arg);
+                }
+            } else if constexpr (std::is_same_v<K, HirMethodCall>) {
+                emit_try_setup(out, *kind.receiver);
+                for (const auto& arg : kind.args) {
+                    emit_try_setup(out, *arg);
+                }
+            } else if constexpr (std::is_same_v<K, HirFieldAssign>) {
+                emit_try_setup(out, *kind.base);
+                emit_try_setup(out, *kind.value);
+            } else if constexpr (std::is_same_v<K, HirIndexAssign>) {
+                emit_try_setup(out, *kind.base);
+                emit_try_setup(out, *kind.index);
+                emit_try_setup(out, *kind.value);
+            } else if constexpr (std::is_same_v<K, HirListLit>) {
+                for (const auto& elem : kind.elems) {
+                    emit_try_setup(out, *elem);
+                }
+            } else if constexpr (std::is_same_v<K, HirDictLit>) {
+                for (const auto& entry : kind.entries) {
+                    emit_try_setup(out, *entry.first);
+                    emit_try_setup(out, *entry.second);
+                }
+            } else if constexpr (std::is_same_v<K, HirCast>) {
+                emit_try_setup(out, *kind.expr);
+            } else if constexpr (std::is_same_v<K, HirUnwrap>) {
+                emit_try_setup(out, *kind.expr);
+            } else if constexpr (std::is_same_v<K, HirCoalesce>) {
+                emit_try_setup(out, *kind.lhs);
+                emit_try_setup(out, *kind.rhs);
+            } else if constexpr (std::is_same_v<K, HirRange>) {
+                emit_try_setup(out, *kind.start);
+                emit_try_setup(out, *kind.end);
+            } else if constexpr (std::is_same_v<K, HirIf>) {
+                emit_try_setup(out, *kind.cond);
+            } else if constexpr (std::is_same_v<K, HirMatch>) {
+                emit_try_setup(out, *kind.scrutinee);
             }
         },
         expr.kind);
@@ -642,6 +743,7 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
                     out << "    " << cpp_type_name(kind.ty) << ' ' << kind.name << ";\n";
                     emit_if_stmt(out, *iff, IfSink::Assign, kind.name, false);
                 } else {
+                    emit_try_setup(out, *kind.init);
                     out << "    " << cpp_type_name(kind.ty) << ' ' << kind.name << " = ";
                     emit_expr(out, *kind.init);
                     out << ";\n";
@@ -651,6 +753,7 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
                     if (const auto* iff = std::get_if<HirIf>(&kind.value->kind)) {
                         emit_if_stmt(out, *iff, IfSink::Return, {}, false);
                     } else {
+                        emit_try_setup(out, *kind.value);
                         out << "    return ";
                         emit_expr(out, *kind.value);
                         out << ";\n";
@@ -663,11 +766,13 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
                     emit_if_stmt(out, *iff, is_unitish(kind.expr->ty) ? IfSink::Stmt : IfSink::Return, {},
                                  false);
                 } else {
+                    emit_try_setup(out, *kind.expr);
                     out << "    ";
                     emit_expr(out, *kind.expr);
                     out << ";\n";
                 }
             } else if constexpr (std::is_same_v<K, HirWhile>) {
+                emit_try_setup(out, *kind.cond);
                 out << "    while (";
                 emit_expr(out, *kind.cond);
                 out << ") {\n";
@@ -713,6 +818,7 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
 void emit_fn_body(std::ostringstream& out, const HirFn& fn, bool operator_self = false) {
     g_preamble = &out;
     g_if_tmp = 0;
+    g_try_tmps.clear();
     out << " {\n";
     if (!operator_self) {
         if (fn.self_kind == SelfKind::Value) {
@@ -729,6 +835,7 @@ void emit_fn_body(std::ostringstream& out, const HirFn& fn, bool operator_self =
             const bool unit_tail = fn.return_ty == Type::unit() || is_unitish(fn.body.tail->ty);
             emit_if_stmt(out, *iff, unit_tail ? IfSink::Stmt : IfSink::Return, {}, false);
         } else {
+            emit_try_setup(out, *fn.body.tail);
             const bool unit_tail = fn.return_ty == Type::unit() || fn.body.tail->ty == Type::unit();
             if (unit_tail) {
                 out << "    ";

@@ -1359,6 +1359,12 @@ private:
                 expr = make_expr(off, ExprUnwrap{std::move(*expr)});
                 continue;
             }
+            if (at(TokenKind::Question)) {
+                const std::size_t off = peek().offset;
+                advance();
+                expr = make_expr(off, ExprTry{std::move(*expr)});
+                continue;
+            }
             break;
         }
         return expr;
