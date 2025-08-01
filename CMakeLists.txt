@@ -325,3 +325,24 @@ add_executable(nullable_host
 target_include_directories(nullable_host PRIVATE ${NULLABLE_GEN_DIR})
 
 add_test(NAME nullable_host COMMAND nullable_host)
+
+set(TRY_NULL_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_try_null)
+set(TRY_NULL_GEN_H ${TRY_NULL_GEN_DIR}/try_null.h)
+set(TRY_NULL_GEN_CPP ${TRY_NULL_GEN_DIR}/try_null.cpp)
+
+add_custom_command(
+    OUTPUT ${TRY_NULL_GEN_H} ${TRY_NULL_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${TRY_NULL_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/try_null.qp -o ${TRY_NULL_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/try_null.qp
+    COMMENT "qpc compile examples/try_null.qp"
+    VERBATIM
+)
+
+add_executable(try_null_host
+    examples/try_null_host/main.cpp
+    ${TRY_NULL_GEN_CPP}
+)
+target_include_directories(try_null_host PRIVATE ${TRY_NULL_GEN_DIR})
+
+add_test(NAME try_null_host COMMAND try_null_host)
