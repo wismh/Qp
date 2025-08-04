@@ -227,6 +227,14 @@ private:
         st.offset = name_off;
         st.is_extern = in_extern;
 
+        if (at(TokenKind::Lt)) {
+            auto tparams = parse_type_params();
+            if (!tparams) {
+                return std::nullopt;
+            }
+            st.type_params = std::move(*tparams);
+        }
+
         if (in_extern) {
             if (!expect(TokenKind::Semicolon, "';' after opaque struct")) {
                 return std::nullopt;
@@ -439,6 +447,14 @@ private:
             impl.type_name = std::move(*type_name);
         } else {
             impl.type_name = std::move(*name);
+        }
+
+        if (at(TokenKind::Lt)) {
+            auto tparams = parse_type_params();
+            if (!tparams) {
+                return std::nullopt;
+            }
+            impl.type_params = std::move(*tparams);
         }
 
         if (!expect(TokenKind::LBrace, "'{'")) {
@@ -1024,7 +1040,11 @@ private:
             full += "::";
             full += *part;
         }
-        return TypeExpr::named(std::move(full));
+        ty.name = std::move(full);
+        if (auto targs = try_type_args()) {
+            ty.args = std::move(*targs);
+        }
+        return ty;
     }
 
     std::optional<Block> parse_block() {
@@ -1405,7 +1425,8 @@ private:
         return make_expr(off, ExprCall{std::move(callee), std::move(type_args), std::move(*args)});
     }
 
-    std::optional<ExprPtr> parse_struct_lit(std::size_t off, std::vector<std::string> path) {
+    std::optional<ExprPtr> parse_struct_lit(std::size_t off, std::vector<std::string> path,
+                                            std::vector<TypeExpr> type_args = {}) {
         advance();
 
         std::vector<StructLitField> fields;
@@ -1435,6 +1456,7 @@ private:
             lit.name = path.size() == 1 ? path[0] : path[0];
         }
         lit.path = std::move(path);
+        lit.type_args = std::move(type_args);
         lit.fields = std::move(fields);
         return make_expr(off, std::move(lit));
     }
@@ -1455,11 +1477,12 @@ private:
             }
             path.push_back(std::move(*part));
         }
+        auto targs = try_type_args();
         if (!at(TokenKind::LBrace)) {
             error(peek(), "expected '{' after 'new Type'");
             return std::nullopt;
         }
-        auto lit = parse_struct_lit(off, std::move(path));
+        auto lit = parse_struct_lit(off, std::move(path), targs ? std::move(*targs) : std::vector<TypeExpr>{});
         if (!lit) {
             return std::nullopt;
         }
@@ -1471,6 +1494,7 @@ private:
         ExprNew n;
         n.path = std::move(st->path);
         n.name = n.path.empty() ? st->name : n.path.back();
+        n.type_args = std::move(st->type_args);
         n.fields = std::move(st->fields);
         (*lit)->kind = std::move(n);
         return lit;
@@ -1851,8 +1875,16 @@ private:
                 }
                 path.push_back(std::move(*part));
             }
+            const std::size_t saved = pos_;
+            const std::size_t diags_at = diags_.size();
+            auto targs = try_type_args();
             if (allow_struct && at(TokenKind::LBrace)) {
-                return parse_struct_lit(off, std::move(path));
+                return parse_struct_lit(off, std::move(path),
+                                        targs ? std::move(*targs) : std::vector<TypeExpr>{});
+            }
+            if (targs) {
+                pos_ = saved;
+                diags_.truncate(diags_at);
             }
             if (path.size() == 1) {
                 return make_expr(off, ExprIdent{std::move(path[0])});

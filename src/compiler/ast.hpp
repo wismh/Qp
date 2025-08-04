@@ -123,6 +123,7 @@ struct StructLitField {
 struct ExprStructLit {
     std::string name;
     std::vector<std::string> path;
+    std::vector<TypeExpr> type_args;
     std::vector<StructLitField> fields;
 };
 
@@ -190,6 +191,7 @@ struct ExprUnwrap {
 struct ExprNew {
     std::string name;
     std::vector<std::string> path;
+    std::vector<TypeExpr> type_args;
     std::vector<StructLitField> fields;
 };
 
@@ -307,6 +309,7 @@ struct StructDecl {
     bool is_extern = false;
     bool opaque = false;
     std::string name;
+    std::vector<TypeParam> type_params;
     std::vector<FieldDecl> fields;
     std::size_t offset = 0;
 };
@@ -341,6 +344,7 @@ struct VariantTypeDecl {
 struct ImplDecl {
     std::optional<std::string> trait_name;
     std::string type_name;
+    std::vector<TypeParam> type_params;
     std::vector<FnDecl> methods;
     std::size_t offset = 0;
 };
