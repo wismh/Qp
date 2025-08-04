@@ -213,6 +213,8 @@ fn start() -> Vec2 {
 - `self` — method on a value; `mut self` — may mutate the receiver
 - no `self` — associated function: `Vec2.origin()`
 - literal: `Vec2 { x: 1.0, y: 2.0 }`
+- generic: `struct Pair<T> { a: T, b: T }`, type `Pair<i32>`, methods in `impl Pair<T> { }`
+- a generic literal may omit `<i32>` when the fields make `T` obvious: `Pair { a: 1, b: 2 }`
 
 There is no class inheritance.
 
@@ -290,6 +292,21 @@ fn id<T>(x: T) -> T {
 
 fn same(x: i32) -> i32 {
     id(x)
+}
+
+struct Pair<T> {
+    mut a: T,
+    mut b: T,
+}
+
+impl Pair<T> {
+    fn first(self) -> T {
+        self.a
+    }
+}
+
+fn make_pair(x: i32, y: i32) -> Pair<i32> {
+    Pair { a: x, b: y }
 }
 ```
 
@@ -449,7 +466,6 @@ Examples live in [`examples/`](../examples/).
 
 These are in the language design, but do not use them yet:
 
-- generic `struct`
 - a separate package system / a JIT or WASM backend of its own
 - string interpolation, tuples `(A, B)`, `Result`
 

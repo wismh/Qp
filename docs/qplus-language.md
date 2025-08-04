@@ -335,7 +335,20 @@ impl Add for Vec2 {
 fn twice<T: Add>(x: T) -> T {
     x.add(x)
 }
+
+pub struct Pair<T> {
+    mut a: T,
+    mut b: T,
+}
+
+impl Pair<T> {
+    fn first(self) -> T {
+        self.a
+    }
+}
 ```
+
+A generic `struct` is monomorphized (`template <typename T> struct Pair`). Write `Pair<i32>` in types. A literal `Pair { a: 1, b: 2 }` infers `T` from the fields; `Pair<i32> { a: 1, b: 2 }` is explicit.
 
 Monomorphization in C++ (templates) and in the LLVM JIT (a copy of the function per type set). Dynamic dispatch: `dyn Trait` is a fat pointer `(data*, vtable*)` if needed; v0 is static `T: Trait` only.
 
@@ -498,6 +511,7 @@ JIT in debug: panic shows the Q+ stack through LLVM debug info.
 |---|---|
 | `mod foo` / `mod foo;` | `namespace foo` |
 | `struct S { x: i32 }` | `struct S { int32_t x; }` |
+| `struct Pair<T>` | `template <typename T> struct Pair` |
 | `impl S { fn f(self) }` | `S S::f() const` |
 | `fn f(mut self)` | `S::f()` non-const / `S&` |
 | `T?` | `T*` |
