@@ -345,3 +345,10 @@ TEST(Parser, NullSafeAndCoalesce) {
     EXPECT_TRUE(field->null_safe);
     EXPECT_TRUE(std::holds_alternative<qpc::ExprCoalesce>(parsed.ast.functions[1].body.tail->kind));
 }
+
+TEST(Parser, TryOperator) {
+    auto parsed = qpc::test::parse_string("fn sum(a: i32?, b: i32?) -> i32? { a? + b? }");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_TRUE(parsed.ast.functions[0].body.tail);
+    EXPECT_TRUE(std::holds_alternative<qpc::ExprBinary>(parsed.ast.functions[0].body.tail->kind));
+}
