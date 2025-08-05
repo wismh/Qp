@@ -1,0 +1,27 @@
+pub struct Pair<T> {
+    mut a: T,
+    mut b: T,
+}
+
+impl Pair<T> {
+    pub fn first(self) -> T {
+        self.a
+    }
+
+    pub fn set_a(mut self, v: T) {
+        self.a = v;
+    }
+}
+
+pub fn make_pair(a: i32, b: i32) -> Pair<i32> {
+    Pair { a: a, b: b }
+}
+
+pub fn sum_pair(p: Pair<i32>) -> i32 {
+    p.first() + p.b
+}
+
+pub fn bump_a(p: Pair<i32>) -> i32 {
+    p.set_a(p.a + 1);
+    p.a
+}
