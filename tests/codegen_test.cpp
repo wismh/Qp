@@ -293,3 +293,17 @@ TEST(Codegen, TryOperator) {
     EXPECT_NE(compiled.result.output.source.find("== nullptr"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("return nullptr;"), std::string::npos);
 }
+
+TEST(Codegen, GenericStructTemplate) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Pair<T> { mut a: T, mut b: T }
+        impl Pair<T> {
+            fn first(self) -> T { self.a }
+        }
+        fn make(x: i32) -> Pair<i32> { Pair { a: x, b: x } }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("template <typename T>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("struct Pair"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("Pair<std::int32_t>"), std::string::npos);
+}
