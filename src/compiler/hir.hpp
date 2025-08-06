@@ -104,6 +104,7 @@ struct HirStructLitField {
 
 struct HirStructLit {
     std::string name;
+    std::vector<Type> type_args;
     std::vector<HirStructLitField> fields;
 };
 
@@ -210,6 +211,7 @@ struct HirUnwrap {
 
 struct HirNew {
     std::string name;
+    std::vector<Type> type_args;
     std::vector<HirStructLitField> fields;
 };
 
@@ -299,6 +301,7 @@ struct HirStruct {
     bool is_extern = false;
     bool opaque = false;
     std::string name;
+    std::vector<HirTypeParam> type_params;
     std::vector<HirField> fields;
     std::size_t offset = 0;
 };
@@ -333,6 +336,7 @@ struct HirVariant {
 struct HirImpl {
     std::optional<std::string> trait_name;
     std::string type_name;
+    std::vector<HirTypeParam> type_params;
     std::vector<HirFn> methods;
     std::size_t offset = 0;
 };

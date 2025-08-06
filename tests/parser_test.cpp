@@ -346,6 +346,21 @@ TEST(Parser, NullSafeAndCoalesce) {
     EXPECT_TRUE(std::holds_alternative<qpc::ExprCoalesce>(parsed.ast.functions[1].body.tail->kind));
 }
 
+TEST(Parser, GenericStruct) {
+    auto parsed = qpc::test::parse_string(R"(
+        struct Pair<T> { mut a: T, mut b: T }
+        impl Pair<T> {
+            fn first(self) -> T { self.a }
+        }
+        fn make(x: i32) -> Pair<i32> { Pair { a: x, b: x } }
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.structs[0].type_params.size(), 1u);
+    EXPECT_EQ(parsed.ast.structs[0].type_params[0].name, "T");
+    ASSERT_EQ(parsed.ast.impls[0].type_params.size(), 1u);
+    EXPECT_EQ(parsed.ast.functions[0].return_ty->args.size(), 1u);
+}
+
 TEST(Parser, TryOperator) {
     auto parsed = qpc::test::parse_string("fn sum(a: i32?, b: i32?) -> i32? { a? + b? }");
     ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;

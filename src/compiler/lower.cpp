@@ -18,8 +18,16 @@ Type lower_type(const TypeExpr& te) {
     switch (te.kind) {
         case TypeExpr::Kind::Unit:
             return Type::unit();
-        case TypeExpr::Kind::Named:
-            return type_from_name(te.name);
+        case TypeExpr::Kind::Named: {
+            Type ty = type_from_name(te.name);
+            if (ty.kind == TypeKind::Named) {
+                ty.args.reserve(te.args.size());
+                for (const auto& arg : te.args) {
+                    ty.args.push_back(lower_type(arg));
+                }
+            }
+            return ty;
+        }
         case TypeExpr::Kind::List:
             return Type::list(lower_type(te.args.front()));
         case TypeExpr::Kind::Array:
@@ -472,6 +480,10 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                 } else {
                     HirStructLit lit;
                     lit.name = kind.name.empty() && !kind.path.empty() ? kind.path[0] : std::move(kind.name);
+                    lit.type_args.reserve(kind.type_args.size());
+                    for (auto& ta : kind.type_args) {
+                        lit.type_args.push_back(lower_type(ta));
+                    }
                     lit.fields.reserve(kind.fields.size());
                     for (auto& field : kind.fields) {
                         lit.fields.push_back(HirStructLitField{
@@ -550,6 +562,10 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
             } else if constexpr (std::is_same_v<K, ExprNew>) {
                 HirNew n;
                 n.name = kind.name.empty() && !kind.path.empty() ? kind.path.back() : std::move(kind.name);
+                n.type_args.reserve(kind.type_args.size());
+                for (auto& ta : kind.type_args) {
+                    n.type_args.push_back(lower_type(ta));
+                }
                 n.fields.reserve(kind.fields.size());
                 for (auto& field : kind.fields) {
                     n.fields.push_back(HirStructLitField{
@@ -616,6 +632,10 @@ HirStruct lower_struct(const Source& src, StructDecl& st, DiagnosticEngine& diag
     out.opaque = st.opaque;
     out.name = std::move(st.name);
     out.offset = st.offset;
+    out.type_params.reserve(st.type_params.size());
+    for (auto& tp : st.type_params) {
+        out.type_params.push_back(HirTypeParam{std::move(tp.name), std::move(tp.bound)});
+    }
     out.fields.reserve(st.fields.size());
 
     for (auto& field : st.fields) {
@@ -634,6 +654,10 @@ HirImpl lower_impl(const Source& src, ImplDecl& impl, DiagnosticEngine& diags) {
     out.trait_name = impl.trait_name;
     out.type_name = impl.type_name;
     out.offset = impl.offset;
+    out.type_params.reserve(impl.type_params.size());
+    for (auto& tp : impl.type_params) {
+        out.type_params.push_back(HirTypeParam{std::move(tp.name), std::move(tp.bound)});
+    }
     out.methods.reserve(impl.methods.size());
 
     for (auto& method : impl.methods) {
