@@ -48,12 +48,21 @@ fn steps(n: i32) -> i32 {
 
 You can omit the type on `let` when the initializer makes it obvious. Parameter types and `->` are required.
 
-Closures are `|x: i32| x + 1`. Capture is by copy. The type is `fn(i32) -> i32`.
+Closures are `|x: i32| x + 1`. Capture is by copy. `ref || { n = n + 1 }` captures by reference and can assign to outer `mut` bindings. The type is `fn(i32) -> i32`.
 
 ```qp
 fn twice(n: i32) -> i32 {
     let f = |x: i32| x + x;
     f(n)
+}
+
+fn bump() -> i32 {
+    let mut n = 0;
+    let f = ref || {
+        n = n + 1;
+    };
+    f();
+    n
 }
 ```
 

@@ -470,7 +470,7 @@ add(1, 2);
 (|x: i32| x + 1)(3);
 ```
 
-Parameter types are required. Capture is by copy (`[=]` in C++). The type is `fn(T, U) -> R`, mapped to `qplus::Fn<R(T, U)>` (`std::function`).
+Parameter types are required. Capture is by copy (`[=]` in C++). `ref |...|` captures by reference (`[&]`) so the closure can assign to outer `mut` bindings. The type is `fn(T, U) -> R`, mapped to `qplus::Fn<R(T, U)>` (`std::function`).
 
 ---
 
