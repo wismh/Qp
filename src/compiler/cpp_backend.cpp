@@ -140,6 +140,20 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt);
 
 bool is_generic(const HirFn& fn) { return !fn.type_params.empty(); }
 
+bool is_generic_struct(const HirModule& mod, const std::string& name) {
+    for (const auto& st : mod.structs) {
+        if (st.name == name) {
+            return !st.type_params.empty();
+        }
+    }
+    for (const auto& child : mod.mods) {
+        if (is_generic_struct(child, name)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::string join_path(const std::vector<std::string>& path) {
     std::string out;
     for (std::size_t i = 0; i < path.size(); ++i) {
@@ -415,7 +429,9 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                     out << ']';
                 }
             } else if constexpr (std::is_same_v<K, HirStructLit>) {
-                out << kind.name << '{';
+                out << kind.name;
+                emit_type_args(out, kind.type_args);
+                out << '{';
                 for (std::size_t i = 0; i < kind.fields.size(); ++i) {
                     if (i != 0) {
                         out << ", ";
@@ -425,7 +441,9 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 }
                 out << '}';
             } else if constexpr (std::is_same_v<K, HirNew>) {
-                out << "alloc(" << kind.name << '{';
+                out << "alloc(" << kind.name;
+                emit_type_args(out, kind.type_args);
+                out << '{';
                 for (std::size_t i = 0; i < kind.fields.size(); ++i) {
                     if (i != 0) {
                         out << ", ";
@@ -947,6 +965,7 @@ void emit_structs(std::ostringstream& header, const HirModule& mod,
         if (st.opaque) {
             continue;
         }
+        emit_template_head(header, st.type_params);
         header << "struct " << st.name << " {\n";
         for (const auto& field : st.fields) {
             header << "    " << cpp_type_name(field.ty) << ' ' << field.name << ";\n";
@@ -960,7 +979,7 @@ void emit_structs(std::ostringstream& header, const HirModule& mod,
                 emit_template_head(header, method->type_params, "    ");
                 header << "    ";
                 emit_method_signature(header, *method, false);
-                if (is_generic(*method) && !method->is_extern) {
+                if ((is_generic(*method) || !st.type_params.empty()) && !method->is_extern) {
                     emit_fn_body(header, *method);
                 } else {
                     header << ";\n";
@@ -1050,7 +1069,7 @@ void emit_module_source(std::ostringstream& source, const Source& src, const Hir
 
     for (const auto& impl : mod.impls) {
         for (const auto& method : impl.methods) {
-            if (method.is_extern || is_generic(method)) {
+            if (method.is_extern || is_generic(method) || is_generic_struct(mod, method.self_ty)) {
                 continue;
             }
             const auto loc = here.location(method.offset);

@@ -360,6 +360,27 @@ TEST(Typeck, NullableNullAndUnwrap) {
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
 
+TEST(Typeck, GenericStructOk) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Pair<T> { mut a: T, mut b: T }
+        impl Pair<T> {
+            fn first(self) -> T { self.a }
+        }
+        fn make(x: i32, y: i32) -> Pair<i32> { Pair { a: x, b: y } }
+        fn get(p: Pair<i32>) -> i32 { p.first() + p.b }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, GenericStructNeedsArgs) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Pair<T> { a: T, b: T }
+        fn f(p: Pair) -> i32 { 0 }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("expects 1 type argument"), std::string::npos);
+}
+
 TEST(Typeck, NewStructIsNullable) {
     auto compiled = qpc::test::compile_string(R"(
         struct Point { mut x: i32, mut y: i32 }

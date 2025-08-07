@@ -409,3 +409,24 @@ add_executable(try_null_host
 target_include_directories(try_null_host PRIVATE ${TRY_NULL_GEN_DIR})
 
 add_test(NAME try_null_host COMMAND try_null_host)
+
+set(PAIR_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_pair)
+set(PAIR_GEN_H ${PAIR_GEN_DIR}/pair.h)
+set(PAIR_GEN_CPP ${PAIR_GEN_DIR}/pair.cpp)
+
+add_custom_command(
+    OUTPUT ${PAIR_GEN_H} ${PAIR_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${PAIR_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/pair.qp -o ${PAIR_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/pair.qp
+    COMMENT "qpc compile examples/pair.qp"
+    VERBATIM
+)
+
+add_executable(pair_host
+    examples/pair_host/main.cpp
+    ${PAIR_GEN_CPP}
+)
+target_include_directories(pair_host PRIVATE ${PAIR_GEN_DIR})
+
+add_test(NAME pair_host COMMAND pair_host)

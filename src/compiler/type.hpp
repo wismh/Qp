@@ -204,8 +204,20 @@ inline std::string type_name(const Type& ty) {
             return "f32";
         case TypeKind::F64:
             return "f64";
-        case TypeKind::Named:
-            return ty.name;
+        case TypeKind::Named: {
+            if (ty.args.empty()) {
+                return ty.name;
+            }
+            std::string out = ty.name + "<";
+            for (std::size_t i = 0; i < ty.args.size(); ++i) {
+                if (i != 0) {
+                    out += ", ";
+                }
+                out += type_name(ty.args[i]);
+            }
+            out += ">";
+            return out;
+        }
         case TypeKind::List:
             return "[" + type_name(ty.elem()) + "]";
         case TypeKind::Array:
@@ -262,8 +274,20 @@ inline std::string cpp_type_name(const Type& ty) {
             return "float";
         case TypeKind::F64:
             return "double";
-        case TypeKind::Named:
-            return ty.name;
+        case TypeKind::Named: {
+            if (ty.args.empty()) {
+                return ty.name;
+            }
+            std::string out = ty.name + "<";
+            for (std::size_t i = 0; i < ty.args.size(); ++i) {
+                if (i != 0) {
+                    out += ", ";
+                }
+                out += cpp_type_name(ty.args[i]);
+            }
+            out += ">";
+            return out;
+        }
         case TypeKind::List:
             return "List<" + cpp_type_name(ty.elem()) + ">";
         case TypeKind::Array:
