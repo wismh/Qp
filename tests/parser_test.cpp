@@ -290,6 +290,16 @@ TEST(Parser, ClosureAndFnType) {
     EXPECT_TRUE(empty->params.empty());
 }
 
+TEST(Parser, RefClosure) {
+    auto parsed = qpc::test::parse_string("fn bump() -> i32 { let mut n = 0; let f = ref || { n = n + 1; }; f(); n }");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    const auto* let1 = std::get_if<qpc::StmtLet>(&parsed.ast.functions[0].body.stmts[1]->kind);
+    ASSERT_NE(let1, nullptr);
+    const auto* clo = std::get_if<qpc::ExprClosure>(&let1->init->kind);
+    ASSERT_NE(clo, nullptr);
+    EXPECT_TRUE(clo->by_ref);
+}
+
 TEST(Parser, ClosureMissingParamTypeIsError) {
     auto parsed = qpc::test::parse_string("fn f() -> i32 { let g = |x| x; g(1) }");
     EXPECT_TRUE(parsed.diags.has_errors());

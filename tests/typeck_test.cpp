@@ -350,6 +350,31 @@ TEST(Typeck, ClosureCallAndCapture) {
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
 
+TEST(Typeck, RefCaptureAssign) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn bump() -> i32 {
+            let mut n = 0;
+            let f = ref || { n = n + 1; };
+            f();
+            n
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, CopyCaptureAssignIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn bump() -> i32 {
+            let mut n = 0;
+            let f = || { n = n + 1; };
+            f();
+            n
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("'ref' closure"), std::string::npos);
+}
+
 TEST(Typeck, NullableNullAndUnwrap) {
     auto compiled = qpc::test::compile_string(R"(
         fn or_zero(p: i32?) -> i32 {
