@@ -194,6 +194,7 @@ struct HirRange {
 };
 
 struct HirClosure {
+    bool by_ref = false;
     std::vector<HirParam> params;
     Type return_ty = Type::unknown();
     HirBlock body;
