@@ -136,6 +136,7 @@ private:
     std::unordered_set<std::string> traits_;
     std::unordered_set<std::string> generic_params_;
     std::vector<std::unordered_map<std::string, Binding>> scopes_;
+    std::vector<std::pair<bool, std::size_t>> closure_frames_;
     Type current_ret_ = Type::unit();
     int loop_depth_ = 0;
 
@@ -1258,6 +1259,7 @@ private:
     Type check_closure(HirClosure& clo, std::size_t offset) {
         const Type saved_ret = current_ret_;
         push_scope();
+        closure_frames_.push_back({clo.by_ref, scopes_.size() - 1});
         std::vector<Type> params;
         for (auto& p : clo.params) {
             resolve_type(p.ty, p.offset);
@@ -1294,6 +1296,7 @@ private:
             ret = clo.return_ty;
         }
         pop_scope();
+        closure_frames_.pop_back();
         current_ret_ = saved_ret;
         return Type::fn(std::move(params), std::move(ret));
     }
@@ -1632,6 +1635,17 @@ private:
         }
         if (!b->mut) {
             error(offset, "cannot assign to immutable variable '" + as.name + "'");
+        }
+        if (!closure_frames_.empty() && !closure_frames_.back().first) {
+            for (std::size_t i = 0; i < scopes_.size(); ++i) {
+                if (scopes_[i].contains(as.name)) {
+                    if (i < closure_frames_.back().second) {
+                        error(offset, "cannot assign to captured variable '" + as.name +
+                                          "'; use a 'ref' closure");
+                    }
+                    break;
+                }
+            }
         }
 
         expect_expr(*as.value, b->ty, as.value->offset, "assignment");

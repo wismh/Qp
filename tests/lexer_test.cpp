@@ -189,6 +189,16 @@ TEST(Lexer, NewKeyword) {
     EXPECT_EQ(tokens[1].kind, TokenKind::Eof);
 }
 
+TEST(Lexer, RefKeyword) {
+    auto src = Source::from_string("t.qp", "ref");
+    DiagnosticEngine diags;
+    const auto tokens = lex(src, diags);
+    ASSERT_FALSE(diags.has_errors());
+    ASSERT_EQ(tokens.size(), 2u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::KwRef);
+    EXPECT_EQ(tokens[1].kind, TokenKind::Eof);
+}
+
 TEST(Lexer, QuestionDotAndQuestionQuestion) {
     auto src = Source::from_string("t.qp", "?. ??");
     DiagnosticEngine diags;

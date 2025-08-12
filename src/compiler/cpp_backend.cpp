@@ -613,7 +613,7 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
             } else if constexpr (std::is_same_v<K, HirRange>) {
                 emit_expr(out, *kind.start);
             } else if constexpr (std::is_same_v<K, HirClosure>) {
-                out << cpp_type_name(expr.ty) << "([=](";
+                out << cpp_type_name(expr.ty) << "(" << (kind.by_ref ? "[&]" : "[=]") << "(";
                 emit_params(out, kind.params);
                 out << ')';
                 if (kind.return_ty != Type::unit()) {

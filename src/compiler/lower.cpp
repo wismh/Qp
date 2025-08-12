@@ -537,6 +537,7 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                 };
             } else if constexpr (std::is_same_v<K, ExprClosure>) {
                 HirClosure clo;
+                clo.by_ref = kind.by_ref;
                 clo.params.reserve(kind.params.size());
                 for (auto& p : kind.params) {
                     HirParam hp;

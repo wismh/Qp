@@ -103,6 +103,9 @@ namespace {
     if (text == "new") {
         return TokenKind::KwNew;
     }
+    if (text == "ref") {
+        return TokenKind::KwRef;
+    }
     return TokenKind::Ident;
 }
 
