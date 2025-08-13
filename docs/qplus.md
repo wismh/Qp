@@ -335,6 +335,27 @@ fn add_x(a: Point, b: Point) -> i32 {
 }
 ```
 
+`dyn Trait` is a fat pointer: a heap copy of the value plus a vtable. A type that implements the trait coerces where `dyn Trait` is expected. Only `self` methods dispatch; `mut self` is not callable through `dyn`.
+
+```qp
+trait Area {
+    fn area(self) -> i32;
+}
+
+struct Rect { w: i32, h: i32 }
+impl Area for Rect {
+    fn area(self) -> i32 { self.w * self.h }
+}
+
+fn area_of(d: dyn Area) -> i32 {
+    d.area()
+}
+
+fn run() -> i32 {
+    area_of(Rect { w: 3, h: 4 })
+}
+```
+
 ---
 
 ## Modules
