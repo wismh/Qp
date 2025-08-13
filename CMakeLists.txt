@@ -263,6 +263,27 @@ target_include_directories(closures_host PRIVATE ${CLOSURES_GEN_DIR})
 
 add_test(NAME closures_host COMMAND closures_host)
 
+set(REF_CAPTURE_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_ref_capture)
+set(REF_CAPTURE_GEN_H ${REF_CAPTURE_GEN_DIR}/ref_capture.h)
+set(REF_CAPTURE_GEN_CPP ${REF_CAPTURE_GEN_DIR}/ref_capture.cpp)
+
+add_custom_command(
+    OUTPUT ${REF_CAPTURE_GEN_H} ${REF_CAPTURE_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${REF_CAPTURE_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/ref_capture.qp -o ${REF_CAPTURE_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/ref_capture.qp
+    COMMENT "qpc compile examples/ref_capture.qp"
+    VERBATIM
+)
+
+add_executable(ref_capture_host
+    examples/ref_capture_host/main.cpp
+    ${REF_CAPTURE_GEN_CPP}
+)
+target_include_directories(ref_capture_host PRIVATE ${REF_CAPTURE_GEN_DIR})
+
+add_test(NAME ref_capture_host COMMAND ref_capture_host)
+
 set(EARLY_RETURN_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_early_return)
 set(EARLY_RETURN_GEN_H ${EARLY_RETURN_GEN_DIR}/early_return.h)
 set(EARLY_RETURN_GEN_CPP ${EARLY_RETURN_GEN_DIR}/early_return.cpp)

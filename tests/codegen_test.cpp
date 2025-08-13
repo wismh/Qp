@@ -214,6 +214,19 @@ TEST(Codegen, ClosureLambdaAndFnAlias) {
     EXPECT_NE(compiled.result.output.source.find("Fn<std::int32_t(std::int32_t)>"), std::string::npos);
 }
 
+TEST(Codegen, RefClosureCapture) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn bump() -> i32 {
+            let mut n = 0;
+            let f = ref || { n = n + 1; };
+            f();
+            n
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("[&]"), std::string::npos);
+}
+
 TEST(Codegen, ReturnInIfIsNotALambda) {
     auto compiled = qpc::test::compile_string(R"(
         fn abs(x: i32) -> i32 {

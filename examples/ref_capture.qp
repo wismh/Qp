@@ -1,0 +1,19 @@
+pub fn bump() -> i32 {
+    let mut n = 0;
+    let f = ref || {
+        n = n + 1;
+    };
+    f();
+    f();
+    n
+}
+
+pub fn add_into(x: i32) -> i32 {
+    let mut n = 0;
+    let f = ref |v: i32| {
+        n = n + v;
+    };
+    f(x);
+    f(1);
+    n
+}
