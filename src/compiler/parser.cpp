@@ -922,6 +922,25 @@ private:
         TypeExpr ty;
         ty.offset = peek().offset;
 
+        if (consume(TokenKind::KwDyn)) {
+            auto name = take_ident("trait name after 'dyn'");
+            if (!name) {
+                return std::nullopt;
+            }
+            std::string full = std::move(*name);
+            while (consume(TokenKind::ColonColon)) {
+                auto part = take_ident("trait path");
+                if (!part) {
+                    return std::nullopt;
+                }
+                full += "::";
+                full += *part;
+            }
+            ty.kind = TypeExpr::Kind::Dyn;
+            ty.name = std::move(full);
+            return ty;
+        }
+
         if (consume(TokenKind::KwFn)) {
             if (!expect(TokenKind::LParen, "'(' after 'fn'")) {
                 return std::nullopt;
