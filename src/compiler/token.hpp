@@ -37,6 +37,7 @@ enum class TokenKind {
     KwMod,
     KwUse,
     KwTrait,
+    KwDyn,
     KwAs,
     KwNull,
     KwNew,
@@ -172,6 +173,8 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'use'";
         case TokenKind::KwTrait:
             return "'trait'";
+        case TokenKind::KwDyn:
+            return "'dyn'";
         case TokenKind::KwAs:
             return "'as'";
         case TokenKind::KwNull:

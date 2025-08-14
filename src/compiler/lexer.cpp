@@ -94,6 +94,9 @@ namespace {
     if (text == "trait") {
         return TokenKind::KwTrait;
     }
+    if (text == "dyn") {
+        return TokenKind::KwDyn;
+    }
     if (text == "as") {
         return TokenKind::KwAs;
     }
