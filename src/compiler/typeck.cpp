@@ -131,6 +131,7 @@ private:
     std::unordered_map<std::string, FnSig> sigs_;
     std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> methods_;
     std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> op_impls_;
+    std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> trait_methods_;
     std::unordered_map<std::string, std::unordered_set<std::string>> trait_impls_;
     std::unordered_set<std::string> traits_;
     std::unordered_set<std::string> generic_params_;
@@ -183,6 +184,14 @@ private:
                 ok = resolve_type(arg, offset) && ok;
             }
             return ok;
+        }
+        if (ty.kind == TypeKind::Dyn) {
+            if (!traits_.contains(ty.name)) {
+                error(offset, "unknown trait '" + ty.name + "'");
+                ty = Type::error();
+                return false;
+            }
+            return true;
         }
         if (ty.kind != TypeKind::Named) {
             return ty != Type::error();
@@ -273,6 +282,7 @@ private:
         }
 
         collect_sigs_of(m, prefix);
+        collect_trait_methods_of(m, prefix);
         collect_methods_of(m, prefix);
 
         for (auto& st : m.statics) {
@@ -429,6 +439,35 @@ private:
         }
     }
 
+    void collect_trait_methods_of(HirModule& m, const std::string& prefix) {
+        for (auto& tr : m.traits) {
+            auto& table = trait_methods_[tr.name];
+            if (!prefix.empty()) {
+                trait_methods_[qualify(prefix, tr.name)];
+            }
+            for (auto& method : tr.methods) {
+                if (table.contains(method.name)) {
+                    error(tr.offset, "duplicate method '" + method.name + "' in trait '" + tr.name + "'");
+                    continue;
+                }
+                resolve_type(method.return_ty, tr.offset);
+                MethodSig sig;
+                sig.self_kind = method.self_kind;
+                sig.ret = method.return_ty;
+                sig.offset = tr.offset;
+                sig.params.reserve(method.params.size());
+                for (auto& p : method.params) {
+                    resolve_type(p.ty, p.offset);
+                    sig.params.push_back(p.ty);
+                }
+                table.emplace(method.name, sig);
+                if (!prefix.empty()) {
+                    trait_methods_[qualify(prefix, tr.name)].emplace(method.name, std::move(sig));
+                }
+            }
+        }
+    }
+
     void collect_methods_of(HirModule& m, const std::string& prefix) {
         for (auto& impl : m.impls) {
             const auto type_name = qualify(prefix, impl.type_name);
@@ -477,7 +516,10 @@ private:
                     generic_params_.clear();
                     table.emplace(trait, std::move(sig));
                 }
-                continue;
+                if (is_op_trait(trait)) {
+                    continue;
+                }
+                check_trait_impl(impl, trait);
             }
 
             auto& table = methods_[impl.type_name];
@@ -503,6 +545,43 @@ private:
                 }
                 generic_params_.clear();
                 table.emplace(method.name, std::move(sig));
+            }
+        }
+    }
+
+    void check_trait_impl(const HirImpl& impl, const std::string& trait) {
+        auto tit = trait_methods_.find(trait);
+        if (tit == trait_methods_.end()) {
+            return;
+        }
+        const auto& required = tit->second;
+        for (const auto& method : impl.methods) {
+            auto mit = required.find(method.name);
+            if (mit == required.end()) {
+                error(method.offset, "method '" + method.name + "' is not a member of trait '" + trait + "'");
+                continue;
+            }
+            if (method.self_kind != mit->second.self_kind) {
+                error(method.offset, "method '" + method.name + "' does not match trait '" + trait + "'");
+            }
+            if (method.params.size() != mit->second.params.size()) {
+                error(method.offset, "method '" + method.name + "' expects " +
+                                         std::to_string(mit->second.params.size()) +
+                                         " argument(s) in trait '" + trait + "'");
+            }
+        }
+        for (const auto& [name, _] : required) {
+            (void)_;
+            bool found = false;
+            for (const auto& method : impl.methods) {
+                if (method.name == name) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                error(impl.offset, "missing method '" + name + "' in impl " + trait + " for '" +
+                                       impl.type_name + "'");
             }
         }
     }
@@ -1686,6 +1765,65 @@ private:
             recv_ty = recv_ty.elem();
         }
 
+        if (recv_ty.kind == TypeKind::Dyn) {
+            if (associated) {
+                error(offset, "cannot call associated function on 'dyn " + recv_ty.name + "'");
+                for (auto& arg : call.args) {
+                    check_expr(*arg);
+                }
+                return Type::error();
+            }
+            auto trait_it = trait_methods_.find(recv_ty.name);
+            if (trait_it == trait_methods_.end()) {
+                error(offset, "unknown method '" + call.method + "' on 'dyn " + recv_ty.name + "'");
+                for (auto& arg : call.args) {
+                    check_expr(*arg);
+                }
+                return Type::error();
+            }
+            auto method_it = trait_it->second.find(call.method);
+            if (method_it == trait_it->second.end()) {
+                error(offset, "unknown method '" + call.method + "' on 'dyn " + recv_ty.name + "'");
+                for (auto& arg : call.args) {
+                    check_expr(*arg);
+                }
+                return Type::error();
+            }
+            const MethodSig& sig = method_it->second;
+            if (sig.self_kind == SelfKind::Mut) {
+                error(offset, "cannot call '" + call.method + "' on 'dyn " + recv_ty.name +
+                                  "'; dyn only dispatches 'self' methods");
+                for (auto& arg : call.args) {
+                    check_expr(*arg);
+                }
+                return Type::error();
+            }
+            if (sig.self_kind == SelfKind::None) {
+                error(offset, "cannot call associated function '" + call.method + "' on 'dyn " +
+                                  recv_ty.name + "'");
+                for (auto& arg : call.args) {
+                    check_expr(*arg);
+                }
+                return Type::error();
+            }
+            for (auto& arg : call.args) {
+                check_expr(*arg);
+            }
+            if (call.args.size() != sig.params.size()) {
+                error(offset, "method '" + call.method + "' expects " + std::to_string(sig.params.size()) +
+                                  " argument(s), got " + std::to_string(call.args.size()));
+            }
+            const std::size_t n = std::min(call.args.size(), sig.params.size());
+            for (std::size_t i = 0; i < n; ++i) {
+                expect_expr(*call.args[i], sig.params[i], call.args[i]->offset, "argument");
+            }
+            if (call.null_safe) {
+                call.wrap_ret = sig.ret.kind != TypeKind::Nullable;
+                return as_nullable(sig.ret);
+            }
+            return sig.ret;
+        }
+
         if (recv_ty.kind != TypeKind::Named) {
             if (recv_ty != Type::error()) {
                 error(offset, "method call requires a struct, found '" + type_name(recv_ty) + "'");
@@ -2108,6 +2246,15 @@ private:
         }
         if (got == expected || got == Type::error() || expected == Type::error() ||
             got.kind == TypeKind::Never) {
+            return;
+        }
+        if (expected.kind == TypeKind::Dyn && got.kind == TypeKind::Named) {
+            auto it = trait_impls_.find(got.name);
+            if (it != trait_impls_.end() && it->second.contains(expected.name)) {
+                expr.coerce_dyn = expected.name;
+                return;
+            }
+            error(offset, "type '" + type_name(got) + "' does not implement '" + expected.name + "'");
             return;
         }
         if (coerce_lit(expr, expected)) {
