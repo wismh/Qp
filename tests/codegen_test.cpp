@@ -320,3 +320,24 @@ TEST(Codegen, GenericStructTemplate) {
     EXPECT_NE(compiled.result.output.header.find("struct Pair"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("Pair<std::int32_t>"), std::string::npos);
 }
+
+TEST(Codegen, DynTraitVtable) {
+    auto compiled = qpc::test::compile_string(R"(
+        trait Area {
+            fn area(self) -> i32;
+        }
+        struct Rect { w: i32, h: i32 }
+        impl Area for Rect {
+            fn area(self) -> i32 { self.w * self.h }
+        }
+        fn area_of(d: dyn Area) -> i32 { d.area() }
+        pub fn run() -> i32 { area_of(Rect { w: 3, h: 4 }) }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("struct Area_vtable"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("struct dyn_Area"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("make_dyn_Area"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("std::int32_t area_of(dyn_Area d)"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("make_dyn_Area("), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("d.area()"), std::string::npos);
+}

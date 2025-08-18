@@ -227,6 +227,7 @@ struct HirTry {
 
 struct HirExpr {
     Type ty;
+    std::string coerce_dyn;
     std::size_t offset = 0;
     std::variant<HirLitInt, HirLitFloat, HirLitBool, HirLitChar, HirLitString, HirLitNull, HirVar, HirBinary,
                  HirUnary, HirCall, HirAssign, HirFieldAccess, HirIndex, HirStructLit, HirEnumLit,

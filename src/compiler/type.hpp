@@ -32,6 +32,7 @@ enum class TypeKind {
     Fn,
     Never,
     Nullable,
+    Dyn,
 };
 
 struct Type {
@@ -58,6 +59,7 @@ struct Type {
     static Type f64() { return {TypeKind::F64, {}}; }
     static Type named(std::string n) { return {TypeKind::Named, std::move(n)}; }
     static Type never() { return {TypeKind::Never, {}}; }
+    static Type dyn_trait(std::string n) { return {TypeKind::Dyn, std::move(n)}; }
 
     static Type list(Type elem) {
         Type t;
@@ -240,6 +242,8 @@ inline std::string type_name(const Type& ty) {
             return "!";
         case TypeKind::Nullable:
             return type_name(ty.elem()) + "?";
+        case TypeKind::Dyn:
+            return "dyn " + ty.name;
     }
     return "<invalid>";
 }
@@ -309,6 +313,8 @@ inline std::string cpp_type_name(const Type& ty) {
         }
         case TypeKind::Nullable:
             return cpp_type_name(ty.elem()) + "*";
+        case TypeKind::Dyn:
+            return "dyn_" + ty.name;
         default:
             return "void";
     }

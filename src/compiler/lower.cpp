@@ -46,6 +46,8 @@ Type lower_type(const TypeExpr& te) {
         }
         case TypeExpr::Kind::Nullable:
             return Type::nullable(lower_type(te.args.front()));
+        case TypeExpr::Kind::Dyn:
+            return Type::dyn_trait(te.name);
     }
     return Type::error();
 }
