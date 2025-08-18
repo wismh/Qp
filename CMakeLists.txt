@@ -409,3 +409,24 @@ add_executable(try_null_host
 target_include_directories(try_null_host PRIVATE ${TRY_NULL_GEN_DIR})
 
 add_test(NAME try_null_host COMMAND try_null_host)
+
+set(DYN_AREA_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_dyn_area)
+set(DYN_AREA_GEN_H ${DYN_AREA_GEN_DIR}/dyn_area.h)
+set(DYN_AREA_GEN_CPP ${DYN_AREA_GEN_DIR}/dyn_area.cpp)
+
+add_custom_command(
+    OUTPUT ${DYN_AREA_GEN_H} ${DYN_AREA_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${DYN_AREA_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/dyn_area.qp -o ${DYN_AREA_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/dyn_area.qp
+    COMMENT "qpc compile examples/dyn_area.qp"
+    VERBATIM
+)
+
+add_executable(dyn_area_host
+    examples/dyn_area_host/main.cpp
+    ${DYN_AREA_GEN_CPP}
+)
+target_include_directories(dyn_area_host PRIVATE ${DYN_AREA_GEN_DIR})
+
+add_test(NAME dyn_area_host COMMAND dyn_area_host)
