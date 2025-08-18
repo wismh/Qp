@@ -487,3 +487,37 @@ TEST(Typeck, UnwrapNonNullableIsError) {
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("unwrap"), std::string::npos);
 }
+
+TEST(Typeck, DynTraitCoerceAndDispatch) {
+    auto compiled = qpc::test::compile_string(R"(
+        trait Area {
+            fn area(self) -> i32;
+        }
+        struct Rect { w: i32, h: i32 }
+        impl Area for Rect {
+            fn area(self) -> i32 { self.w * self.h }
+        }
+        fn area_of(d: dyn Area) -> i32 { d.area() }
+        fn run() -> i32 { area_of(Rect { w: 3, h: 4 }) }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, DynTraitMissingImplIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        trait Area {
+            fn area(self) -> i32;
+        }
+        struct Rect { w: i32, h: i32 }
+        fn area_of(d: dyn Area) -> i32 { d.area() }
+        fn run() -> i32 { area_of(Rect { w: 3, h: 4 }) }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("does not implement"), std::string::npos);
+}
+
+TEST(Typeck, DynUnknownTraitIsError) {
+    auto compiled = qpc::test::compile_string("fn area_of(d: dyn Area) -> i32 { 0 }");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("unknown trait"), std::string::npos);
+}

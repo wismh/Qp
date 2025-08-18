@@ -373,3 +373,25 @@ TEST(E2E, CompileClosuresExampleToFiles) {
     EXPECT_NE(header_text.find("Fn<std::int32_t(std::int32_t)> f"), std::string::npos);
     EXPECT_NE(header_text.find("using Fn = std::function<T>;"), std::string::npos);
 }
+
+TEST(E2E, CompileDynAreaExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_dyn_area";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input =
+        std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "dyn_area.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "dyn_area.h";
+    const auto source = out_dir / "dyn_area.cpp";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    ASSERT_TRUE(std::filesystem::exists(source));
+
+    std::ifstream header_in(header);
+    const std::string header_text((std::istreambuf_iterator<char>(header_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("struct dyn_Area"), std::string::npos);
+    EXPECT_NE(header_text.find("std::int32_t area_of(dyn_Area d)"), std::string::npos);
+}
