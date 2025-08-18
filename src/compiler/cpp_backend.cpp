@@ -104,6 +104,15 @@ const char* trait_operator(const std::string& trait) {
     return "+";
 }
 
+bool is_operator_trait(const std::string& trait) {
+    return trait == "Add" || trait == "Sub" || trait == "Mul" || trait == "Div" || trait == "Rem" ||
+           trait == "Neg";
+}
+
+bool is_dyn_dispatch(const HirTraitMethod& method) {
+    return method.self_kind == SelfKind::Value;
+}
+
 std::string cpp_escape(std::string_view text) {
     std::string out;
     out.reserve(text.size());
@@ -338,6 +347,10 @@ void emit_if_stmt(std::ostringstream& out, const HirIf& iff, IfSink sink, const 
 }
 
 void emit_expr(std::ostringstream& out, const HirExpr& expr) {
+    const bool wrap_dyn = !expr.coerce_dyn.empty();
+    if (wrap_dyn) {
+        out << "make_dyn_" << expr.coerce_dyn << "(";
+    }
     std::visit(
         [&](auto&& kind) {
             using K = std::decay_t<decltype(kind)>;
@@ -644,6 +657,9 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
             }
         },
         expr.kind);
+    if (wrap_dyn) {
+        out << ")";
+    }
 }
 
 void emit_try_setup(std::ostringstream& out, const HirExpr& expr) {
@@ -886,7 +902,7 @@ void emit_operator_signature(std::ostringstream& out, const HirImpl& impl, const
 void collect_methods_by_type(const HirModule& mod,
                              std::unordered_map<std::string, std::vector<const HirFn*>>& out) {
     for (const auto& impl : mod.impls) {
-        if (impl.trait_name) {
+        if (impl.trait_name && is_operator_trait(*impl.trait_name)) {
             continue;
         }
         for (const auto& method : impl.methods) {
@@ -971,6 +987,82 @@ void emit_structs(std::ostringstream& header, const HirModule& mod,
     }
 }
 
+void emit_dyn_trait(std::ostringstream& header, const HirTrait& tr) {
+    const std::string vtable = tr.name + "_vtable";
+    const std::string dyn_name = "dyn_" + tr.name;
+    header << "struct " << vtable << " {\n";
+    for (const auto& method : tr.methods) {
+        if (!is_dyn_dispatch(method)) {
+            continue;
+        }
+        header << "    " << cpp_type_name(method.return_ty) << " (*" << method.name << ")(const void*";
+        for (const auto& p : method.params) {
+            header << ", " << cpp_type_name(p.ty);
+        }
+        header << ");\n";
+    }
+    header << "};\n\n";
+
+    header << "template <typename T>\ninline const " << vtable << " " << vtable << "_for{";
+    bool first = true;
+    for (const auto& method : tr.methods) {
+        if (!is_dyn_dispatch(method)) {
+            continue;
+        }
+        if (!first) {
+            header << ",";
+        }
+        first = false;
+        header << "\n    [](const void* p";
+        for (const auto& p : method.params) {
+            header << ", " << cpp_type_name(p.ty) << ' ' << p.name;
+        }
+        header << ")";
+        if (method.return_ty != Type::unit()) {
+            header << " -> " << cpp_type_name(method.return_ty);
+        }
+        header << " { ";
+        if (method.return_ty != Type::unit()) {
+            header << "return ";
+        }
+        header << "static_cast<const T*>(p)->" << method.name << "(";
+        for (std::size_t i = 0; i < method.params.size(); ++i) {
+            if (i != 0) {
+                header << ", ";
+            }
+            header << method.params[i].name;
+        }
+        header << "); }";
+    }
+    header << "\n};\n\n";
+
+    header << "struct " << dyn_name << " {\n";
+    header << "    const void* data;\n";
+    header << "    const " << vtable << "* vtable;\n";
+    for (const auto& method : tr.methods) {
+        if (!is_dyn_dispatch(method)) {
+            continue;
+        }
+        header << "    " << cpp_type_name(method.return_ty) << ' ' << method.name << "(";
+        emit_params(header, method.params);
+        header << ") const { ";
+        if (method.return_ty != Type::unit()) {
+            header << "return ";
+        }
+        header << "vtable->" << method.name << "(data";
+        for (const auto& p : method.params) {
+            header << ", " << p.name;
+        }
+        header << "); }\n";
+    }
+    header << "};\n\n";
+
+    header << "template <typename T>\n";
+    header << dyn_name << " make_dyn_" << tr.name << "(T value) {\n";
+    header << "    return " << dyn_name << "{alloc(std::move(value)), &" << vtable << "_for<T>};\n";
+    header << "}\n\n";
+}
+
 void emit_module_header(std::ostringstream& header, const HirModule& mod,
                         const std::unordered_map<std::string, std::vector<const HirFn*>>& methods) {
     for (const auto& en : mod.enums) {
@@ -980,6 +1072,9 @@ void emit_module_header(std::ostringstream& header, const HirModule& mod,
         emit_variant(header, var);
     }
     emit_structs(header, mod, methods);
+    for (const auto& tr : mod.traits) {
+        emit_dyn_trait(header, tr);
+    }
 
     for (const auto& child : mod.mods) {
         header << "namespace " << child.name << " {\n\n";
@@ -1011,7 +1106,7 @@ void emit_module_header(std::ostringstream& header, const HirModule& mod,
     }
 
     for (const auto& impl : mod.impls) {
-        if (!impl.trait_name) {
+        if (!impl.trait_name || !is_operator_trait(*impl.trait_name)) {
             continue;
         }
         for (const auto& method : impl.methods) {
@@ -1055,7 +1150,7 @@ void emit_module_source(std::ostringstream& source, const Source& src, const Hir
             }
             const auto loc = here.location(method.offset);
             source << "#line " << loc.line << " \"" << qp_path << "\"\n";
-            if (impl.trait_name) {
+            if (impl.trait_name && is_operator_trait(*impl.trait_name)) {
                 emit_operator_signature(source, impl, method);
                 emit_fn_body(source, method, true);
             } else {
@@ -1088,6 +1183,7 @@ std::string emit_header(const HirModule& mod) {
     header << "#include <map>\n";
     header << "#include <new>\n";
     header << "#include <string>\n";
+    header << "#include <utility>\n";
     header << "#include <variant>\n";
     header << "#include <vector>\n";
     header << "#if defined(_MSC_VER)\n";
