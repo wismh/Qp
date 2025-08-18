@@ -377,3 +377,11 @@ TEST(Parser, TryOperator) {
     ASSERT_TRUE(parsed.ast.functions[0].body.tail);
     EXPECT_TRUE(std::holds_alternative<qpc::ExprBinary>(parsed.ast.functions[0].body.tail->kind));
 }
+
+TEST(Parser, DynTraitType) {
+    auto parsed = qpc::test::parse_string("fn area_of(d: dyn Area) -> i32 { d.area() }");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.functions.size(), 1u);
+    EXPECT_EQ(parsed.ast.functions[0].params[0].ty.kind, qpc::TypeExpr::Kind::Dyn);
+    EXPECT_EQ(parsed.ast.functions[0].params[0].ty.name, "Area");
+}

@@ -12,7 +12,7 @@
 namespace qpc {
 
 struct TypeExpr {
-    enum class Kind { Named, Unit, List, Array, Dict, Fn, Nullable };
+    enum class Kind { Named, Unit, List, Array, Dict, Fn, Nullable, Dyn };
 
     Kind kind = Kind::Named;
     std::string name;

@@ -350,7 +350,22 @@ impl Pair<T> {
 
 A generic `struct` is monomorphized (`template <typename T> struct Pair`). Write `Pair<i32>` in types. A literal `Pair { a: 1, b: 2 }` infers `T` from the fields; `Pair<i32> { a: 1, b: 2 }` is explicit.
 
-Monomorphization in C++ (templates) and in the LLVM JIT (a copy of the function per type set). Dynamic dispatch: `dyn Trait` is a fat pointer `(data*, vtable*)` if needed; v0 is static `T: Trait` only.
+Monomorphization in C++ (templates) and in the LLVM JIT (a copy of the function per type set). Dynamic dispatch: `dyn Trait` is a fat pointer `(data*, vtable*)`. A value of a type that `impl`s the trait coerces to `dyn Trait` at an expected type (arguments, returns, `let` annotations). v0 only dispatches `self` methods, not `mut self`. The payload is copied onto the Q+ heap so the fat pointer stays valid after the call.
+
+```qp
+trait Area {
+    fn area(self) -> i32;
+}
+
+struct Rect { w: i32, h: i32 }
+impl Area for Rect {
+    fn area(self) -> i32 { self.w * self.h }
+}
+
+fn area_of(d: dyn Area) -> i32 {
+    d.area()
+}
+```
 
 Associated types:
 
@@ -526,7 +541,8 @@ JIT in debug: panic shows the Q+ stack through LLVM debug info.
 | `extern { fn f(); }` | declaration in `qplus::`, body in the host |
 | `extern { struct T; impl T { fn f(self); } let x: T; }` | host type + methods + `extern T x;` |
 | `extern "C" { fn f(); }` | `extern "C"` declaration, body in the host |
-| `trait T` + `impl` | concept / template, or a vtable for `dyn` |
+| `trait T` + `impl` | concept / template |
+| `dyn Trait` | fat pointer `dyn_Trait { data*, vtable* }` |
 | `fn foo<T: Add>` | `template<typename T> requires ...` |
 | `match` | `switch` + union accessors |
 | `null` | `nullptr` |
@@ -582,14 +598,14 @@ pub fn longest(a: Vec2?, b: Vec2?) -> Vec2? {
 ## 11. Keywords (v0)
 
 ```
-as async break const continue else enum extern false fn for
+as async break const continue dyn else enum extern false fn for
 if impl in let loop match mod mut new null pub return struct
 trait true type use variant while
 ```
 
 `async` is reserved and not implemented in v0.
 
-Contextual: `where`, `for` (in `impl Trait for Type`), `dyn`.
+Contextual: `where`, `for` (in `impl Trait for Type`).
 
 ---
 
@@ -617,7 +633,6 @@ JIT does not block step 3. The C++ path is the source of truth for semantics; JI
 1. **GC vs ARC.** v0 AOT uses conservative mark-sweep (`qplus::alloc` / `qplus::gc_collect`) so `T?` can stay `T*`. JIT/WASM may still switch to ARC + no cycles later.
 2. **Does `new` return `T?` or a non-null heap `T`.** Today `T?`. A non-null heap ref (`Box<T>` / a separate type) can be added without breaking `T?`.
 3. **Integer overflow** in release: wrapping vs panic. Proposal: wrapping, like LLVM `add`.
-4. **`dyn Trait` in v0, or monomorphization only.** Proposal: monomorphization only until a heterogeneous list is needed.
-5. **Artifact names:** language Q+, crate/compiler `qpc`, runtime `libqplus`, namespace `qplus`.
+4. **Artifact names:** language Q+, crate/compiler `qpc`, runtime `libqplus`, namespace `qplus`.
 
 Invariants: Rust-like surface, `struct`/`impl` as the base, null through `T?`, AOT = C++, WASM from that C++, hot reload = LLVM JIT.
