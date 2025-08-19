@@ -279,6 +279,25 @@ Reading `xs[i]` or `map[key]` panics if the index or key is missing.
 
 ---
 
+## Math
+
+These names are always in scope. They take `f32` (or `f64` if an argument is `f64`):
+
+| | |
+|---|---|
+| unary | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sqrt`, `abs`, `floor`, `ceil`, `exp`, `ln`, `log2` |
+| binary | `atan2`, `fmod`, `pow` |
+
+```qp
+fn hypot(x: f32, y: f32) -> f32 {
+    sqrt(x * x + y * y)
+}
+```
+
+A function you write with the same name wins over the builtin.
+
+---
+
 ## Generics and `trait`
 
 Type parameters go in `<T>`. If `T` appears in the arguments, you can omit it at the call site. Otherwise write it: `id<i32>(1)` or `World.for_each<Transform, Sprite>()`.

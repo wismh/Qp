@@ -225,7 +225,7 @@ impl Vec2 {
     pub const ZERO: Vec2 = Vec2 { x: 0.0, y: 0.0 };
 
     pub fn length(self) -> f32 {
-        (self.x * self.x + self.y * self.y).sqrt()
+        sqrt(self.x * self.x + self.y * self.y)
     }
 
     pub fn add(self, other: Vec2) -> Vec2 {
@@ -369,6 +369,25 @@ fn load(path: string) -> Result<string, string> {
 ```
 
 `?` on `Result` propagates `Err`. `?` on `T?` propagates `null`. Do not mix them in one `fn` unless the return type allows it (`Result<T?, E>`).
+
+### 5.8 Math
+
+The compiler provides float math as free functions. Argument types are `f32` by default; if any argument is `f64`, the call is `f64`. A user `fn` of the same name shadows the builtin.
+
+Unary: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sqrt`, `abs`, `floor`, `ceil`, `exp`, `ln`, `log2`.
+Binary: `atan2`, `fmod`, `pow`.
+
+```qp
+fn hypot(x: f32, y: f32) -> f32 {
+    sqrt(x * x + y * y)
+}
+
+fn wrap(x: f32) -> f32 {
+    fmod(x, 360.0)
+}
+```
+
+There is no separate math package; these names are always in scope.
 
 ---
 
@@ -517,6 +536,7 @@ JIT in debug: panic shows the Q+ stack through LLVM debug info.
 | `match` | `switch` + union accessors |
 | `null` | `nullptr` |
 | `panic` | `qplus::panic(...)` |
+| `sin` / `sqrt` / `fmod` / … | `std::sin` / `std::sqrt` / `std::fmod` / … (`<cmath>`) |
 
 The generator does not use C++ exceptions in the public ABI of Q+ functions.
 
@@ -534,7 +554,7 @@ pub struct Vec2 {
 
 impl Vec2 {
     pub fn length(self) -> f32 {
-        (self.x * self.x + self.y * self.y).sqrt()
+        sqrt(self.x * self.x + self.y * self.y)
     }
 }
 
