@@ -85,6 +85,65 @@ const char* binop_spelling(BinOp op) {
     return "+";
 }
 
+bool is_math_builtin(std::string_view name) {
+    return name == "sin" || name == "cos" || name == "tan" || name == "asin" || name == "acos" ||
+           name == "atan" || name == "atan2" || name == "sqrt" || name == "abs" || name == "floor" ||
+           name == "ceil" || name == "fmod" || name == "pow" || name == "exp" || name == "ln" ||
+           name == "log2";
+}
+
+const char* math_cpp_name(std::string_view name) {
+    if (name == "ln") {
+        return "std::log";
+    }
+    if (name == "sin") {
+        return "std::sin";
+    }
+    if (name == "cos") {
+        return "std::cos";
+    }
+    if (name == "tan") {
+        return "std::tan";
+    }
+    if (name == "asin") {
+        return "std::asin";
+    }
+    if (name == "acos") {
+        return "std::acos";
+    }
+    if (name == "atan") {
+        return "std::atan";
+    }
+    if (name == "atan2") {
+        return "std::atan2";
+    }
+    if (name == "sqrt") {
+        return "std::sqrt";
+    }
+    if (name == "abs") {
+        return "std::abs";
+    }
+    if (name == "floor") {
+        return "std::floor";
+    }
+    if (name == "ceil") {
+        return "std::ceil";
+    }
+    if (name == "fmod") {
+        return "std::fmod";
+    }
+    if (name == "pow") {
+        return "std::pow";
+    }
+    if (name == "exp") {
+        return "std::exp";
+    }
+    if (name == "log2") {
+        return "std::log2";
+    }
+    return "std::sin";
+}
+
 const char* trait_operator(const std::string& trait) {
     if (trait == "Add") {
         return "+";
@@ -378,6 +437,8 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                     out << '(';
                     emit_expr(out, *kind.callee_expr);
                     out << ')';
+                } else if (is_math_builtin(kind.callee)) {
+                    out << math_cpp_name(kind.callee);
                 } else {
                     out << kind.callee;
                     emit_type_args(out, kind.type_args);
@@ -1081,6 +1142,7 @@ std::string emit_header(const HirModule& mod) {
     std::ostringstream header;
     header << "#pragma once\n\n";
     header << "#include <array>\n";
+    header << "#include <cmath>\n";
     header << "#include <cstddef>\n";
     header << "#include <cstdint>\n";
     header << "#include <cstdlib>\n";
