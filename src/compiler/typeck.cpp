@@ -100,6 +100,20 @@ static bool is_ord_op(BinOp op) {
 
 static bool is_logic_op(BinOp op) { return op == BinOp::And || op == BinOp::Or; }
 
+static bool is_unary_math(std::string_view name) {
+    return name == "sin" || name == "cos" || name == "tan" || name == "asin" || name == "acos" ||
+           name == "atan" || name == "sqrt" || name == "abs" || name == "floor" || name == "ceil" ||
+           name == "exp" || name == "ln" || name == "log2";
+}
+
+static bool is_binary_math(std::string_view name) {
+    return name == "atan2" || name == "fmod" || name == "pow";
+}
+
+static bool is_math_builtin(std::string_view name) {
+    return is_unary_math(name) || is_binary_math(name);
+}
+
 static bool is_op_trait(std::string_view name) {
     return name == "Add" || name == "Sub" || name == "Mul" || name == "Div" || name == "Rem" ||
            name == "Neg";
@@ -1478,6 +1492,45 @@ private:
         return fn_ty.args.back();
     }
 
+    Type check_math_builtin(HirCall& call, std::size_t offset) {
+        if (!is_math_builtin(call.callee)) {
+            return Type::unknown();
+        }
+        if (!call.type_args.empty()) {
+            error(offset, "math function '" + call.callee + "' cannot take type arguments");
+            return Type::error();
+        }
+        const std::size_t want = is_binary_math(call.callee) ? 2u : 1u;
+        for (auto& arg : call.args) {
+            check_expr(*arg);
+        }
+        if (call.args.size() != want) {
+            error(offset, "function '" + call.callee + "' expects " + std::to_string(want) +
+                              " argument(s), got " + std::to_string(call.args.size()));
+            return Type::error();
+        }
+        Type result = Type::f32();
+        for (const auto& arg : call.args) {
+            if (arg->ty.kind == TypeKind::F64) {
+                result = Type::f64();
+                break;
+            }
+        }
+        for (auto& arg : call.args) {
+            if (is_float(arg->ty) || arg->ty == Type::error()) {
+                expect_expr(*arg, result, arg->offset, "argument");
+                continue;
+            }
+            if (coerce_lit(*arg, result)) {
+                continue;
+            }
+            error(arg->offset, "argument has type '" + type_name(arg->ty) + "', expected '" +
+                                   type_name(result) + "'");
+            return Type::error();
+        }
+        return result;
+    }
+
     Type check_call(HirCall& call, std::size_t offset) {
         if (call.callee_expr) {
             const Type fn_ty = check_expr(*call.callee_expr);
@@ -1504,6 +1557,10 @@ private:
                     check_expr(*arg);
                 }
                 return Type::error();
+            }
+            const Type math = check_math_builtin(call, offset);
+            if (math.kind != TypeKind::Unknown) {
+                return math;
             }
             error(offset, "unknown function '" + call.callee + "'");
             for (auto& arg : call.args) {
