@@ -567,3 +567,24 @@ TEST(Typeck, DynUnknownTraitIsError) {
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("unknown trait"), std::string::npos);
 }
+
+TEST(Typeck, MathBuiltinsOk) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn hypot(x: f32, y: f32) -> f32 { sqrt(x * x + y * y) }
+        fn wrap(x: f32) -> f32 { fmod(x, 360.0) }
+        fn trig(x: f32) -> f32 { sin(x) + cos(x) + ln(1.0) }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, MathBuiltinWrongTypeIsError) {
+    auto compiled = qpc::test::compile_string("fn f(x: i32) -> f32 { sin(x) }");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("argument"), std::string::npos);
+}
+
+TEST(Typeck, MathBuiltinArityIsError) {
+    auto compiled = qpc::test::compile_string("fn f(x: f32) -> f32 { fmod(x) }");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("expects 2"), std::string::npos);
+}
