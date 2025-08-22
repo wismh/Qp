@@ -409,3 +409,24 @@ add_executable(try_null_host
 target_include_directories(try_null_host PRIVATE ${TRY_NULL_GEN_DIR})
 
 add_test(NAME try_null_host COMMAND try_null_host)
+
+set(MATH_FNS_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_math_fns)
+set(MATH_FNS_GEN_H ${MATH_FNS_GEN_DIR}/math_fns.h)
+set(MATH_FNS_GEN_CPP ${MATH_FNS_GEN_DIR}/math_fns.cpp)
+
+add_custom_command(
+    OUTPUT ${MATH_FNS_GEN_H} ${MATH_FNS_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${MATH_FNS_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/math_fns.qp -o ${MATH_FNS_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/math_fns.qp
+    COMMENT "qpc compile examples/math_fns.qp"
+    VERBATIM
+)
+
+add_executable(math_fns_host
+    examples/math_fns_host/main.cpp
+    ${MATH_FNS_GEN_CPP}
+)
+target_include_directories(math_fns_host PRIVATE ${MATH_FNS_GEN_DIR})
+
+add_test(NAME math_fns_host COMMAND math_fns_host)
