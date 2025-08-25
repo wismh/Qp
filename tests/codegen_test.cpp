@@ -341,3 +341,16 @@ TEST(Codegen, DynTraitVtable) {
     EXPECT_NE(compiled.result.output.source.find("make_dyn_Area("), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("d.area()"), std::string::npos);
 }
+
+TEST(Codegen, MathBuiltinsUseCmath) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn hypot(x: f32, y: f32) -> f32 { sqrt(x * x + y * y) }
+        pub fn wrap(x: f32) -> f32 { fmod(x, 2.0) }
+        pub fn log1() -> f32 { ln(1.0) }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("#include <cmath>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("std::sqrt"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("std::fmod"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("std::log"), std::string::npos);
+}
