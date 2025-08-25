@@ -361,6 +361,8 @@ TEST(Parser, GenericStruct) {
         struct Pair<T> { mut a: T, mut b: T }
         impl Pair<T> {
             fn first(self) -> T { self.a }
+            fn each(self, f: fn(T) -> ()) { f(self.a); }
+            fn zip<U>(self, other: U, f: fn(T, U) -> i32) -> i32 { f(self.a, other) }
         }
         fn make(x: i32) -> Pair<i32> { Pair { a: x, b: x } }
     )");
@@ -368,6 +370,10 @@ TEST(Parser, GenericStruct) {
     ASSERT_EQ(parsed.ast.structs[0].type_params.size(), 1u);
     EXPECT_EQ(parsed.ast.structs[0].type_params[0].name, "T");
     ASSERT_EQ(parsed.ast.impls[0].type_params.size(), 1u);
+    ASSERT_EQ(parsed.ast.impls[0].methods.size(), 3u);
+    EXPECT_EQ(parsed.ast.impls[0].methods[1].params[0].ty.kind, qpc::TypeExpr::Kind::Fn);
+    ASSERT_EQ(parsed.ast.impls[0].methods[2].type_params.size(), 1u);
+    EXPECT_EQ(parsed.ast.impls[0].methods[2].type_params[0].name, "U");
     EXPECT_EQ(parsed.ast.functions[0].return_ty->args.size(), 1u);
 }
 
