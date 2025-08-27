@@ -436,7 +436,7 @@ while y > 0 { y -= 1; }
 
 for i in 0..10 { ... }
 for item in xs { ... }
-for (i, item) in xs.enumerate() { ... }
+for (k, v) in stats { ... }
 
 loop {
     if done { break; }
@@ -450,7 +450,7 @@ match n {
 }
 ```
 
-A `mut x: T` parameter is locally mutable. `mut self` — see §5.3.
+A `mut x: T` parameter is locally mutable. `mut self` — see §5.3. `for (k, v) in dict` binds the key and value; both are immutable. Tuples and `.enumerate()` are not in v0.
 
 ---
 
