@@ -392,6 +392,33 @@ TEST(E2E, CompileClosuresExampleToFiles) {
     EXPECT_NE(header_text.find("using Fn = std::function<T>;"), std::string::npos);
 }
 
+TEST(E2E, CompileEachExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_each";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const auto input = std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "each.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "each.h";
+    const auto source = out_dir / "each.cpp";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    ASSERT_TRUE(std::filesystem::exists(source));
+
+    std::ifstream header_in(header);
+    const std::string header_text((std::istreambuf_iterator<char>(header_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("Fn<void(T)> f"), std::string::npos);
+    EXPECT_NE(header_text.find("template <typename U>"), std::string::npos);
+
+    std::ifstream source_in(source);
+    const std::string source_text((std::istreambuf_iterator<char>(source_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(source_text.find("[&]"), std::string::npos);
+    EXPECT_NE(source_text.find("zip<std::int32_t>"), std::string::npos);
+}
+
 TEST(E2E, CompileRefCaptureExampleToFiles) {
     const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_ref_capture";
     std::filesystem::remove_all(out_dir);

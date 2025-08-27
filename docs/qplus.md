@@ -48,7 +48,7 @@ fn steps(n: i32) -> i32 {
 
 You can omit the type on `let` when the initializer makes it obvious. Parameter types and `->` are required.
 
-Closures are `|x: i32| x + 1`. Capture is by copy. `ref || { n = n + 1 }` captures by reference and can assign to outer `mut` bindings. The type is `fn(i32) -> i32`.
+Closures are `|x: i32| x + 1`. Capture is by copy. `ref || { n = n + 1 }` captures by reference and can assign to outer `mut` bindings. Pass `ref |x: T| { ... }` into a method when the callback should update outer `mut` state. The type is `fn(i32) -> i32`.
 
 ```qp
 fn twice(n: i32) -> i32 {
@@ -331,12 +331,31 @@ impl Pair<T> {
     fn first(self) -> T {
         self.a
     }
+
+    fn each(self, f: fn(T) -> ()) {
+        f(self.a);
+        f(self.b);
+    }
+
+    fn zip<U>(self, other: U, f: fn(T, U) -> i32) -> i32 {
+        f(self.a, other) + f(self.b, other)
+    }
 }
 
 fn make_pair(x: i32, y: i32) -> Pair<i32> {
     Pair { a: x, b: y }
 }
+
+fn sum_each(p: Pair<i32>) -> i32 {
+    let mut s = 0;
+    p.each(ref |x: i32| {
+        s = s + x;
+    });
+    s
+}
 ```
+
+A method may take a `fn(...)` callback. Extra type parameters (`zip<U>`) are inferred from the arguments, including the callback. There are no packs; write several type parameters instead.
 
 A `trait` is a bound on a type, not a class hierarchy.
 
