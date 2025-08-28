@@ -254,6 +254,7 @@ struct StmtWhile {
 
 struct StmtFor {
     std::string name;
+    std::string second;
     ExprPtr iter;
     std::unique_ptr<Block> body;
 };

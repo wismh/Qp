@@ -1163,9 +1163,31 @@ private:
     std::optional<StmtPtr> parse_for() {
         const std::size_t off = peek().offset;
         advance();
-        auto name = take_ident("loop variable");
-        if (!name) {
-            return std::nullopt;
+        std::string name;
+        std::string second;
+        if (consume(TokenKind::LParen)) {
+            auto key = take_ident("loop variable");
+            if (!key) {
+                return std::nullopt;
+            }
+            name = std::move(*key);
+            if (!expect(TokenKind::Comma, "','")) {
+                return std::nullopt;
+            }
+            auto val = take_ident("loop variable");
+            if (!val) {
+                return std::nullopt;
+            }
+            second = std::move(*val);
+            if (!expect(TokenKind::RParen, "')' after loop variables")) {
+                return std::nullopt;
+            }
+        } else {
+            auto ident = take_ident("loop variable");
+            if (!ident) {
+                return std::nullopt;
+            }
+            name = std::move(*ident);
         }
         if (!expect(TokenKind::KwIn, "'in'")) {
             return std::nullopt;
@@ -1178,8 +1200,12 @@ private:
         if (!body) {
             return std::nullopt;
         }
-        return make_stmt(
-            off, StmtFor{std::move(*name), std::move(*iter), std::make_unique<Block>(std::move(*body))});
+        StmtFor loop;
+        loop.name = std::move(name);
+        loop.second = std::move(second);
+        loop.iter = std::move(*iter);
+        loop.body = std::make_unique<Block>(std::move(*body));
+        return make_stmt(off, std::move(loop));
     }
 
     std::optional<StmtPtr> parse_let() {
