@@ -139,6 +139,47 @@ TEST(Typeck, CollectionsOk) {
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
 
+TEST(Typeck, ForDictBindings) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn sum(m: {i32: i32}) -> i32 {
+            let mut s = 0;
+            for (k, v) in m {
+                s = s + k + v;
+            }
+            s
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, ForDictNeedsPair) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn sum(m: {i32: i32}) -> i32 {
+            let mut s = 0;
+            for x in m {
+                s = s + x;
+            }
+            s
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("'(key, value)'"), std::string::npos);
+}
+
+TEST(Typeck, ForPairOnListIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn sum(xs: [i32]) -> i32 {
+            let mut s = 0;
+            for (k, v) in xs {
+                s = s + k;
+            }
+            s
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("binds one variable"), std::string::npos);
+}
+
 TEST(Typeck, OperatorImplAllowsPlus) {
     auto compiled = qpc::test::compile_string(R"(
         struct Point { x: i32, y: i32 }
