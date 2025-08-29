@@ -887,6 +887,10 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
                     out << "; " << kind.name << " < ";
                     emit_expr(out, *range->end);
                     out << "; ++" << kind.name << ") {\n";
+                } else if (!kind.second.empty()) {
+                    out << "    for (const auto& [" << kind.name << ", " << kind.second << "] : ";
+                    emit_expr(out, *kind.iter);
+                    out << ") {\n";
                 } else {
                     out << "    for (const auto& " << kind.name << " : ";
                     emit_expr(out, *kind.iter);
