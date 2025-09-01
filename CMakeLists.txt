@@ -494,6 +494,27 @@ target_include_directories(math_fns_host PRIVATE ${MATH_FNS_GEN_DIR})
 
 add_test(NAME math_fns_host COMMAND math_fns_host)
 
+set(EACH_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_each)
+set(EACH_GEN_H ${EACH_GEN_DIR}/each.h)
+set(EACH_GEN_CPP ${EACH_GEN_DIR}/each.cpp)
+
+add_custom_command(
+    OUTPUT ${EACH_GEN_H} ${EACH_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${EACH_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/each.qp -o ${EACH_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/each.qp
+    COMMENT "qpc compile examples/each.qp"
+    VERBATIM
+)
+
+add_executable(each_host
+    examples/each_host/main.cpp
+    ${EACH_GEN_CPP}
+)
+target_include_directories(each_host PRIVATE ${EACH_GEN_DIR})
+
+add_test(NAME each_host COMMAND each_host)
+
 set(DICT_FOR_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_dict_for)
 set(DICT_FOR_GEN_H ${DICT_FOR_GEN_DIR}/dict_for.h)
 set(DICT_FOR_GEN_CPP ${DICT_FOR_GEN_DIR}/dict_for.cpp)

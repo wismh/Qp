@@ -335,6 +335,34 @@ TEST(Codegen, GenericStructTemplate) {
     EXPECT_NE(compiled.result.output.source.find("Pair<std::int32_t>"), std::string::npos);
 }
 
+TEST(Codegen, GenericMethodRefCallback) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Pair<T> { mut a: T, mut b: T }
+        impl Pair<T> {
+            fn each(self, f: fn(T) -> ()) {
+                f(self.a);
+                f(self.b);
+            }
+            fn zip<U>(self, other: U, f: fn(T, U) -> i32) -> i32 {
+                f(self.a, other) + f(self.b, other)
+            }
+        }
+        fn sum_each(p: Pair<i32>) -> i32 {
+            let mut s = 0;
+            p.each(ref |x: i32| { s = s + x; });
+            s
+        }
+        fn zip_mul(p: Pair<i32>) -> i32 {
+            p.zip(4, |x: i32, y: i32| x * y)
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("Fn<void(T)> f"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("template <typename U>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("[&]"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("zip<std::int32_t>"), std::string::npos);
+}
+
 TEST(Codegen, DynTraitVtable) {
     auto compiled = qpc::test::compile_string(R"(
         trait Area {
