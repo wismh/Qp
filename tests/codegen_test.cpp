@@ -109,6 +109,20 @@ TEST(Codegen, CollectionsAndCEnum) {
     EXPECT_NE(compiled.result.output.source.find(".at("), std::string::npos);
 }
 
+TEST(Codegen, ForDictStructuredBinding) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn sum(m: {i32: i32}) -> i32 {
+            let mut s = 0;
+            for (k, v) in m {
+                s = s + k + v;
+            }
+            s
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("for (const auto& [k, v] : "), std::string::npos);
+}
+
 TEST(Codegen, ExternDeclarations) {
     auto compiled = qpc::test::compile_string(R"(
         extern "C" {

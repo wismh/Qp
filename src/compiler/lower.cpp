@@ -295,6 +295,7 @@ HirStmtPtr lower_stmt(const Source& src, StmtPtr stmt, DiagnosticEngine& diags) 
             } else if constexpr (std::is_same_v<K, StmtFor>) {
                 HirFor f;
                 f.name = std::move(kind.name);
+                f.second = std::move(kind.second);
                 f.iter = lower_expr(src, std::move(kind.iter), diags);
                 auto body = lower_block(src, std::move(*kind.body), diags);
                 f.stmts = std::move(body.stmts);

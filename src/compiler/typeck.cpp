@@ -996,16 +996,33 @@ private:
                 } else if constexpr (std::is_same_v<K, HirFor>) {
                     const Type iter_ty = check_expr(*kind.iter);
                     Type elem = Type::error();
+                    Type value = Type::error();
+                    const bool pair = !kind.second.empty();
                     if (std::holds_alternative<HirRange>(kind.iter->kind)) {
+                        if (pair) {
+                            error(stmt.offset, "for-loop over a range binds one variable");
+                        }
                         elem = iter_ty;
                     } else if (iter_ty.kind == TypeKind::List || iter_ty.kind == TypeKind::Array) {
+                        if (pair) {
+                            error(stmt.offset, "for-loop over a list or array binds one variable");
+                        }
                         elem = iter_ty.elem();
+                    } else if (iter_ty.kind == TypeKind::Dict) {
+                        if (!pair) {
+                            error(stmt.offset, "for-loop over a dict requires '(key, value)'");
+                        }
+                        elem = iter_ty.key();
+                        value = iter_ty.value();
                     } else if (iter_ty != Type::error()) {
-                        error(stmt.offset, "for-loop requires a list, array or range");
+                        error(stmt.offset, "for-loop requires a list, array, dict or range");
                     }
                     ++loop_depth_;
                     push_scope();
                     declare(kind.name, Binding{elem, false}, stmt.offset);
+                    if (pair) {
+                        declare(kind.second, Binding{value, false}, stmt.offset);
+                    }
                     for (auto& s : kind.stmts) {
                         check_stmt(*s);
                     }
