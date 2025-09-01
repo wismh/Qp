@@ -345,21 +345,10 @@ impl Pair<T> {
     fn first(self) -> T {
         self.a
     }
-
-    fn each(self, f: fn(T) -> ()) {
-        f(self.a);
-        f(self.b);
-    }
-
-    fn zip<U>(self, other: U, f: fn(T, U) -> i32) -> i32 {
-        f(self.a, other) + f(self.b, other)
-    }
 }
 ```
 
 A generic `struct` is monomorphized (`template <typename T> struct Pair`). Write `Pair<i32>` in types. A literal `Pair { a: 1, b: 2 }` infers `T` from the fields; `Pair<i32> { a: 1, b: 2 }` is explicit.
-
-A method may take a callback `fn(...)`. Extra type parameters on the method (`zip<U>`) are inferred from the arguments, including from the callback's `fn` type. There are no C++-style packs; several type parameters is the v0 form of "variadic".
 
 Monomorphization in C++ (templates) and in the LLVM JIT (a copy of the function per type set). Dynamic dispatch: `dyn Trait` is a fat pointer `(data*, vtable*)`. A value of a type that `impl`s the trait coerces to `dyn Trait` at an expected type (arguments, returns, `let` annotations). v0 only dispatches `self` methods, not `mut self`. The payload is copied onto the Q+ heap so the fat pointer stays valid after the call.
 
@@ -447,7 +436,7 @@ while y > 0 { y -= 1; }
 
 for i in 0..10 { ... }
 for item in xs { ... }
-for (i, item) in xs.enumerate() { ... }
+for (k, v) in stats { ... }
 
 loop {
     if done { break; }
@@ -461,7 +450,7 @@ match n {
 }
 ```
 
-A `mut x: T` parameter is locally mutable. `mut self` — see §5.3.
+A `mut x: T` parameter is locally mutable. `mut self` — see §5.3. `for (k, v) in dict` binds the key and value; both are immutable. Tuples and `.enumerate()` are not in v0.
 
 ---
 
@@ -526,13 +515,9 @@ let f: fn(i32) -> i32 = |x: i32| x + 1;
 let k = || 1;
 add(1, 2);
 (|x: i32| x + 1)(3);
-
-let mut s = 0;
-p.each(ref |x: i32| { s = s + x; });
-p.zip(4, |x: i32, y: i32| x * y);
 ```
 
-Parameter types are required. Capture is by copy (`[=]` in C++). `ref |...|` captures by reference (`[&]`) so the closure can assign to outer `mut` bindings. Pass a `ref` closure into a method when the callback must mutate outer `mut` bindings. The type is `fn(T, U) -> R`, mapped to `qplus::Fn<R(T, U)>` (`std::function`).
+Parameter types are required. Capture is by copy (`[=]` in C++). `ref |...|` captures by reference (`[&]`) so the closure can assign to outer `mut` bindings. The type is `fn(T, U) -> R`, mapped to `qplus::Fn<R(T, U)>` (`std::function`).
 
 ---
 

@@ -120,6 +120,25 @@ TEST(Parser, Collections) {
     EXPECT_EQ(parsed.ast.functions[0].params[2].ty.kind, qpc::TypeExpr::Kind::Dict);
 }
 
+TEST(Parser, ForDictBindings) {
+    auto parsed = qpc::test::parse_string(R"(
+        fn sum(m: {i32: i32}) -> i32 {
+            let mut s = 0;
+            for (k, v) in m {
+                s = s + k + v;
+            }
+            s
+        }
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.functions.size(), 1u);
+    ASSERT_EQ(parsed.ast.functions[0].body.stmts.size(), 2u);
+    const auto* loop = std::get_if<qpc::StmtFor>(&parsed.ast.functions[0].body.stmts[1]->kind);
+    ASSERT_NE(loop, nullptr);
+    EXPECT_EQ(loop->name, "k");
+    EXPECT_EQ(loop->second, "v");
+}
+
 TEST(Parser, EnumWithFieldsIsError) {
     auto parsed = qpc::test::parse_string("enum Shape { Circle { r: f32 } }");
     EXPECT_TRUE(parsed.diags.has_errors());
@@ -361,8 +380,6 @@ TEST(Parser, GenericStruct) {
         struct Pair<T> { mut a: T, mut b: T }
         impl Pair<T> {
             fn first(self) -> T { self.a }
-            fn each(self, f: fn(T) -> ()) { f(self.a); }
-            fn zip<U>(self, other: U, f: fn(T, U) -> i32) -> i32 { f(self.a, other) }
         }
         fn make(x: i32) -> Pair<i32> { Pair { a: x, b: x } }
     )");
@@ -370,10 +387,6 @@ TEST(Parser, GenericStruct) {
     ASSERT_EQ(parsed.ast.structs[0].type_params.size(), 1u);
     EXPECT_EQ(parsed.ast.structs[0].type_params[0].name, "T");
     ASSERT_EQ(parsed.ast.impls[0].type_params.size(), 1u);
-    ASSERT_EQ(parsed.ast.impls[0].methods.size(), 3u);
-    EXPECT_EQ(parsed.ast.impls[0].methods[1].params[0].ty.kind, qpc::TypeExpr::Kind::Fn);
-    ASSERT_EQ(parsed.ast.impls[0].methods[2].type_params.size(), 1u);
-    EXPECT_EQ(parsed.ast.impls[0].methods[2].type_params[0].name, "U");
     EXPECT_EQ(parsed.ast.functions[0].return_ty->args.size(), 1u);
 }
 

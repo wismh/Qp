@@ -48,7 +48,7 @@ fn steps(n: i32) -> i32 {
 
 You can omit the type on `let` when the initializer makes it obvious. Parameter types and `->` are required.
 
-Closures are `|x: i32| x + 1`. Capture is by copy. `ref || { n = n + 1 }` captures by reference and can assign to outer `mut` bindings. Pass `ref |x: T| { ... }` into a method when the callback should update outer `mut` state. The type is `fn(i32) -> i32`.
+Closures are `|x: i32| x + 1`. Capture is by copy. `ref || { n = n + 1 }` captures by reference and can assign to outer `mut` bindings. The type is `fn(i32) -> i32`.
 
 ```qp
 fn twice(n: i32) -> i32 {
@@ -178,9 +178,17 @@ fn sum_list(xs: [i32]) -> i32 {
     }
     s
 }
+
+fn sum_map(m: {i32: i32}) -> i32 {
+    let mut s = 0;
+    for (k, v) in m {
+        s = s + k + v;
+    }
+    s
+}
 ```
 
-`0..5` is a half-open range: `0, 1, 2, 3, 4`. Loops may use `break` and `continue`.
+`0..5` is a half-open range: `0, 1, 2, 3, 4`. Loops may use `break` and `continue`. `for (k, v) in dict` walks a dictionary.
 
 ---
 
@@ -278,6 +286,10 @@ let xs: [i32] = [1, 2, 3];           // list
 let buf: [i32; 2] = [10, 20];        // fixed-size array
 let hp: i32 = stats["hp"];           // dictionary
 let stats: {string: i32} = {"hp": 7};
+let mut total = 0;
+for (k, v) in stats {
+    total = total + v;
+}
 ```
 
 | Syntax | Meaning |
@@ -286,7 +298,7 @@ let stats: {string: i32} = {"hp": 7};
 | `[T; N]` | array of `N` elements |
 | `{K: V}` | dictionary |
 
-Reading `xs[i]` or `map[key]` panics if the index or key is missing.
+Reading `xs[i]` or `map[key]` panics if the index or key is missing. Walk a dict with `for (k, v) in map`.
 
 ---
 
@@ -331,31 +343,12 @@ impl Pair<T> {
     fn first(self) -> T {
         self.a
     }
-
-    fn each(self, f: fn(T) -> ()) {
-        f(self.a);
-        f(self.b);
-    }
-
-    fn zip<U>(self, other: U, f: fn(T, U) -> i32) -> i32 {
-        f(self.a, other) + f(self.b, other)
-    }
 }
 
 fn make_pair(x: i32, y: i32) -> Pair<i32> {
     Pair { a: x, b: y }
 }
-
-fn sum_each(p: Pair<i32>) -> i32 {
-    let mut s = 0;
-    p.each(ref |x: i32| {
-        s = s + x;
-    });
-    s
-}
 ```
-
-A method may take a `fn(...)` callback. Extra type parameters (`zip<U>`) are inferred from the arguments, including the callback. There are no packs; write several type parameters instead.
 
 A `trait` is a bound on a type, not a class hierarchy.
 
@@ -535,6 +528,6 @@ Examples live in [`examples/`](../examples/).
 These are in the language design, but do not use them yet:
 
 - a separate package system / a JIT or WASM backend of its own
-- string interpolation, tuples `(A, B)`, `Result`
+- string interpolation, tuples `(A, B)`, `Result`, `xs.enumerate()`
 
 There is no borrow checker, no classes, and no C++ exceptions in the Q+ public ABI.

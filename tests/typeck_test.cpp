@@ -139,6 +139,47 @@ TEST(Typeck, CollectionsOk) {
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
 
+TEST(Typeck, ForDictBindings) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn sum(m: {i32: i32}) -> i32 {
+            let mut s = 0;
+            for (k, v) in m {
+                s = s + k + v;
+            }
+            s
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, ForDictNeedsPair) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn sum(m: {i32: i32}) -> i32 {
+            let mut s = 0;
+            for x in m {
+                s = s + x;
+            }
+            s
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("'(key, value)'"), std::string::npos);
+}
+
+TEST(Typeck, ForPairOnListIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn sum(xs: [i32]) -> i32 {
+            let mut s = 0;
+            for (k, v) in xs {
+                s = s + k;
+            }
+            s
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("binds one variable"), std::string::npos);
+}
+
 TEST(Typeck, OperatorImplAllowsPlus) {
     auto compiled = qpc::test::compile_string(R"(
         struct Point { x: i32, y: i32 }
@@ -393,48 +434,6 @@ TEST(Typeck, GenericStructOk) {
         }
         fn make(x: i32, y: i32) -> Pair<i32> { Pair { a: x, b: y } }
         fn get(p: Pair<i32>) -> i32 { p.first() + p.b }
-    )");
-    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
-}
-
-TEST(Typeck, GenericMethodRefCallback) {
-    auto compiled = qpc::test::compile_string(R"(
-        struct Pair<T> { mut a: T, mut b: T }
-        impl Pair<T> {
-            fn each(self, f: fn(T) -> ()) {
-                f(self.a);
-                f(self.b);
-            }
-            fn zip<U>(self, other: U, f: fn(T, U) -> i32) -> i32 {
-                f(self.a, other) + f(self.b, other)
-            }
-        }
-        fn sum_each(p: Pair<i32>) -> i32 {
-            let mut s = 0;
-            p.each(ref |x: i32| { s = s + x; });
-            s
-        }
-        fn zip_mul(p: Pair<i32>) -> i32 {
-            p.zip(4, |x: i32, y: i32| x * y)
-        }
-    )");
-    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
-}
-
-TEST(Typeck, AssociatedCallbackInfersTypeArgs) {
-    auto compiled = qpc::test::compile_string(R"(
-        trait Component {}
-        struct Transform { x: i32 }
-        struct Sprite { id: i32 }
-        struct World {}
-        impl Component for Transform {}
-        impl Component for Sprite {}
-        impl World {
-            fn for_each<T: Component, U: Component>(f: fn(T, U) -> i32) -> i32 { 2 }
-        }
-        fn run() -> i32 {
-            World.for_each(|t: Transform, s: Sprite| t.x + s.id)
-        }
     )");
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }

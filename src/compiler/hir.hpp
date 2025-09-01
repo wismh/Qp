@@ -259,6 +259,7 @@ struct HirWhile {
 
 struct HirFor {
     std::string name;
+    std::string second;
     HirExprPtr iter;
     std::vector<HirStmtPtr> stmts;
     HirExprPtr tail;
