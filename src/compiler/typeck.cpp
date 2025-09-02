@@ -1177,23 +1177,20 @@ private:
 
     bool unify_type(const Type& pattern, const Type& actual, const std::vector<HirTypeParam>& tps,
                     std::unordered_map<std::string, Type>& mapping) {
-        if (pattern.kind == TypeKind::Named && is_generic_param(tps, pattern.name)) {
-            auto it = mapping.find(pattern.name);
-            if (it == mapping.end()) {
-                if (actual.kind == TypeKind::Unknown || actual.kind == TypeKind::Error) {
-                    return false;
-                }
-                mapping[pattern.name] = actual;
-                return true;
+        const Type pat = subst_type(pattern, mapping);
+        if (pat.kind == TypeKind::Named && is_generic_param(tps, pat.name)) {
+            if (actual.kind == TypeKind::Unknown || actual.kind == TypeKind::Error) {
+                return false;
             }
-            return it->second == actual;
+            mapping[pat.name] = actual;
+            return true;
         }
-        if (pattern.kind != actual.kind || pattern.name != actual.name || pattern.size != actual.size ||
-            pattern.args.size() != actual.args.size()) {
+        if (pat.kind != actual.kind || pat.name != actual.name || pat.size != actual.size ||
+            pat.args.size() != actual.args.size()) {
             return false;
         }
-        for (std::size_t i = 0; i < pattern.args.size(); ++i) {
-            if (!unify_type(pattern.args[i], actual.args[i], tps, mapping)) {
+        for (std::size_t i = 0; i < pat.args.size(); ++i) {
+            if (!unify_type(pat.args[i], actual.args[i], tps, mapping)) {
                 return false;
             }
         }

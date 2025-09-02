@@ -1,0 +1,29 @@
+pub struct Pair<T> {
+    mut a: T,
+    mut b: T,
+}
+
+impl Pair<T> {
+    pub fn each(self, f: fn(T) -> ()) {
+        f(self.a);
+        f(self.b);
+    }
+
+    pub fn zip<U>(self, other: U, f: fn(T, U) -> i32) -> i32 {
+        f(self.a, other) + f(self.b, other)
+    }
+}
+
+pub fn sum_each() -> i32 {
+    let p = Pair { a: 2, b: 3 };
+    let mut s = 0;
+    p.each(ref |x: i32| {
+        s = s + x;
+    });
+    s
+}
+
+pub fn zip_mul() -> i32 {
+    let p = Pair { a: 2, b: 3 };
+    p.zip(4, |x: i32, y: i32| x * y)
+}

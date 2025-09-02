@@ -438,6 +438,48 @@ TEST(Typeck, GenericStructOk) {
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
 
+TEST(Typeck, GenericMethodRefCallback) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Pair<T> { mut a: T, mut b: T }
+        impl Pair<T> {
+            fn each(self, f: fn(T) -> ()) {
+                f(self.a);
+                f(self.b);
+            }
+            fn zip<U>(self, other: U, f: fn(T, U) -> i32) -> i32 {
+                f(self.a, other) + f(self.b, other)
+            }
+        }
+        fn sum_each(p: Pair<i32>) -> i32 {
+            let mut s = 0;
+            p.each(ref |x: i32| { s = s + x; });
+            s
+        }
+        fn zip_mul(p: Pair<i32>) -> i32 {
+            p.zip(4, |x: i32, y: i32| x * y)
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, AssociatedCallbackInfersTypeArgs) {
+    auto compiled = qpc::test::compile_string(R"(
+        trait Component {}
+        struct Transform { x: i32 }
+        struct Sprite { id: i32 }
+        struct World {}
+        impl Component for Transform {}
+        impl Component for Sprite {}
+        impl World {
+            fn for_each<T: Component, U: Component>(f: fn(T, U) -> i32) -> i32 { 2 }
+        }
+        fn run() -> i32 {
+            World.for_each(|t: Transform, s: Sprite| t.x + s.id)
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
 TEST(Typeck, GenericStructNeedsArgs) {
     auto compiled = qpc::test::compile_string(R"(
         struct Pair<T> { a: T, b: T }
