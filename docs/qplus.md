@@ -465,8 +465,9 @@ Rules:
 - both files at once is an error
 - nested `mod vec;` inside `math` looks for `math/vec.qp` or `math/vec/mod.qp`
 - `use math::min;` or `use math::*;`
+- inside a nested module, types use their short name (`World`); from outside write `ecs::World` or `use ecs::World` / `use ecs::*`
 
-Example: [`examples/mods.qp`](../examples/mods.qp).
+Example: [`examples/mods.qp`](../examples/mods.qp). Nested module types: [`examples/mod_types.qp`](../examples/mod_types.qp).
 
 ---
 
