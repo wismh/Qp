@@ -1498,7 +1498,11 @@ private:
         }
         ExprStructLit lit;
         if (!path.empty()) {
-            lit.name = path.size() == 1 ? path[0] : path[0];
+            lit.name = path[0];
+            for (std::size_t i = 1; i < path.size(); ++i) {
+                lit.name += "::";
+                lit.name += path[i];
+            }
         }
         lit.path = std::move(path);
         lit.type_args = std::move(type_args);
