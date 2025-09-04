@@ -671,3 +671,31 @@ TEST(Typeck, MathBuiltinArityIsError) {
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("expects 2"), std::string::npos);
 }
+
+TEST(Typeck, NestedModuleTypesResolve) {
+    auto compiled = qpc::test::compile_string(R"(
+        mod ecs {
+            pub struct Id { v: i32 }
+            pub struct World { mut id: i32, tag: Id }
+            impl World {
+                fn get_id(self) -> i32 { self.id + self.tag.v }
+            }
+            pub fn make() -> World { World { id: 1, tag: Id { v: 2 } } }
+        }
+        use ecs::*;
+        fn run() -> i32 {
+            make().get_id()
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, NestedModulePathType) {
+    auto compiled = qpc::test::compile_string(R"(
+        mod ecs {
+            pub struct World { id: i32 }
+        }
+        fn run(w: ecs::World) -> i32 { w.id }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
