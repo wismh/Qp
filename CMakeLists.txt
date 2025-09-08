@@ -535,3 +535,26 @@ add_executable(dict_for_host
 target_include_directories(dict_for_host PRIVATE ${DICT_FOR_GEN_DIR})
 
 add_test(NAME dict_for_host COMMAND dict_for_host)
+
+set(MOD_TYPES_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_mod_types)
+set(MOD_TYPES_GEN_H ${MOD_TYPES_GEN_DIR}/mod_types.h)
+set(MOD_TYPES_GEN_CPP ${MOD_TYPES_GEN_DIR}/mod_types.cpp)
+
+add_custom_command(
+    OUTPUT ${MOD_TYPES_GEN_H} ${MOD_TYPES_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${MOD_TYPES_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/mod_types.qp -o ${MOD_TYPES_GEN_DIR}
+    DEPENDS qpc
+        ${CMAKE_SOURCE_DIR}/examples/mod_types.qp
+        ${CMAKE_SOURCE_DIR}/examples/ecs.qp
+    COMMENT "qpc compile examples/mod_types.qp"
+    VERBATIM
+)
+
+add_executable(mod_types_host
+    examples/mod_types_host/main.cpp
+    ${MOD_TYPES_GEN_CPP}
+)
+target_include_directories(mod_types_host PRIVATE ${MOD_TYPES_GEN_DIR})
+
+add_test(NAME mod_types_host COMMAND mod_types_host)
