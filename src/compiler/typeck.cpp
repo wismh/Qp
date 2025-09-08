@@ -126,13 +126,15 @@ public:
         : current_src_(&src), mod_(mod), diags_(diags) {}
 
     void run() {
-        collect_tree(mod_, "");
+        collect_names(mod_, "");
+        collect_type_details(mod_, "");
         apply_uses(mod_, "");
         if (diags_.has_errors()) {
             return;
         }
+        collect_sigs_tree(mod_, "");
         push_scope();
-        check_tree(mod_);
+        check_tree(mod_, "");
         pop_scope();
     }
 
@@ -140,6 +142,8 @@ private:
     const Source* current_src_;
     HirModule& mod_;
     DiagnosticEngine& diags_;
+    std::string current_prefix_;
+    std::unordered_map<std::string, std::string> type_aliases_;
     std::unordered_map<std::string, StructInfo> structs_;
     std::unordered_map<std::string, CEnumInfo> c_enums_;
     std::unordered_map<std::string, EnumInfo> variants_;
@@ -169,6 +173,49 @@ private:
         }
         ~SrcGuard() { slot = prev; }
     };
+
+    struct PrefixGuard {
+        std::string& slot;
+        std::string prev;
+        PrefixGuard(std::string& s, std::string next) : slot(s), prev(std::move(s)) {
+            slot = std::move(next);
+        }
+        ~PrefixGuard() { slot = std::move(prev); }
+    };
+
+    static std::string qualify(const std::string& prefix, const std::string& name) {
+        return prefix.empty() ? name : prefix + "::" + name;
+    }
+
+    static bool name_has_path(const std::string& name) {
+        return name.find("::") != std::string::npos;
+    }
+
+    bool is_registered_named(const std::string& name) const {
+        return structs_.contains(name) || variants_.contains(name) || c_enums_.contains(name) ||
+               traits_.contains(name);
+    }
+
+    std::string lookup_named(const std::string& name) const {
+        if (!name_has_path(name) && !current_prefix_.empty()) {
+            const auto q = qualify(current_prefix_, name);
+            if (is_registered_named(q)) {
+                return q;
+            }
+        }
+        if (is_registered_named(name)) {
+            return name;
+        }
+        if (auto it = type_aliases_.find(name); it != type_aliases_.end()) {
+            return it->second;
+        }
+        return name;
+    }
+
+    bool known_named_type(const std::string& name) const {
+        const auto key = lookup_named(name);
+        return structs_.contains(key) || variants_.contains(key) || c_enums_.contains(key);
+    }
 
     bool resolve_type(Type& ty, std::size_t offset) {
         if (ty.kind == TypeKind::List || ty.kind == TypeKind::Array || ty.kind == TypeKind::Nullable) {
@@ -202,11 +249,13 @@ private:
             return ok;
         }
         if (ty.kind == TypeKind::Dyn) {
-            if (!traits_.contains(ty.name)) {
+            const auto key = lookup_named(ty.name);
+            if (!traits_.contains(key)) {
                 error(offset, "unknown trait '" + ty.name + "'");
                 ty = Type::error();
                 return false;
             }
+            ty.name = key;
             return true;
         }
         if (ty.kind != TypeKind::Named) {
@@ -220,7 +269,9 @@ private:
             }
             return true;
         }
-        if (auto it = structs_.find(ty.name); it != structs_.end()) {
+        const auto key = lookup_named(ty.name);
+        if (auto it = structs_.find(key); it != structs_.end()) {
+            ty.name = key;
             const auto& tps = it->second.type_params;
             if (tps.empty()) {
                 if (!ty.args.empty()) {
@@ -242,11 +293,12 @@ private:
             }
             return ok;
         }
-        if (!variants_.contains(ty.name) && !c_enums_.contains(ty.name)) {
+        if (!variants_.contains(key) && !c_enums_.contains(key)) {
             error(offset, "unknown type '" + ty.name + "'");
             ty = Type::error();
             return false;
         }
+        ty.name = key;
         if (!ty.args.empty()) {
             error(offset, "type '" + ty.name + "' does not take type arguments");
             ty = Type::error();
@@ -277,19 +329,14 @@ private:
         if (ty.kind != TypeKind::Named) {
             return nullptr;
         }
-        auto it = structs_.find(ty.name);
+        auto it = structs_.find(lookup_named(ty.name));
         return it == structs_.end() ? nullptr : &it->second;
     }
 
-    static std::string qualify(const std::string& prefix, const std::string& name) {
-        return prefix.empty() ? name : prefix + "::" + name;
-    }
-
-    void collect_tree(HirModule& m, const std::string& prefix) {
+    void collect_names(HirModule& m, const std::string& prefix) {
         SrcGuard src_guard(current_src_, m.source);
         for (auto& tr : m.traits) {
             traits_.insert(qualify(prefix, tr.name));
-            traits_.insert(tr.name);
         }
         for (auto& en : m.enums) {
             const auto name = qualify(prefix, en.name);
@@ -298,9 +345,6 @@ private:
                 continue;
             }
             c_enums_.emplace(name, CEnumInfo{{}, en.offset});
-            if (!prefix.empty()) {
-                c_enums_.emplace(en.name, CEnumInfo{{}, en.offset});
-            }
         }
         for (auto& var : m.variants) {
             const auto name = qualify(prefix, var.name);
@@ -318,46 +362,84 @@ private:
             }
             structs_.emplace(name, StructInfo{{}, st.type_params, st.offset, st.opaque});
         }
-
-        if (prefix.empty()) {
-            collect_c_enums();
-            collect_variants();
-            collect_structs();
-        } else {
-            for (auto& st : m.structs) {
-                auto it = structs_.find(qualify(prefix, st.name));
-                if (it == structs_.end()) {
-                    continue;
-                }
-                it->second.opaque = st.opaque;
-                it->second.type_params = st.type_params;
-                if (st.opaque) {
-                    continue;
-                }
-                generic_params_.clear();
-                for (const auto& tp : st.type_params) {
-                    generic_params_.insert(tp.name);
-                }
-                for (auto& field : st.fields) {
-                    resolve_type(field.ty, field.offset);
-                    it->second.fields.emplace_back(field.name, FieldInfo{field.mut, field.ty, field.offset});
-                }
-                generic_params_.clear();
-            }
-        }
-
-        collect_sigs_of(m, prefix);
-        collect_trait_methods_of(m, prefix);
-        collect_methods_of(m, prefix);
-
-        for (auto& st : m.statics) {
-            if (st.ty.kind != TypeKind::Unknown) {
-                resolve_type(st.ty, st.offset);
-            }
-        }
-
         for (auto& child : m.mods) {
-            collect_tree(child, qualify(prefix, child.name));
+            collect_names(child, qualify(prefix, child.name));
+        }
+    }
+
+    void collect_type_details(HirModule& m, const std::string& prefix) {
+        SrcGuard src_guard(current_src_, m.source);
+        for (auto& child : m.mods) {
+            collect_type_details(child, qualify(prefix, child.name));
+        }
+
+        PrefixGuard prefix_guard(current_prefix_, prefix);
+
+        for (auto& en : m.enums) {
+            auto it = c_enums_.find(qualify(prefix, en.name));
+            if (it == c_enums_.end() || it->second.offset != en.offset) {
+                continue;
+            }
+            CEnumInfo& info = it->second;
+            for (std::size_t i = 0; i < en.members.size(); ++i) {
+                auto& member = en.members[i];
+                if (find_member(info, member.name)) {
+                    error(member.offset, "duplicate enum member '" + member.name + "'");
+                    continue;
+                }
+                info.members.emplace_back(member.name,
+                                          CEnumMemberInfo{member.value, i, member.offset});
+            }
+        }
+
+        for (auto& en : m.variants) {
+            auto it = variants_.find(qualify(prefix, en.name));
+            if (it == variants_.end() || it->second.offset != en.offset) {
+                continue;
+            }
+            EnumInfo& info = it->second;
+            for (std::size_t i = 0; i < en.variants.size(); ++i) {
+                auto& variant = en.variants[i];
+                if (find_variant(info, variant.name)) {
+                    error(variant.offset, "duplicate variant '" + variant.name + "'");
+                    continue;
+                }
+                VariantInfo vi;
+                vi.tuple = variant.tuple;
+                vi.index = i;
+                vi.offset = variant.offset;
+                for (auto& field : variant.fields) {
+                    resolve_type(field.ty, field.offset);
+                    vi.fields.emplace_back(field.name, FieldInfo{field.mut, field.ty, field.offset});
+                }
+                info.variants.emplace_back(variant.name, std::move(vi));
+            }
+        }
+
+        for (auto& st : m.structs) {
+            auto it = structs_.find(qualify(prefix, st.name));
+            if (it == structs_.end() || it->second.offset != st.offset) {
+                continue;
+            }
+            StructInfo& info = it->second;
+            info.opaque = st.opaque;
+            info.type_params = st.type_params;
+            if (st.opaque) {
+                continue;
+            }
+            generic_params_.clear();
+            for (const auto& tp : st.type_params) {
+                generic_params_.insert(tp.name);
+            }
+            for (auto& field : st.fields) {
+                if (find_field(info, field.name)) {
+                    error(field.offset, "duplicate field '" + field.name + "'");
+                    continue;
+                }
+                resolve_type(field.ty, field.offset);
+                info.fields.emplace_back(field.name, FieldInfo{field.mut, field.ty, field.offset});
+            }
+            generic_params_.clear();
         }
     }
 
@@ -376,8 +458,23 @@ private:
                     head += u.path[i];
                 }
                 const std::string pfx = head + "::";
+                auto alias_types = [&](const auto& map) {
+                    for (const auto& [k, v] : map) {
+                        (void)v;
+                        if (k.rfind(pfx, 0) == 0) {
+                            const auto short_name = k.substr(pfx.size());
+                            if (!short_name.empty() && short_name.find("::") == std::string::npos) {
+                                type_aliases_.emplace(short_name, k);
+                            }
+                        }
+                    }
+                };
+                alias_types(structs_);
+                alias_types(c_enums_);
+                alias_types(variants_);
                 auto alias_map = [&](auto& map) {
-                    std::vector<std::pair<std::string, typename std::decay_t<decltype(map)>::mapped_type>> extra;
+                    std::vector<std::pair<std::string, typename std::decay_t<decltype(map)>::mapped_type>>
+                        extra;
                     for (auto& [k, v] : map) {
                         if (k.rfind(pfx, 0) == 0) {
                             extra.emplace_back(k.substr(pfx.size()), v);
@@ -387,10 +484,7 @@ private:
                         map.emplace(e.first, e.second);
                     }
                 };
-                alias_map(structs_);
                 alias_map(sigs_);
-                alias_map(c_enums_);
-                alias_map(variants_);
                 continue;
             }
             std::string full;
@@ -401,20 +495,14 @@ private:
                 full += u.path[i];
             }
             const std::string last = u.path.back();
-            if (auto it = structs_.find(full); it != structs_.end()) {
-                structs_.emplace(last, it->second);
+            if (structs_.contains(full) || c_enums_.contains(full) || variants_.contains(full)) {
+                type_aliases_.emplace(last, full);
             }
             if (auto it = sigs_.find(full); it != sigs_.end()) {
                 sigs_.emplace(last, it->second);
             }
             if (auto it = methods_.find(full); it != methods_.end()) {
                 methods_.emplace(last, it->second);
-            }
-            if (auto it = c_enums_.find(full); it != c_enums_.end()) {
-                c_enums_.emplace(last, it->second);
-            }
-            if (auto it = variants_.find(full); it != variants_.end()) {
-                variants_.emplace(last, it->second);
             }
             if (auto it = traits_.find(full); it != traits_.end()) {
                 traits_.insert(last);
@@ -425,8 +513,25 @@ private:
         }
     }
 
-    void check_tree(HirModule& m) {
+    void collect_sigs_tree(HirModule& m, const std::string& prefix) {
         SrcGuard src_guard(current_src_, m.source);
+        PrefixGuard prefix_guard(current_prefix_, prefix);
+        collect_sigs_of(m, prefix);
+        collect_trait_methods_of(m, prefix);
+        collect_methods_of(m, prefix);
+        for (auto& st : m.statics) {
+            if (st.ty.kind != TypeKind::Unknown) {
+                resolve_type(st.ty, st.offset);
+            }
+        }
+        for (auto& child : m.mods) {
+            collect_sigs_tree(child, qualify(prefix, child.name));
+        }
+    }
+
+    void check_tree(HirModule& m, const std::string& prefix) {
+        SrcGuard src_guard(current_src_, m.source);
+        PrefixGuard prefix_guard(current_prefix_, prefix);
         for (auto& st : m.statics) {
             if (st.ty.kind != TypeKind::Unknown) {
                 resolve_type(st.ty, st.offset);
@@ -465,7 +570,7 @@ private:
             }
         }
         for (auto& child : m.mods) {
-            check_tree(child);
+            check_tree(child, qualify(prefix, child.name));
         }
     }
 
@@ -536,13 +641,19 @@ private:
     void collect_methods_of(HirModule& m, const std::string& prefix) {
         for (auto& impl : m.impls) {
             const auto type_name = qualify(prefix, impl.type_name);
-            const bool known = structs_.contains(type_name) || structs_.contains(impl.type_name) ||
-                               variants_.contains(type_name) || c_enums_.contains(type_name);
+            const auto resolved = lookup_named(impl.type_name);
+            const bool known = structs_.contains(type_name) || structs_.contains(resolved) ||
+                               variants_.contains(type_name) || variants_.contains(resolved) ||
+                               c_enums_.contains(type_name) || c_enums_.contains(resolved);
             if (!known) {
                 error(impl.offset, "impl for unknown type '" + impl.type_name + "'");
                 continue;
             }
-            if (auto st = structs_.find(impl.type_name); st != structs_.end()) {
+            const std::string method_key = structs_.contains(type_name) || variants_.contains(type_name) ||
+                                                   c_enums_.contains(type_name)
+                                               ? type_name
+                                               : resolved;
+            if (auto st = structs_.find(method_key); st != structs_.end()) {
                 const auto& st_tps = st->second.type_params;
                 if (st_tps.empty()) {
                     if (!impl.type_params.empty()) {
@@ -563,12 +674,16 @@ private:
             }
             if (impl.trait_name) {
                 const auto& trait = *impl.trait_name;
-                if (!is_op_trait(trait) && !traits_.contains(trait)) {
+                const auto trait_key = lookup_named(trait);
+                if (!is_op_trait(trait) && !traits_.contains(trait_key) && !traits_.contains(trait)) {
                     error(impl.offset, "unknown trait '" + trait + "'");
                     continue;
                 }
-                trait_impls_[impl.type_name].insert(trait);
-                if (is_op_trait(trait) && !traits_.contains(trait)) {
+                trait_impls_[method_key].insert(trait);
+                if (!prefix.empty()) {
+                    trait_impls_[impl.type_name].insert(trait);
+                }
+                if (is_op_trait(trait) && !traits_.contains(trait) && !traits_.contains(trait_key)) {
                     if (impl.methods.size() != 1) {
                         error(impl.offset, "operator impl '" + trait + "' needs one method");
                         continue;
@@ -595,13 +710,16 @@ private:
                         resolve_type(p.ty, p.offset);
                         sig.params.push_back(p.ty);
                     }
-                    auto& table = op_impls_[impl.type_name];
+                    auto& table = op_impls_[method_key];
                     if (table.contains(trait)) {
                         error(impl.offset, "duplicate impl " + trait + " for '" + impl.type_name + "'");
                         continue;
                     }
                     generic_params_.clear();
-                    table.emplace(trait, std::move(sig));
+                    table.emplace(trait, sig);
+                    if (!prefix.empty()) {
+                        op_impls_[impl.type_name].emplace(trait, std::move(sig));
+                    }
                 }
                 if (is_op_trait(trait)) {
                     continue;
@@ -609,7 +727,7 @@ private:
                 check_trait_impl(impl, trait);
             }
 
-            auto& table = methods_[impl.type_name];
+            auto& table = methods_[method_key];
             for (auto& method : impl.methods) {
                 if (table.contains(method.name)) {
                     error(method.offset, "duplicate method '" + method.name + "'");
@@ -634,13 +752,19 @@ private:
                     sig.params.push_back(p.ty);
                 }
                 generic_params_.clear();
-                table.emplace(method.name, std::move(sig));
+                table.emplace(method.name, sig);
+                if (!prefix.empty()) {
+                    methods_[impl.type_name].emplace(method.name, std::move(sig));
+                }
             }
         }
     }
 
     void check_trait_impl(const HirImpl& impl, const std::string& trait) {
         auto tit = trait_methods_.find(trait);
+        if (tit == trait_methods_.end()) {
+            tit = trait_methods_.find(lookup_named(trait));
+        }
         if (tit == trait_methods_.end()) {
             return;
         }
@@ -676,52 +800,6 @@ private:
         }
     }
 
-    void collect_structs() {
-        for (auto& st : mod_.structs) {
-            auto it = structs_.find(st.name);
-            if (it == structs_.end() || it->second.offset != st.offset) {
-                continue;
-            }
-
-            StructInfo& info = it->second;
-            info.opaque = st.opaque;
-            info.type_params = st.type_params;
-            if (st.opaque) {
-                continue;
-            }
-            generic_params_.clear();
-            for (const auto& tp : st.type_params) {
-                generic_params_.insert(tp.name);
-            }
-            for (auto& field : st.fields) {
-                if (find_field(info, field.name)) {
-                    error(field.offset, "duplicate field '" + field.name + "'");
-                    continue;
-                }
-                resolve_type(field.ty, field.offset);
-                info.fields.emplace_back(field.name, FieldInfo{field.mut, field.ty, field.offset});
-            }
-            generic_params_.clear();
-        }
-    }
-
-    void collect_type_names() {
-        for (auto& en : mod_.enums) {
-            if (c_enums_.contains(en.name) || variants_.contains(en.name) || structs_.contains(en.name)) {
-                error(en.offset, "duplicate type '" + en.name + "'");
-                continue;
-            }
-            c_enums_.emplace(en.name, CEnumInfo{{}, en.offset});
-        }
-        for (auto& var : mod_.variants) {
-            if (c_enums_.contains(var.name) || variants_.contains(var.name) || structs_.contains(var.name)) {
-                error(var.offset, "duplicate type '" + var.name + "'");
-                continue;
-            }
-            variants_.emplace(var.name, EnumInfo{{}, var.offset});
-        }
-    }
-
     const VariantInfo* find_variant(const EnumInfo& en, const std::string& name) const {
         for (const auto& [vname, info] : en.variants) {
             if (vname == name) {
@@ -740,149 +818,11 @@ private:
         return nullptr;
     }
 
-    void collect_c_enums() {
-        for (auto& en : mod_.enums) {
-            auto it = c_enums_.find(en.name);
-            if (it == c_enums_.end() || it->second.offset != en.offset) {
-                continue;
-            }
-            CEnumInfo& info = it->second;
-            for (std::size_t i = 0; i < en.members.size(); ++i) {
-                auto& member = en.members[i];
-                if (find_member(info, member.name)) {
-                    error(member.offset, "duplicate enum member '" + member.name + "'");
-                    continue;
-                }
-                info.members.emplace_back(member.name,
-                                          CEnumMemberInfo{member.value, i, member.offset});
-            }
-        }
-    }
-
-    void collect_variants() {
-        for (auto& en : mod_.variants) {
-            auto it = variants_.find(en.name);
-            if (it == variants_.end() || it->second.offset != en.offset) {
-                continue;
-            }
-            EnumInfo& info = it->second;
-            for (std::size_t i = 0; i < en.variants.size(); ++i) {
-                auto& variant = en.variants[i];
-                if (find_variant(info, variant.name)) {
-                    error(variant.offset, "duplicate variant '" + variant.name + "'");
-                    continue;
-                }
-                VariantInfo vi;
-                vi.tuple = variant.tuple;
-                vi.index = i;
-                vi.offset = variant.offset;
-                for (auto& field : variant.fields) {
-                    resolve_type(field.ty, field.offset);
-                    vi.fields.emplace_back(field.name, FieldInfo{field.mut, field.ty, field.offset});
-                }
-                info.variants.emplace_back(variant.name, std::move(vi));
-            }
-        }
-    }
-
-    void collect_sigs() {
-        for (auto& fn : mod_.functions) {
-            if (sigs_.contains(fn.name)) {
-                error(fn.offset, "duplicate function '" + fn.name + "'");
-                continue;
-            }
-
-            resolve_type(fn.return_ty, fn.offset);
-            FnSig sig;
-            sig.ret = fn.return_ty;
-            sig.offset = fn.offset;
-            sig.params.reserve(fn.params.size());
-            for (auto& p : fn.params) {
-                resolve_type(p.ty, p.offset);
-                sig.params.push_back(p.ty);
-            }
-            if (fn.c_abi) {
-                check_c_abi_type(fn.return_ty, fn.offset, fn.name);
-                for (const auto& p : fn.params) {
-                    check_c_abi_type(p.ty, p.offset, fn.name);
-                }
-            }
-            sigs_.emplace(fn.name, std::move(sig));
-        }
-    }
-
     void check_c_abi_type(const Type& ty, std::size_t offset, const std::string& fn_name) {
         if (ty == Type::error() || is_c_abi_type(ty)) {
             return;
         }
         error(offset, "extern \"C\" function '" + fn_name + "' cannot use type '" + type_name(ty) + "'");
-    }
-
-    void collect_methods() {
-        for (auto& impl : mod_.impls) {
-            const bool known = structs_.contains(impl.type_name) || variants_.contains(impl.type_name) ||
-                               c_enums_.contains(impl.type_name);
-            if (!known) {
-                error(impl.offset, "impl for unknown type '" + impl.type_name + "'");
-                continue;
-            }
-
-            if (impl.trait_name) {
-                if (!is_op_trait(*impl.trait_name)) {
-                    error(impl.offset, "unknown operator trait '" + *impl.trait_name + "'");
-                    continue;
-                }
-                if (impl.methods.size() != 1) {
-                    error(impl.offset, "operator impl '" + *impl.trait_name + "' needs one method");
-                    continue;
-                }
-                auto& method = impl.methods[0];
-                const char* expected =
-                    *impl.trait_name == "Neg" ? "neg" : binop_method_from_trait(*impl.trait_name);
-                if (method.name != expected) {
-                    error(method.offset, "operator impl '" + *impl.trait_name + "' needs fn " + expected);
-                }
-                resolve_type(method.return_ty, method.offset);
-                MethodSig sig;
-                sig.self_kind = method.self_kind;
-                sig.ret = method.return_ty;
-                sig.offset = method.offset;
-                for (auto& p : method.params) {
-                    resolve_type(p.ty, p.offset);
-                    sig.params.push_back(p.ty);
-                }
-                auto& table = op_impls_[impl.type_name];
-                if (table.contains(*impl.trait_name)) {
-                    error(impl.offset, "duplicate impl " + *impl.trait_name + " for '" + impl.type_name + "'");
-                    continue;
-                }
-                table.emplace(*impl.trait_name, std::move(sig));
-                continue;
-            }
-
-            auto& table = methods_[impl.type_name];
-            for (auto& method : impl.methods) {
-                if (table.contains(method.name)) {
-                    error(method.offset, "duplicate method '" + method.name + "'");
-                    continue;
-                }
-                if (method.self_kind == SelfKind::None) {
-                    error(method.offset, "method '" + method.name + "' needs self");
-                }
-
-                resolve_type(method.return_ty, method.offset);
-                MethodSig sig;
-                sig.self_kind = method.self_kind;
-                sig.ret = method.return_ty;
-                sig.offset = method.offset;
-                sig.params.reserve(method.params.size());
-                for (auto& p : method.params) {
-                    resolve_type(p.ty, p.offset);
-                    sig.params.push_back(p.ty);
-                }
-                table.emplace(method.name, std::move(sig));
-            }
-        }
     }
 
     static const char* binop_method_from_trait(const std::string& trait) {
@@ -938,9 +878,9 @@ private:
             }
         }
 
-        Type self_ty = Type::named(fn.self_ty);
+        Type self_ty = Type::named(lookup_named(fn.self_ty));
         if (fn.self_kind != SelfKind::None) {
-            if (auto it = structs_.find(fn.self_ty); it != structs_.end()) {
+            if (auto it = structs_.find(lookup_named(fn.self_ty)); it != structs_.end()) {
                 for (const auto& tp : it->second.type_params) {
                     generic_params_.insert(tp.name);
                     self_ty.args.push_back(Type::named(tp.name));
@@ -1207,8 +1147,19 @@ private:
             const std::string& bound = *tps[i].bound;
             bool ok = false;
             if (args[i].kind == TypeKind::Named) {
-                if (auto it = trait_impls_.find(args[i].name); it != trait_impls_.end()) {
+                const auto type_key = lookup_named(args[i].name);
+                if (auto it = trait_impls_.find(type_key); it != trait_impls_.end()) {
                     ok = it->second.contains(bound);
+                }
+                if (!ok) {
+                    if (auto it = trait_impls_.find(args[i].name); it != trait_impls_.end()) {
+                        ok = it->second.contains(bound);
+                    }
+                }
+                if (!ok) {
+                    if (auto it = op_impls_.find(type_key); it != op_impls_.end()) {
+                        ok = it->second.contains(bound);
+                    }
                 }
                 if (!ok) {
                     if (auto it = op_impls_.find(args[i].name); it != op_impls_.end()) {
@@ -1525,7 +1476,10 @@ private:
             return inner;
         }
         if (inner.kind == TypeKind::Named) {
-            auto type_it = op_impls_.find(inner.name);
+            auto type_it = op_impls_.find(lookup_named(inner.name));
+            if (type_it == op_impls_.end()) {
+                type_it = op_impls_.find(inner.name);
+            }
             if (type_it != op_impls_.end()) {
                 auto trait_it = type_it->second.find("Neg");
                 if (trait_it != type_it->second.end()) {
@@ -1627,7 +1581,10 @@ private:
         }
 
         if (lhs.kind == TypeKind::Named) {
-            auto type_it = op_impls_.find(lhs.name);
+            auto type_it = op_impls_.find(lookup_named(lhs.name));
+            if (type_it == op_impls_.end()) {
+                type_it = op_impls_.find(lhs.name);
+            }
             if (type_it != op_impls_.end()) {
                 auto trait_it = type_it->second.find(binop_trait(bin.op));
                 if (trait_it != type_it->second.end()) {
@@ -1857,14 +1814,26 @@ private:
     }
 
     Type check_struct_lit(HirStructLit& lit, std::size_t offset) {
-        auto it = structs_.find(lit.name);
+        const auto key = lookup_named(lit.name);
+        auto it = structs_.find(key);
         if (it == structs_.end()) {
+            const auto sep = lit.name.rfind("::");
+            if (sep != std::string::npos && sep > 0) {
+                HirEnumLit el;
+                el.enum_name = lit.name.substr(0, sep);
+                el.variant = lit.name.substr(sep + 2);
+                el.fields = std::move(lit.fields);
+                const Type ty = check_enum_lit(el, offset);
+                lit.fields = std::move(el.fields);
+                return ty;
+            }
             error(offset, "unknown struct '" + lit.name + "'");
             for (auto& field : lit.fields) {
                 check_expr(*field.value);
             }
             return Type::error();
         }
+        lit.name = key;
 
         const StructInfo& st = it->second;
         if (st.opaque) {
@@ -1951,10 +1920,10 @@ private:
         Type recv_ty;
         bool associated = false;
         if (auto* var = std::get_if<HirVar>(&call.receiver->kind)) {
-            if (!lookup(var->name) && (structs_.contains(var->name) || variants_.contains(var->name) ||
-                                       c_enums_.contains(var->name))) {
+            const auto type_key = lookup_named(var->name);
+            if (!lookup(var->name) && known_named_type(var->name)) {
                 associated = true;
-                recv_ty = Type::named(var->name);
+                recv_ty = Type::named(type_key);
                 call.receiver->ty = recv_ty;
             }
         }
@@ -2052,7 +2021,10 @@ private:
             return Type::error();
         }
 
-        auto type_it = methods_.find(recv_ty.name);
+        auto type_it = methods_.find(lookup_named(recv_ty.name));
+        if (type_it == methods_.end()) {
+            type_it = methods_.find(recv_ty.name);
+        }
         if (type_it == methods_.end()) {
             error(offset, "unknown method '" + call.method + "' on '" + recv_ty.name + "'");
             for (auto& arg : call.args) {
@@ -2193,6 +2165,7 @@ private:
     }
 
     Type check_enum_lit(HirEnumLit& lit, std::size_t offset) {
+        lit.enum_name = lookup_named(lit.enum_name);
         auto c_it = c_enums_.find(lit.enum_name);
         if (c_it != c_enums_.end()) {
             if (lit.tuple || !lit.fields.empty() || !lit.args.empty()) {
@@ -2273,12 +2246,12 @@ private:
         const EnumInfo* adt = nullptr;
         const CEnumInfo* cen = nullptr;
         if (scrut.kind == TypeKind::Named) {
-            auto v_it = variants_.find(scrut.name);
+            auto v_it = variants_.find(lookup_named(scrut.name));
             if (v_it != variants_.end()) {
                 adt = &v_it->second;
                 covered.assign(adt->variants.size(), false);
             } else {
-                auto c_it = c_enums_.find(scrut.name);
+                auto c_it = c_enums_.find(lookup_named(scrut.name));
                 if (c_it != c_enums_.end()) {
                     cen = &c_it->second;
                     covered.assign(cen->members.size(), false);
@@ -2363,13 +2336,13 @@ private:
                     }
                     const EnumInfo* used = en;
                     if (!kind.enum_name.empty()) {
-                        auto it = variants_.find(kind.enum_name);
+                        auto it = variants_.find(lookup_named(kind.enum_name));
                         if (it == variants_.end()) {
                             error(pat.offset, "unknown variant type '" + kind.enum_name + "'");
                             return;
                         }
                         used = &it->second;
-                        if (scrut.kind == TypeKind::Named && scrut.name != kind.enum_name) {
+                        if (scrut.kind == TypeKind::Named && lookup_named(scrut.name) != it->first) {
                             error(pat.offset, "pattern has type '" + kind.enum_name + "', expected '" +
                                                   type_name(scrut) + "'");
                         }
@@ -2470,7 +2443,10 @@ private:
             return;
         }
         if (expected.kind == TypeKind::Dyn && got.kind == TypeKind::Named) {
-            auto it = trait_impls_.find(got.name);
+            auto it = trait_impls_.find(lookup_named(got.name));
+            if (it == trait_impls_.end()) {
+                it = trait_impls_.find(got.name);
+            }
             if (it != trait_impls_.end() && it->second.contains(expected.name)) {
                 expr.coerce_dyn = expected.name;
                 return;

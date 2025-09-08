@@ -205,6 +205,26 @@ TEST(E2E, CompileModsExampleToFiles) {
     EXPECT_NE(source_text.find("mod.qp"), std::string::npos);
 }
 
+TEST(E2E, CompileModTypesExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_mod_types";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input =
+        std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "mod_types.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "mod_types.h";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    std::ifstream header_in(header);
+    const auto header_text = std::string((std::istreambuf_iterator<char>(header_in)),
+                                         std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("namespace ecs"), std::string::npos);
+    EXPECT_NE(header_text.find("struct World"), std::string::npos);
+    EXPECT_NE(header_text.find("std::int32_t run()"), std::string::npos);
+}
+
 TEST(E2E, CompileEarlyReturnExampleToFiles) {
     const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_early_return";
     std::filesystem::remove_all(out_dir);
