@@ -468,34 +468,28 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                     lower_expr(src, std::move(kind.index), diags),
                 };
             } else if constexpr (std::is_same_v<K, ExprStructLit>) {
-                if (kind.path.size() >= 2) {
-                    HirEnumLit lit;
-                    lit.enum_name = kind.path[0];
-                    lit.variant = kind.path[1];
-                    lit.fields.reserve(kind.fields.size());
-                    for (auto& field : kind.fields) {
-                        lit.fields.push_back(HirStructLitField{
-                            std::move(field.name),
-                            lower_expr(src, std::move(field.value), diags),
-                        });
+                HirStructLit lit;
+                if (kind.path.size() > 1) {
+                    lit.name = kind.path[0];
+                    for (std::size_t i = 1; i < kind.path.size(); ++i) {
+                        lit.name += "::";
+                        lit.name += kind.path[i];
                     }
-                    out->kind = std::move(lit);
                 } else {
-                    HirStructLit lit;
                     lit.name = kind.name.empty() && !kind.path.empty() ? kind.path[0] : std::move(kind.name);
-                    lit.type_args.reserve(kind.type_args.size());
-                    for (auto& ta : kind.type_args) {
-                        lit.type_args.push_back(lower_type(ta));
-                    }
-                    lit.fields.reserve(kind.fields.size());
-                    for (auto& field : kind.fields) {
-                        lit.fields.push_back(HirStructLitField{
-                            std::move(field.name),
-                            lower_expr(src, std::move(field.value), diags),
-                        });
-                    }
-                    out->kind = std::move(lit);
                 }
+                lit.type_args.reserve(kind.type_args.size());
+                for (auto& ta : kind.type_args) {
+                    lit.type_args.push_back(lower_type(ta));
+                }
+                lit.fields.reserve(kind.fields.size());
+                for (auto& field : kind.fields) {
+                    lit.fields.push_back(HirStructLitField{
+                        std::move(field.name),
+                        lower_expr(src, std::move(field.value), diags),
+                    });
+                }
+                out->kind = std::move(lit);
             } else if constexpr (std::is_same_v<K, ExprMatch>) {
                 HirMatch match;
                 match.scrutinee = lower_expr(src, std::move(kind.scrutinee), diags);

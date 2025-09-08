@@ -1,0 +1,6 @@
+mod ecs;
+use ecs::*;
+
+pub fn run() -> i32 {
+    make_world().get_id()
+}

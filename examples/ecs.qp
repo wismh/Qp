@@ -1,0 +1,18 @@
+pub struct Id {
+    v: i32,
+}
+
+pub struct World {
+    mut id: i32,
+    tag: Id,
+}
+
+impl World {
+    pub fn get_id(self) -> i32 {
+        self.id + self.tag.v
+    }
+}
+
+pub fn make_world() -> World {
+    World { id: 1, tag: Id { v: 2 } }
+}

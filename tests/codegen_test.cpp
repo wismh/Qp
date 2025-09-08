@@ -396,3 +396,22 @@ TEST(Codegen, MathBuiltinsUseCmath) {
     EXPECT_NE(compiled.result.output.source.find("std::fmod"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("std::log"), std::string::npos);
 }
+
+TEST(Codegen, NestedModuleStructTypes) {
+    auto compiled = qpc::test::compile_string(R"(
+        mod ecs {
+            pub struct Id { v: i32 }
+            pub struct World { mut id: i32, tag: Id }
+            impl World {
+                fn get_id(self) -> i32 { self.id + self.tag.v }
+            }
+            pub fn make() -> World { World { id: 1, tag: Id { v: 2 } } }
+        }
+        use ecs::*;
+        pub fn run() -> i32 { make().get_id() }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("namespace ecs"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("struct Id"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("struct World"), std::string::npos);
+}
