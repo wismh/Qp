@@ -1,0 +1,16 @@
+mod counter {
+    pub let mut hits: i32 = 0;
+
+    pub fn bump() {
+        hits = hits + 1;
+    }
+}
+
+use counter::*;
+
+pub fn run() -> i32 {
+    bump();
+    bump();
+    hits = hits + 1;
+    counter::hits
+}
