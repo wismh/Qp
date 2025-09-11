@@ -558,3 +558,24 @@ add_executable(mod_types_host
 target_include_directories(mod_types_host PRIVATE ${MOD_TYPES_GEN_DIR})
 
 add_test(NAME mod_types_host COMMAND mod_types_host)
+
+set(USE_STATICS_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_use_statics)
+set(USE_STATICS_GEN_H ${USE_STATICS_GEN_DIR}/use_statics.h)
+set(USE_STATICS_GEN_CPP ${USE_STATICS_GEN_DIR}/use_statics.cpp)
+
+add_custom_command(
+    OUTPUT ${USE_STATICS_GEN_H} ${USE_STATICS_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${USE_STATICS_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/use_statics.qp -o ${USE_STATICS_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/use_statics.qp
+    COMMENT "qpc compile examples/use_statics.qp"
+    VERBATIM
+)
+
+add_executable(use_statics_host
+    examples/use_statics_host/main.cpp
+    ${USE_STATICS_GEN_CPP}
+)
+target_include_directories(use_statics_host PRIVATE ${USE_STATICS_GEN_DIR})
+
+add_test(NAME use_statics_host COMMAND use_statics_host)
