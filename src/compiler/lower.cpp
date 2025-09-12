@@ -211,6 +211,16 @@ std::string assign_target(const Source& src, const Expr& lhs, DiagnosticEngine& 
     if (const auto* ident = std::get_if<ExprIdent>(&lhs.kind)) {
         return ident->name;
     }
+    if (const auto* path = std::get_if<ExprPath>(&lhs.kind)) {
+        std::string name;
+        for (std::size_t i = 0; i < path->segments.size(); ++i) {
+            if (i != 0) {
+                name += "::";
+            }
+            name += path->segments[i];
+        }
+        return name;
+    }
     diags.error(src, lhs.offset, "assignment target must be a variable");
     return "<error>";
 }
@@ -373,15 +383,14 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
             } else if constexpr (std::is_same_v<K, ExprIdent>) {
                 out->kind = HirVar{std::move(kind.name)};
             } else if constexpr (std::is_same_v<K, ExprPath>) {
-                if (kind.segments.size() == 2) {
-                    HirEnumLit lit;
-                    lit.enum_name = kind.segments[0];
-                    lit.variant = kind.segments[1];
-                    out->kind = std::move(lit);
-                } else {
-                    diags.error(src, expr->offset, "expected Type::Variant");
-                    out->kind = HirVar{"<error>"};
+                std::string name;
+                for (std::size_t i = 0; i < kind.segments.size(); ++i) {
+                    if (i != 0) {
+                        name += "::";
+                    }
+                    name += kind.segments[i];
                 }
+                out->kind = HirVar{std::move(name)};
             } else if constexpr (std::is_same_v<K, ExprBinary>) {
                 out->kind = HirBinary{
                     binop_from_token(kind.op),

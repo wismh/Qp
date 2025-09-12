@@ -699,3 +699,32 @@ TEST(Typeck, NestedModulePathType) {
     )");
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
+
+TEST(Typeck, UseImportsModuleStatic) {
+    auto compiled = qpc::test::compile_string(R"(
+        mod ecs {
+            pub let mut hits: i32 = 1;
+            pub fn bump() { hits = hits + 1; }
+        }
+        use ecs::*;
+        fn run() -> i32 {
+            bump();
+            hits = hits + 1;
+            hits
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, ModuleStaticPathAccess) {
+    auto compiled = qpc::test::compile_string(R"(
+        mod ecs {
+            pub let mut hits: i32 = 1;
+        }
+        fn run() -> i32 {
+            ecs::hits = ecs::hits + 2;
+            ecs::hits
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}

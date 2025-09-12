@@ -466,8 +466,9 @@ Rules:
 - nested `mod vec;` inside `math` looks for `math/vec.qp` or `math/vec/mod.qp`
 - `use math::min;` or `use math::*;`
 - inside a nested module, types use their short name (`World`); from outside write `ecs::World` or `use ecs::World` / `use ecs::*`
+- module globals (`let` / `let mut`) work the same way: `ecs::hits`, or `use ecs::hits` / `use ecs::*`
 
-Example: [`examples/mods.qp`](../examples/mods.qp). Nested module types: [`examples/mod_types.qp`](../examples/mod_types.qp).
+Example: [`examples/mods.qp`](../examples/mods.qp). Nested module types: [`examples/mod_types.qp`](../examples/mod_types.qp). Globals via `use`: [`examples/use_statics.qp`](../examples/use_statics.qp).
 
 ---
 

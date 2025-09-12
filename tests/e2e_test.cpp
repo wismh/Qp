@@ -225,6 +225,26 @@ TEST(E2E, CompileModTypesExampleToFiles) {
     EXPECT_NE(header_text.find("std::int32_t run()"), std::string::npos);
 }
 
+TEST(E2E, CompileUseStaticsExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_use_statics";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input =
+        std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "use_statics.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "use_statics.h";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    std::ifstream header_in(header);
+    const auto header_text = std::string((std::istreambuf_iterator<char>(header_in)),
+                                         std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("namespace counter"), std::string::npos);
+    EXPECT_NE(header_text.find("hits"), std::string::npos);
+    EXPECT_NE(header_text.find("std::int32_t run()"), std::string::npos);
+}
+
 TEST(E2E, CompileEarlyReturnExampleToFiles) {
     const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_early_return";
     std::filesystem::remove_all(out_dir);
