@@ -415,3 +415,20 @@ TEST(Codegen, NestedModuleStructTypes) {
     EXPECT_NE(compiled.result.output.header.find("struct Id"), std::string::npos);
     EXPECT_NE(compiled.result.output.header.find("struct World"), std::string::npos);
 }
+
+TEST(Codegen, UseModuleStatic) {
+    auto compiled = qpc::test::compile_string(R"(
+        mod ecs {
+            pub let mut hits: i32 = 1;
+        }
+        use ecs::*;
+        pub fn run() -> i32 {
+            hits = hits + 1;
+            ecs::hits
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("hits = "), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("hits = (hits + "), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("ecs::hits"), std::string::npos);
+}

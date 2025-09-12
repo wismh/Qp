@@ -487,6 +487,8 @@ A module becomes a C++ namespace. `use` does not affect ABI, only names in Q+.
 
 Types declared in a nested module are visible inside that module by their short name (`World`). From outside, write a path (`ecs::World`) or `use ecs::World` / `use ecs::*`. Sibling modules do not see each other's types without `use`.
 
+Module `let` / `let mut` globals (statics) follow the same rule: short name inside the module, `ecs::hits` or `use ecs::hits` / `use ecs::*` from outside.
+
 `mod math { ... }` — body in this file. `mod math;` — a file module:
 
 - next to the compilation root (`app.qp`): `math.qp` or `math/mod.qp`;

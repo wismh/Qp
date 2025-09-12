@@ -128,11 +128,15 @@ public:
     void run() {
         collect_names(mod_, "");
         collect_type_details(mod_, "");
+        collect_sigs_tree(mod_, "");
+        if (diags_.has_errors()) {
+            return;
+        }
+        collect_statics(mod_, "");
         apply_uses(mod_, "");
         if (diags_.has_errors()) {
             return;
         }
-        collect_sigs_tree(mod_, "");
         push_scope();
         check_tree(mod_, "");
         pop_scope();
@@ -144,10 +148,12 @@ private:
     DiagnosticEngine& diags_;
     std::string current_prefix_;
     std::unordered_map<std::string, std::string> type_aliases_;
+    std::unordered_map<std::string, std::string> static_aliases_;
     std::unordered_map<std::string, StructInfo> structs_;
     std::unordered_map<std::string, CEnumInfo> c_enums_;
     std::unordered_map<std::string, EnumInfo> variants_;
     std::unordered_map<std::string, FnSig> sigs_;
+    std::unordered_map<std::string, Binding> statics_;
     std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> methods_;
     std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> op_impls_;
     std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> trait_methods_;
@@ -481,10 +487,21 @@ private:
                         }
                     }
                     for (auto& e : extra) {
-                        map.emplace(e.first, e.second);
+                        if (e.first.find("::") == std::string::npos) {
+                            map.emplace(e.first, e.second);
+                        }
                     }
                 };
                 alias_map(sigs_);
+                for (const auto& [k, v] : statics_) {
+                    (void)v;
+                    if (k.rfind(pfx, 0) == 0) {
+                        const auto short_name = k.substr(pfx.size());
+                        if (!short_name.empty() && short_name.find("::") == std::string::npos) {
+                            static_aliases_.emplace(short_name, k);
+                        }
+                    }
+                }
                 continue;
             }
             std::string full;
@@ -506,6 +523,9 @@ private:
             }
             if (auto it = traits_.find(full); it != traits_.end()) {
                 traits_.insert(last);
+            }
+            if (statics_.contains(full)) {
+                static_aliases_.emplace(last, full);
             }
         }
         for (auto& child : m.mods) {
@@ -529,6 +549,58 @@ private:
         }
     }
 
+    Type infer_static_init_type(const HirExpr& expr) {
+        return std::visit(
+            [&](auto&& kind) -> Type {
+                using K = std::decay_t<decltype(kind)>;
+                if constexpr (std::is_same_v<K, HirLitInt>) {
+                    return kind.unsuffixed ? Type::i32() : kind.ty;
+                } else if constexpr (std::is_same_v<K, HirLitFloat>) {
+                    return kind.unsuffixed ? Type::f32() : kind.ty;
+                } else if constexpr (std::is_same_v<K, HirLitBool>) {
+                    return Type::boolean();
+                } else if constexpr (std::is_same_v<K, HirLitChar>) {
+                    return Type::char_();
+                } else if constexpr (std::is_same_v<K, HirLitString>) {
+                    return Type::string();
+                } else {
+                    return Type::unknown();
+                }
+            },
+            expr.kind);
+    }
+
+    void collect_statics(HirModule& m, const std::string& prefix) {
+        SrcGuard src_guard(current_src_, m.source);
+        for (auto& child : m.mods) {
+            collect_statics(child, qualify(prefix, child.name));
+        }
+        PrefixGuard prefix_guard(current_prefix_, prefix);
+        for (auto& st : m.statics) {
+            const auto name = qualify(prefix, st.name);
+            if (statics_.contains(name)) {
+                error(st.offset, "duplicate static '" + name + "'");
+                continue;
+            }
+            if (st.ty.kind != TypeKind::Unknown) {
+                resolve_type(st.ty, st.offset);
+            } else if (st.is_extern) {
+                error(st.offset, "extern static '" + st.name + "' requires a type annotation");
+                st.ty = Type::error();
+            } else if (st.init) {
+                st.ty = infer_static_init_type(*st.init);
+                if (st.ty.kind == TypeKind::Unknown) {
+                    error(st.offset, "cannot infer type of '" + st.name + "', add a type annotation");
+                    st.ty = Type::error();
+                }
+            } else {
+                error(st.offset, "cannot infer type of '" + st.name + "', add a type annotation");
+                st.ty = Type::error();
+            }
+            statics_.emplace(name, Binding{st.ty, st.mut});
+        }
+    }
+
     void check_tree(HirModule& m, const std::string& prefix) {
         SrcGuard src_guard(current_src_, m.source);
         PrefixGuard prefix_guard(current_prefix_, prefix);
@@ -542,6 +614,7 @@ private:
                     st.ty = Type::error();
                 }
                 declare(st.name, Binding{st.ty, st.mut}, st.offset);
+                statics_[qualify(prefix, st.name)] = Binding{st.ty, st.mut};
                 continue;
             }
             const Type init_ty = check_expr(*st.init);
@@ -556,6 +629,7 @@ private:
                 expect_expr(*st.init, st.ty, st.init->offset, "static initializer");
             }
             declare(st.name, Binding{st.ty, st.mut}, st.offset);
+            statics_[qualify(prefix, st.name)] = Binding{st.ty, st.mut};
         }
         for (auto& fn : m.functions) {
             if (!fn.is_extern) {
@@ -1033,7 +1107,7 @@ private:
                 } else if constexpr (std::is_same_v<K, HirLitNull>) {
                     ty = Type::unknown();
                 } else if constexpr (std::is_same_v<K, HirVar>) {
-                    ty = check_var(kind, expr.offset);
+                    ty = check_var(kind, expr);
                 } else if constexpr (std::is_same_v<K, HirBinary>) {
                     ty = check_binop(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirUnary>) {
@@ -1085,11 +1159,84 @@ private:
         return ty;
     }
 
-    Type check_var(const HirVar& var, std::size_t offset) {
-        if (auto* b = lookup(var.name)) {
+    Binding* lookup_static(const std::string& name) {
+        if (!current_prefix_.empty() && !name_has_path(name)) {
+            if (auto it = statics_.find(qualify(current_prefix_, name)); it != statics_.end()) {
+                return &it->second;
+            }
+        }
+        if (auto it = statics_.find(name); it != statics_.end()) {
+            return &it->second;
+        }
+        if (auto alias = static_aliases_.find(name); alias != static_aliases_.end()) {
+            if (auto it = statics_.find(alias->second); it != statics_.end()) {
+                return &it->second;
+            }
+        }
+        return nullptr;
+    }
+
+    Binding* lookup_binding(const std::string& name) {
+        if (auto* b = lookup(name)) {
+            return b;
+        }
+        return lookup_static(name);
+    }
+
+    Type check_path_var(HirVar& var, HirExpr& expr) {
+        const auto pos = var.name.rfind("::");
+        if (pos == std::string::npos) {
+            return Type::error();
+        }
+        const std::string head = var.name.substr(0, pos);
+        const std::string tail = var.name.substr(pos + 2);
+        if (tail.empty() || tail.find("::") != std::string::npos) {
+            // only Type::Member for enums/variants; deeper paths are statics
+        } else {
+            const std::string type_key = lookup_named(head);
+            if (auto c_it = c_enums_.find(type_key); c_it != c_enums_.end()) {
+                if (!find_member(c_it->second, tail)) {
+                    error(expr.offset, "unknown member '" + tail + "' on '" + type_key + "'");
+                    return Type::error();
+                }
+                HirEnumLit lit;
+                lit.enum_name = type_key;
+                lit.variant = tail;
+                expr.kind = std::move(lit);
+                return check_enum_lit(std::get<HirEnumLit>(expr.kind), expr.offset);
+            }
+            if (auto v_it = variants_.find(type_key); v_it != variants_.end()) {
+                const VariantInfo* v = find_variant(v_it->second, tail);
+                if (!v) {
+                    error(expr.offset, "unknown variant '" + tail + "' on '" + type_key + "'");
+                    return Type::error();
+                }
+                if (!v->fields.empty()) {
+                    error(expr.offset, "variant '" + tail + "' requires fields");
+                    return Type::error();
+                }
+                HirEnumLit lit;
+                lit.enum_name = type_key;
+                lit.variant = tail;
+                expr.kind = std::move(lit);
+                return check_enum_lit(std::get<HirEnumLit>(expr.kind), expr.offset);
+            }
+        }
+        if (auto* b = lookup_static(var.name)) {
             return b->ty;
         }
-        error(offset, "unknown identifier '" + var.name + "'");
+        error(expr.offset, "unknown identifier '" + var.name + "'");
+        return Type::error();
+    }
+
+    Type check_var(HirVar& var, HirExpr& expr) {
+        if (name_has_path(var.name)) {
+            return check_path_var(var, expr);
+        }
+        if (auto* b = lookup_binding(var.name)) {
+            return b->ty;
+        }
+        error(expr.offset, "unknown identifier '" + var.name + "'");
         return Type::error();
     }
 
@@ -1733,7 +1880,7 @@ private:
     }
 
     Type check_assign(HirAssign& as, std::size_t offset) {
-        Binding* b = lookup(as.name);
+        Binding* b = lookup_binding(as.name);
         const Type value_ty = check_expr(*as.value);
 
         if (!b) {
@@ -1761,7 +1908,7 @@ private:
 
     bool is_mut_place(const HirExpr& expr) {
         if (const auto* var = std::get_if<HirVar>(&expr.kind)) {
-            if (auto* b = lookup(var->name)) {
+            if (auto* b = lookup_binding(var->name)) {
                 return b->mut;
             }
             return false;
