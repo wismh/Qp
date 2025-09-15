@@ -128,12 +128,13 @@ public:
     void run() {
         collect_names(mod_, "");
         collect_type_details(mod_, "");
-        collect_sigs_tree(mod_, "");
+        reject_nested_extern(mod_, "");
+        collect_statics(mod_, "");
+        apply_uses(mod_, "");
         if (diags_.has_errors()) {
             return;
         }
-        collect_statics(mod_, "");
-        apply_uses(mod_, "");
+        collect_sigs_tree(mod_, "");
         if (diags_.has_errors()) {
             return;
         }
@@ -370,6 +371,37 @@ private:
         }
         for (auto& child : m.mods) {
             collect_names(child, qualify(prefix, child.name));
+        }
+    }
+
+    void reject_nested_extern(HirModule& m, const std::string& prefix) {
+        SrcGuard src_guard(current_src_, m.source);
+        if (!prefix.empty()) {
+            for (const auto& fn : m.functions) {
+                if (fn.is_extern || fn.c_abi) {
+                    error(fn.offset, "extern is only allowed at the module root");
+                }
+            }
+            for (const auto& st : m.statics) {
+                if (st.is_extern) {
+                    error(st.offset, "extern is only allowed at the module root");
+                }
+            }
+            for (const auto& st : m.structs) {
+                if (st.opaque) {
+                    error(st.offset, "extern is only allowed at the module root");
+                }
+            }
+            for (const auto& impl : m.impls) {
+                for (const auto& method : impl.methods) {
+                    if (method.is_extern) {
+                        error(method.offset, "extern is only allowed at the module root");
+                    }
+                }
+            }
+        }
+        for (auto& child : m.mods) {
+            reject_nested_extern(child, qualify(prefix, child.name));
         }
     }
 
