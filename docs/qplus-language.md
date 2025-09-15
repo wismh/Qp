@@ -489,6 +489,8 @@ Types declared in a nested module are visible inside that module by their short 
 
 Module `let` / `let mut` globals (statics) follow the same rule: short name inside the module, `ecs::hits` or `use ecs::hits` / `use ecs::*` from outside.
 
+`extern` / `extern "C"` is allowed only at the compilation root (not inside nested `mod`). Host symbols live in `namespace qplus`, so nesting them would invent `qplus::systems::…` and clash with the host.
+
 `mod math { ... }` — body in this file. `mod math;` — a file module:
 
 - next to the compilation root (`app.qp`): `math.qp` or `math/mod.qp`;
