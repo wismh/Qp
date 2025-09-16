@@ -579,3 +579,24 @@ add_executable(use_statics_host
 target_include_directories(use_statics_host PRIVATE ${USE_STATICS_GEN_DIR})
 
 add_test(NAME use_statics_host COMMAND use_statics_host)
+
+set(NESTED_ENUM_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_nested_enum)
+set(NESTED_ENUM_GEN_H ${NESTED_ENUM_GEN_DIR}/nested_enum.h)
+set(NESTED_ENUM_GEN_CPP ${NESTED_ENUM_GEN_DIR}/nested_enum.cpp)
+
+add_custom_command(
+    OUTPUT ${NESTED_ENUM_GEN_H} ${NESTED_ENUM_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${NESTED_ENUM_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/nested_enum.qp -o ${NESTED_ENUM_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/nested_enum.qp
+    COMMENT "qpc compile examples/nested_enum.qp"
+    VERBATIM
+)
+
+add_executable(nested_enum_host
+    examples/nested_enum_host/main.cpp
+    ${NESTED_ENUM_GEN_CPP}
+)
+target_include_directories(nested_enum_host PRIVATE ${NESTED_ENUM_GEN_DIR})
+
+add_test(NAME nested_enum_host COMMAND nested_enum_host)
