@@ -245,6 +245,32 @@ TEST(E2E, CompileUseStaticsExampleToFiles) {
     EXPECT_NE(header_text.find("std::int32_t run()"), std::string::npos);
 }
 
+TEST(E2E, CompileNestedEnumExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_nested_enum";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input =
+        std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "nested_enum.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "nested_enum.h";
+    const auto source = out_dir / "nested_enum.cpp";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    ASSERT_TRUE(std::filesystem::exists(source));
+    std::ifstream header_in(header);
+    const auto header_text = std::string((std::istreambuf_iterator<char>(header_in)),
+                                         std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("namespace gfx"), std::string::npos);
+    EXPECT_NE(header_text.find("enum class Color"), std::string::npos);
+    std::ifstream source_in(source);
+    const auto source_text = std::string((std::istreambuf_iterator<char>(source_in)),
+                                         std::istreambuf_iterator<char>());
+    EXPECT_NE(source_text.find("gfx::Color::Red"), std::string::npos);
+    EXPECT_EQ(source_text.find("gfx::Color{gfx::Color::Red"), std::string::npos);
+}
+
 TEST(E2E, CompileEarlyReturnExampleToFiles) {
     const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_early_return";
     std::filesystem::remove_all(out_dir);
