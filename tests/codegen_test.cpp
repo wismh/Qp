@@ -432,3 +432,19 @@ TEST(Codegen, UseModuleStatic) {
     EXPECT_NE(compiled.result.output.source.find("hits = (hits + "), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("ecs::hits"), std::string::npos);
 }
+
+TEST(Codegen, NestedModuleCEnum) {
+    auto compiled = qpc::test::compile_string(R"(
+        mod gfx {
+            pub enum Color { Red, Green }
+            pub fn red() -> Color { Color::Red }
+        }
+        use gfx::*;
+        pub fn run() -> Color { red() }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("namespace gfx"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("enum class Color"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("gfx::Color::Red"), std::string::npos);
+    EXPECT_EQ(compiled.result.output.source.find("gfx::Color{gfx::Color::Red"), std::string::npos);
+}

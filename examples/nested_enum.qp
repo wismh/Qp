@@ -1,0 +1,20 @@
+mod gfx {
+    pub enum Color {
+        Red,
+        Green,
+    }
+
+    pub fn red() -> Color {
+        Color::Red
+    }
+}
+
+use gfx::*;
+
+pub fn run() -> i32 {
+    if red() == Color::Red {
+        1
+    } else {
+        0
+    }
+}
