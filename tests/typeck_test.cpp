@@ -728,3 +728,28 @@ TEST(Typeck, ModuleStaticPathAccess) {
     )");
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
+
+TEST(Typeck, NestedModuleEnumUse) {
+    auto compiled = qpc::test::compile_string(R"(
+        mod gfx {
+            pub enum Color { Red, Green }
+            pub fn red() -> Color { Color::Red }
+        }
+        use gfx::*;
+        fn run() -> Color { red() }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, NestedExternIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        mod systems {
+            extern {
+                fn host_tick() -> i32;
+            }
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("extern is only allowed at the module root"),
+              std::string::npos);
+}

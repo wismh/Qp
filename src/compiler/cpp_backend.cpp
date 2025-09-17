@@ -26,14 +26,18 @@ void emit_try_setup(std::ostringstream& out, const HirExpr& expr);
 void emit_expr(std::ostringstream& out, const HirExpr& expr);
 void emit_stmt(std::ostringstream& out, const HirStmt& stmt);
 
-bool is_c_enum_in(const HirModule& mod, const std::string& name) {
+bool is_c_enum_in(const HirModule& mod, const std::string& name, const std::string& prefix = {}) {
     for (const auto& en : mod.enums) {
         if (en.name == name) {
             return true;
         }
+        if (!prefix.empty() && prefix + "::" + en.name == name) {
+            return true;
+        }
     }
     for (const auto& child : mod.mods) {
-        if (is_c_enum_in(child, name)) {
+        const std::string child_prefix = prefix.empty() ? child.name : prefix + "::" + child.name;
+        if (is_c_enum_in(child, name, child_prefix)) {
             return true;
         }
     }
