@@ -467,9 +467,9 @@ Rules:
 - `use math::min;` or `use math::*;`
 - inside a nested module, types use their short name (`World`); from outside write `ecs::World` or `use ecs::World` / `use ecs::*`
 - module globals (`let` / `let mut`) work the same way: `ecs::hits`, or `use ecs::hits` / `use ecs::*`
-- `extern` / `extern "C"` only at the compilation root (not inside nested `mod`)
+- `extern` may sit in a nested module (`mod engine;` + `use engine::*`); host ABI stays `qplus::Name` (short name)
 
-Example: [`examples/mods.qp`](../examples/mods.qp). Nested module types: [`examples/mod_types.qp`](../examples/mod_types.qp). Globals via `use`: [`examples/use_statics.qp`](../examples/use_statics.qp). Nested C-`enum`: [`examples/nested_enum.qp`](../examples/nested_enum.qp).
+Example: [`examples/mods.qp`](../examples/mods.qp). Nested module types: [`examples/mod_types.qp`](../examples/mod_types.qp). Globals via `use`: [`examples/use_statics.qp`](../examples/use_statics.qp). Nested C-`enum`: [`examples/nested_enum.qp`](../examples/nested_enum.qp). Engine bindings module: [`examples/engine_api.qp`](../examples/engine_api.qp).
 
 ---
 
