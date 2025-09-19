@@ -128,7 +128,6 @@ public:
     void run() {
         collect_names(mod_, "");
         collect_type_details(mod_, "");
-        reject_nested_extern(mod_, "");
         collect_statics(mod_, "");
         apply_uses(mod_, "");
         if (diags_.has_errors()) {
@@ -278,7 +277,7 @@ private:
         }
         const auto key = lookup_named(ty.name);
         if (auto it = structs_.find(key); it != structs_.end()) {
-            ty.name = key;
+            ty.name = it->second.opaque ? path_leaf(key) : key;
             const auto& tps = it->second.type_params;
             if (tps.empty()) {
                 if (!ty.args.empty()) {
@@ -340,6 +339,11 @@ private:
         return it == structs_.end() ? nullptr : &it->second;
     }
 
+    static std::string path_leaf(const std::string& name) {
+        const auto pos = name.rfind("::");
+        return pos == std::string::npos ? name : name.substr(pos + 2);
+    }
+
     void collect_names(HirModule& m, const std::string& prefix) {
         SrcGuard src_guard(current_src_, m.source);
         for (auto& tr : m.traits) {
@@ -362,46 +366,26 @@ private:
             variants_.emplace(name, EnumInfo{{}, var.offset});
         }
         for (auto& st : m.structs) {
-            const auto name = qualify(prefix, st.name);
-            if (structs_.contains(name) || c_enums_.contains(name) || variants_.contains(name)) {
-                error(st.offset, "duplicate type '" + name + "'");
+            // Opaque extern types keep a root ABI name (qplus::T) and a module path alias.
+            const auto qname = qualify(prefix, st.name);
+            const auto abi = st.opaque ? st.name : qname;
+            if (structs_.contains(abi) || c_enums_.contains(abi) || variants_.contains(abi)) {
+                error(st.offset, "duplicate type '" + abi + "'");
                 continue;
             }
-            structs_.emplace(name, StructInfo{{}, st.type_params, st.offset, st.opaque});
+            if (st.opaque && !prefix.empty() &&
+                (structs_.contains(qname) || c_enums_.contains(qname) || variants_.contains(qname))) {
+                error(st.offset, "duplicate type '" + qname + "'");
+                continue;
+            }
+            StructInfo info{{}, st.type_params, st.offset, st.opaque};
+            structs_.emplace(abi, info);
+            if (st.opaque && !prefix.empty()) {
+                structs_.emplace(qname, info);
+            }
         }
         for (auto& child : m.mods) {
             collect_names(child, qualify(prefix, child.name));
-        }
-    }
-
-    void reject_nested_extern(HirModule& m, const std::string& prefix) {
-        SrcGuard src_guard(current_src_, m.source);
-        if (!prefix.empty()) {
-            for (const auto& fn : m.functions) {
-                if (fn.is_extern || fn.c_abi) {
-                    error(fn.offset, "extern is only allowed at the module root");
-                }
-            }
-            for (const auto& st : m.statics) {
-                if (st.is_extern) {
-                    error(st.offset, "extern is only allowed at the module root");
-                }
-            }
-            for (const auto& st : m.structs) {
-                if (st.opaque) {
-                    error(st.offset, "extern is only allowed at the module root");
-                }
-            }
-            for (const auto& impl : m.impls) {
-                for (const auto& method : impl.methods) {
-                    if (method.is_extern) {
-                        error(method.offset, "extern is only allowed at the module root");
-                    }
-                }
-            }
-        }
-        for (auto& child : m.mods) {
-            reject_nested_extern(child, qualify(prefix, child.name));
         }
     }
 
@@ -609,9 +593,14 @@ private:
         }
         PrefixGuard prefix_guard(current_prefix_, prefix);
         for (auto& st : m.statics) {
-            const auto name = qualify(prefix, st.name);
+            const auto qname = qualify(prefix, st.name);
+            const auto name = st.is_extern ? st.name : qname;
             if (statics_.contains(name)) {
                 error(st.offset, "duplicate static '" + name + "'");
+                continue;
+            }
+            if (st.is_extern && !prefix.empty() && statics_.contains(qname)) {
+                error(st.offset, "duplicate static '" + qname + "'");
                 continue;
             }
             if (st.ty.kind != TypeKind::Unknown) {
@@ -630,6 +619,9 @@ private:
                 st.ty = Type::error();
             }
             statics_.emplace(name, Binding{st.ty, st.mut});
+            if (st.is_extern && !prefix.empty()) {
+                statics_.emplace(qname, Binding{st.ty, st.mut});
+            }
         }
     }
 
@@ -646,7 +638,10 @@ private:
                     st.ty = Type::error();
                 }
                 declare(st.name, Binding{st.ty, st.mut}, st.offset);
-                statics_[qualify(prefix, st.name)] = Binding{st.ty, st.mut};
+                statics_[st.name] = Binding{st.ty, st.mut};
+                if (!prefix.empty()) {
+                    statics_[qualify(prefix, st.name)] = Binding{st.ty, st.mut};
+                }
                 continue;
             }
             const Type init_ty = check_expr(*st.init);
@@ -682,9 +677,15 @@ private:
 
     void collect_sigs_of(HirModule& m, const std::string& prefix) {
         for (auto& fn : m.functions) {
-            const auto name = qualify(prefix, fn.name);
+            const auto qname = qualify(prefix, fn.name);
+            const bool root_abi = fn.is_extern || fn.c_abi;
+            const auto name = root_abi ? fn.name : qname;
             if (sigs_.contains(name)) {
                 error(fn.offset, "duplicate function '" + name + "'");
+                continue;
+            }
+            if (root_abi && !prefix.empty() && sigs_.contains(qname)) {
+                error(fn.offset, "duplicate function '" + qname + "'");
                 continue;
             }
             generic_params_.clear();
@@ -710,7 +711,11 @@ private:
             generic_params_.clear();
             sigs_.emplace(name, sig);
             if (!prefix.empty()) {
-                sigs_.emplace(fn.name, std::move(sig));
+                if (root_abi) {
+                    sigs_.emplace(qname, sig);
+                } else {
+                    sigs_.emplace(fn.name, std::move(sig));
+                }
             }
         }
     }
@@ -1145,7 +1150,7 @@ private:
                 } else if constexpr (std::is_same_v<K, HirUnary>) {
                     ty = check_unary(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirCall>) {
-                    ty = check_call(kind, expr.offset);
+                    ty = check_call(kind, expr);
                 } else if constexpr (std::is_same_v<K, HirAssign>) {
                     ty = check_assign(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirFieldAccess>) {
@@ -1255,6 +1260,10 @@ private:
             }
         }
         if (auto* b = lookup_static(var.name)) {
+            const auto leaf = path_leaf(var.name);
+            if (statics_.contains(leaf)) {
+                var.name = leaf;
+            }
             return b->ty;
         }
         error(expr.offset, "unknown identifier '" + var.name + "'");
@@ -1853,7 +1862,8 @@ private:
         return result;
     }
 
-    Type check_call(HirCall& call, std::size_t offset) {
+    Type check_call(HirCall& call, HirExpr& expr) {
+        const std::size_t offset = expr.offset;
         if (call.callee_expr) {
             const Type fn_ty = check_expr(*call.callee_expr);
             if (fn_ty.kind != TypeKind::Fn || fn_ty.args.empty()) {
@@ -1869,6 +1879,9 @@ private:
         }
 
         auto it = sigs_.find(call.callee);
+        if (it == sigs_.end() && name_has_path(call.callee)) {
+            it = sigs_.find(path_leaf(call.callee));
+        }
         if (it == sigs_.end()) {
             if (auto* b = lookup(call.callee)) {
                 if (b->ty.kind == TypeKind::Fn && !b->ty.args.empty()) {
@@ -1884,11 +1897,25 @@ private:
             if (math.kind != TypeKind::Unknown) {
                 return math;
             }
+            if (name_has_path(call.callee)) {
+                const auto pos = call.callee.rfind("::");
+                HirEnumLit lit;
+                lit.enum_name = call.callee.substr(0, pos);
+                lit.variant = call.callee.substr(pos + 2);
+                lit.tuple = true;
+                lit.args = std::move(call.args);
+                expr.kind = std::move(lit);
+                return check_enum_lit(std::get<HirEnumLit>(expr.kind), offset);
+            }
             error(offset, "unknown function '" + call.callee + "'");
             for (auto& arg : call.args) {
                 check_expr(*arg);
             }
             return Type::error();
+        }
+
+        if (name_has_path(call.callee)) {
+            call.callee = path_leaf(call.callee);
         }
 
         const FnSig& sig = it->second;
@@ -1918,6 +1945,12 @@ private:
         if (!b) {
             error(offset, "unknown identifier '" + as.name + "'");
             return Type::error();
+        }
+        if (name_has_path(as.name)) {
+            const auto leaf = path_leaf(as.name);
+            if (statics_.contains(leaf)) {
+                as.name = leaf;
+            }
         }
         if (!b->mut) {
             error(offset, "cannot assign to immutable variable '" + as.name + "'");
