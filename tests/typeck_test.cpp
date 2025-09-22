@@ -741,15 +741,20 @@ TEST(Typeck, NestedModuleEnumUse) {
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
 
-TEST(Typeck, NestedExternIsError) {
+TEST(Typeck, NestedExternModuleUse) {
     auto compiled = qpc::test::compile_string(R"(
-        mod systems {
+        mod engine {
             extern {
+                pub struct World;
+                impl World {
+                    pub fn step(self) -> i32;
+                }
+                pub let mut world: World;
                 fn host_tick() -> i32;
             }
         }
+        use engine::*;
+        fn run() -> i32 { world.step() + host_tick() }
     )");
-    EXPECT_FALSE(compiled.result.ok);
-    EXPECT_NE(first_error(compiled.diags).find("extern is only allowed at the module root"),
-              std::string::npos);
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
