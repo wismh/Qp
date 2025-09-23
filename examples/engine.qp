@@ -1,0 +1,8 @@
+extern {
+    pub struct World;
+    impl World {
+        pub fn step(self) -> i32;
+    }
+    pub let mut world: World;
+    fn host_bonus() -> i32;
+}

@@ -1151,6 +1151,48 @@ void emit_dyn_trait(std::ostringstream& header, const HirTrait& tr) {
     header << "}\n\n";
 }
 
+void emit_c_abi_decls(std::ostringstream& header, const HirModule& mod, bool& any_c_abi) {
+    for (const auto& fn : mod.functions) {
+        if (!fn.c_abi) {
+            continue;
+        }
+        if (!any_c_abi) {
+            header << "extern \"C\" {\n";
+            any_c_abi = true;
+        }
+        header << "    ";
+        emit_free_signature(header, fn);
+        header << ";\n";
+    }
+    for (const auto& child : mod.mods) {
+        emit_c_abi_decls(header, child, any_c_abi);
+    }
+}
+
+void emit_hoisted_extern_qplus(std::ostringstream& header, const HirModule& mod) {
+    for (const auto& st : mod.statics) {
+        if (!st.is_extern) {
+            continue;
+        }
+        header << "extern ";
+        if (!st.mut) {
+            header << "const ";
+        }
+        header << cpp_type_name(st.ty) << ' ' << st.name << ";\n";
+    }
+    for (const auto& fn : mod.functions) {
+        if (!fn.is_extern || fn.c_abi) {
+            continue;
+        }
+        emit_template_head(header, fn.type_params);
+        emit_free_signature(header, fn);
+        header << ";\n";
+    }
+    for (const auto& child : mod.mods) {
+        emit_hoisted_extern_qplus(header, child);
+    }
+}
+
 void emit_module_header(std::ostringstream& header, const HirModule& mod,
                         const std::unordered_map<std::string, std::vector<const HirFn*>>& methods) {
     for (const auto& en : mod.enums) {
@@ -1174,12 +1216,7 @@ void emit_module_header(std::ostringstream& header, const HirModule& mod,
 
     for (const auto& st : mod.statics) {
         if (st.is_extern) {
-            header << "extern ";
-            if (!st.mut) {
-                header << "const ";
-            }
-            header << cpp_type_name(st.ty) << ' ' << st.name << ";\n";
-            continue;
+            continue;  // hoisted to qplus root
         }
         header << "inline ";
         if (!st.mut) {
@@ -1190,7 +1227,16 @@ void emit_module_header(std::ostringstream& header, const HirModule& mod,
         header << ";\n";
     }
     if (!mod.statics.empty()) {
-        header << '\n';
+        bool any_local = false;
+        for (const auto& st : mod.statics) {
+            if (!st.is_extern) {
+                any_local = true;
+                break;
+            }
+        }
+        if (any_local) {
+            header << '\n';
+        }
     }
 
     for (const auto& impl : mod.impls) {
@@ -1204,19 +1250,28 @@ void emit_module_header(std::ostringstream& header, const HirModule& mod,
     }
 
     for (const auto& fn : mod.functions) {
-        if (fn.c_abi) {
-            continue;
+        if (fn.c_abi || fn.is_extern) {
+            continue;  // c_abi / extern hoisted
         }
         emit_template_head(header, fn.type_params);
         emit_free_signature(header, fn);
-        if (is_generic(fn) && !fn.is_extern) {
+        if (is_generic(fn)) {
             emit_fn_body(header, fn);
         } else {
             header << ";\n";
         }
     }
     if (!mod.functions.empty()) {
-        header << '\n';
+        bool any_local = false;
+        for (const auto& fn : mod.functions) {
+            if (!fn.c_abi && !fn.is_extern) {
+                any_local = true;
+                break;
+            }
+        }
+        if (any_local) {
+            header << '\n';
+        }
     }
 }
 
@@ -1282,18 +1337,7 @@ std::string emit_header(const HirModule& mod) {
     header << "#endif\n\n";
 
     bool any_c_abi = false;
-    for (const auto& fn : mod.functions) {
-        if (!fn.c_abi) {
-            continue;
-        }
-        if (!any_c_abi) {
-            header << "extern \"C\" {\n";
-            any_c_abi = true;
-        }
-        header << "    ";
-        emit_free_signature(header, fn);
-        header << ";\n";
-    }
+    emit_c_abi_decls(header, mod, any_c_abi);
     if (any_c_abi) {
         header << "}\n\n";
     }
@@ -1455,6 +1499,7 @@ T* alloc(T value) {
 
 )cpp";
     header << "template <typename T>\nT* nullable_of(T v) {\n    return alloc(std::move(v));\n}\n\n";
+    emit_hoisted_extern_qplus(header, mod);
     emit_module_header(header, mod, methods);
     header << "}  // namespace qplus\n";
     return header.str();
