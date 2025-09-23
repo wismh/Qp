@@ -203,6 +203,16 @@ std::string callee_name(const Source& src, const Expr& callee, DiagnosticEngine&
     if (const auto* ident = std::get_if<ExprIdent>(&callee.kind)) {
         return ident->name;
     }
+    if (const auto* path = std::get_if<ExprPath>(&callee.kind)) {
+        std::string name;
+        for (std::size_t i = 0; i < path->segments.size(); ++i) {
+            if (i != 0) {
+                name += "::";
+            }
+            name += path->segments[i];
+        }
+        return name;
+    }
     diags.error(src, callee.offset, "callee must be a function name");
     return "<error>";
 }
@@ -420,20 +430,10 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                         call.args.push_back(lower_expr(src, std::move(arg), diags));
                     }
                     out->kind = std::move(call);
-                } else if (auto* path = std::get_if<ExprPath>(&kind.callee->kind);
-                           path && path->segments.size() == 2) {
-                    HirEnumLit lit;
-                    lit.enum_name = path->segments[0];
-                    lit.variant = path->segments[1];
-                    lit.tuple = true;
-                    lit.args.reserve(kind.args.size());
-                    for (auto& arg : kind.args) {
-                        lit.args.push_back(lower_expr(src, std::move(arg), diags));
-                    }
-                    out->kind = std::move(lit);
                 } else {
                     HirCall call;
-                    if (std::holds_alternative<ExprIdent>(kind.callee->kind)) {
+                    if (std::holds_alternative<ExprIdent>(kind.callee->kind) ||
+                        std::holds_alternative<ExprPath>(kind.callee->kind)) {
                         call.callee = callee_name(src, *kind.callee, diags);
                     } else {
                         call.callee_expr = lower_expr(src, std::move(kind.callee), diags);

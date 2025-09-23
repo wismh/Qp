@@ -448,3 +448,35 @@ TEST(Codegen, NestedModuleCEnum) {
     EXPECT_NE(compiled.result.output.source.find("gfx::Color::Red"), std::string::npos);
     EXPECT_EQ(compiled.result.output.source.find("gfx::Color{gfx::Color::Red"), std::string::npos);
 }
+
+TEST(Codegen, NestedExternHoistedToRoot) {
+    auto compiled = qpc::test::compile_string(R"(
+        mod engine {
+            extern {
+                pub struct World;
+                impl World {
+                    pub fn step(self) -> i32;
+                }
+                pub let mut world: World;
+                fn host_tick() -> i32;
+            }
+            pub fn go() -> i32 { world.step() + host_tick() }
+        }
+        use engine::*;
+        pub fn run() -> i32 { go() }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("extern World world;"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("std::int32_t host_tick();"), std::string::npos);
+    EXPECT_EQ(compiled.result.output.header.find("extern engine::World"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("namespace engine"), std::string::npos);
+    // extern decls appear before nested namespace, not as qplus::engine::…
+    const auto eng = compiled.result.output.header.find("namespace engine");
+    const auto world_ext = compiled.result.output.header.find("extern World world;");
+    const auto tick_ext = compiled.result.output.header.find("std::int32_t host_tick();");
+    ASSERT_NE(eng, std::string::npos);
+    ASSERT_NE(world_ext, std::string::npos);
+    ASSERT_NE(tick_ext, std::string::npos);
+    EXPECT_LT(world_ext, eng);
+    EXPECT_LT(tick_ext, eng);
+}

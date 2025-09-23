@@ -489,7 +489,7 @@ Types declared in a nested module are visible inside that module by their short 
 
 Module `let` / `let mut` globals (statics) follow the same rule: short name inside the module, `ecs::hits` or `use ecs::hits` / `use ecs::*` from outside.
 
-`extern` / `extern "C"` is allowed only at the compilation root (not inside nested `mod`). Host symbols live in `namespace qplus`, so nesting them would invent `qplus::systems::…` and clash with the host.
+`extern` / `extern "C"` may live in a nested module (for example `mod engine;` + `use engine::*`). Host symbols still bind in `namespace qplus` under the short name (`qplus::World`, not `qplus::engine::World`).
 
 `mod math { ... }` — body in this file. `mod math;` — a file module:
 
@@ -523,6 +523,28 @@ fn demo() -> i32 {
 `extern "C"` — free functions with the C ABI only. `extern` with no ABI — Q+ C++ runtime (`qplus::...`). The body is written in C++, not in `.qp`.
 
 `struct Test;` in `extern` is an opaque host type: Q+ does not know the fields and does not emit `struct`. Methods in `impl` are prototypes only; `obj.add(3, 5)` becomes `obj.add<std::int32_t>(3, 5)` in C++ (`T` is inferred from arguments, or write `add<i32>(...)`). `let` without `=` is an `extern` host global. The host puts the complete type in `qplus_host.h` on the include path, in `namespace qplus`.
+
+Bindings may be grouped in a nested module and imported:
+
+```qp
+mod engine;
+use engine::*;
+
+fn tick() -> i32 { world.step() }
+```
+
+```qp
+// engine.qp
+extern {
+    pub struct World;
+    impl World {
+        pub fn step(self) -> i32;
+    }
+    pub let mut world: World;
+}
+```
+
+The generated declarations still use `qplus::World` / `qplus::world` (short names), matching the host header.
 
 ### 7.1 Closures
 

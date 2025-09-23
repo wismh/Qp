@@ -600,3 +600,29 @@ add_executable(nested_enum_host
 target_include_directories(nested_enum_host PRIVATE ${NESTED_ENUM_GEN_DIR})
 
 add_test(NAME nested_enum_host COMMAND nested_enum_host)
+
+set(ENGINE_API_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_engine_api)
+set(ENGINE_API_GEN_H ${ENGINE_API_GEN_DIR}/engine_api.h)
+set(ENGINE_API_GEN_CPP ${ENGINE_API_GEN_DIR}/engine_api.cpp)
+
+add_custom_command(
+    OUTPUT ${ENGINE_API_GEN_H} ${ENGINE_API_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${ENGINE_API_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/engine_api.qp -o ${ENGINE_API_GEN_DIR}
+    DEPENDS qpc
+        ${CMAKE_SOURCE_DIR}/examples/engine_api.qp
+        ${CMAKE_SOURCE_DIR}/examples/engine.qp
+    COMMENT "qpc compile examples/engine_api.qp"
+    VERBATIM
+)
+
+add_executable(engine_api_host
+    examples/engine_api_host/main.cpp
+    ${ENGINE_API_GEN_CPP}
+)
+target_include_directories(engine_api_host PRIVATE
+    ${ENGINE_API_GEN_DIR}
+    ${CMAKE_SOURCE_DIR}/examples/engine_api_host
+)
+
+add_test(NAME engine_api_host COMMAND engine_api_host)
