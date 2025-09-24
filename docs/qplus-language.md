@@ -428,6 +428,20 @@ fn wrap(x: f32) -> f32 {
 
 There is no separate math package; these names are always in scope.
 
+### 5.9 `to_string`
+
+`to_string(x) -> string` converts a value for display and concatenation. Always in scope; a user `fn` of the same name shadows it.
+
+Accepted arguments: integers, floats, `bool`, `char`, `string`, and C-style `enum` (as its integer discriminant). Other types are a type error.
+
+```qp
+fn label(n: i32) -> string {
+    "n=" + to_string(n)
+}
+```
+
+`bool` becomes `"true"` / `"false"`. `string` is returned unchanged. Interpolation (`"hp = ${hp}"`) uses `to_string` on each `${...}` expression.
+
 ---
 
 ## 6. Variables and control flow
@@ -610,6 +624,7 @@ JIT in debug: panic shows the Q+ stack through LLVM debug info.
 | `null` | `nullptr` |
 | `panic` | `qplus::panic(...)` |
 | `sin` / `sqrt` / `fmod` / … | `std::sin` / `std::sqrt` / `std::fmod` / … (`<cmath>`) |
+| `to_string(x)` | `qplus::to_string(x)` |
 
 The generator does not use C++ exceptions in the public ABI of Q+ functions.
 
