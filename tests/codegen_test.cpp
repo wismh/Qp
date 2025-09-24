@@ -480,3 +480,15 @@ TEST(Codegen, NestedExternHoistedToRoot) {
     EXPECT_LT(world_ext, eng);
     EXPECT_LT(tick_ext, eng);
 }
+
+TEST(Codegen, ToStringBuiltin) {
+    auto compiled = qpc::test::compile_string(R"(
+        enum Color { Red }
+        pub fn run(n: i32) -> string {
+            to_string(n) + to_string(true) + to_string(Color::Red)
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("inline String to_string(bool v)"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("to_string("), std::string::npos);
+}
