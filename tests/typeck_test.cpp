@@ -783,3 +783,11 @@ TEST(Typeck, ToStringArityIsError) {
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("expects 1"), std::string::npos);
 }
+
+TEST(Typeck, StringInterpolation) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn status(hp: i32) -> string { "hp = ${hp}" }
+        fn greet(name: string) -> string { "hi ${name}" }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}

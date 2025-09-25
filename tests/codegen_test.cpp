@@ -492,3 +492,10 @@ TEST(Codegen, ToStringBuiltin) {
     EXPECT_NE(compiled.result.output.header.find("inline String to_string(bool v)"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("to_string("), std::string::npos);
 }
+
+TEST(Codegen, StringInterpolation) {
+    auto compiled = qpc::test::compile_string("pub fn status(hp: i32) -> string { \"hp = ${hp}\" }");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("to_string("), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("String(\"hp = \")"), std::string::npos);
+}
