@@ -617,6 +617,22 @@ TEST(Typeck, UnwrapNonNullableIsError) {
     EXPECT_NE(first_error(compiled.diags).find("unwrap"), std::string::npos);
 }
 
+TEST(Typeck, CoerceValueToNullable) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn wrap(n: i32) -> i32? { n }
+        fn take(p: i32?) -> i32 { if let v = p { v } else { 0 } }
+        fn run() -> i32 { take(7) }
+        fn either(flag: bool) -> i32? { if flag { 1 } else { null } }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, CoerceNullableMismatchIsError) {
+    auto compiled = qpc::test::compile_string("fn f(x: i32) -> f32? { x }");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("expected"), std::string::npos);
+}
+
 TEST(Typeck, DynTraitCoerceAndDispatch) {
     auto compiled = qpc::test::compile_string(R"(
         trait Area {
