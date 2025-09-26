@@ -205,9 +205,9 @@ let x = p?.x;            // f32?
 | `x?` | propagate null from a function that returns `U?` |
 | `if let v = x { }` | in the branch, `v: T` |
 
-There is no implicit `T` → `T?`: value and reference are different. To put a value on the heap, use `new`.
+There is an implicit `T` → `T?`: the value is copied onto the Q+ heap (`nullable_of` / `alloc`). Prefer `new` when constructing a struct in one step. `T?` → `T` stays explicit (`!`, `??`, `if let`).
 
-`T?` in C++: `T*` plus a contract. `null` is `nullptr`. `p!` is `unwrap(p)` (abort if null). `new T { }` is `qplus::alloc(T{...})`. Value `T` in C++: `struct T` by value.
+`T?` in C++: `T*` plus a contract. `null` is `nullptr`. `p!` is `unwrap(p)` (abort if null). `new T { }` is `qplus::alloc(T{...})`. A value `T` where `T?` is expected is `qplus::nullable_of(T{...})`. Value `T` in C++: `struct T` by value.
 
 v0 GC is conservative mark-sweep over `alloc` objects. Host C++ must keep live `T*` on the stack (or they may be collected).
 
@@ -593,6 +593,7 @@ JIT in debug: panic shows the Q+ stack through LLVM debug info.
 | `fn f(mut self)` | `S::f()` non-const / `S&` |
 | `T?` | `T*` |
 | `new T { }` | `qplus::alloc<T>(...)` |
+| `T` where `T?` expected | `qplus::nullable_of(T)` |
 | `string` | `qplus::String` |
 | `[T]` | `qplus::List<T>` |
 | `[T; N]` | `qplus::Array<T, N>` |

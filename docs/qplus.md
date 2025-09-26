@@ -90,11 +90,15 @@ fn widen(x: i32) -> i64 {
 }
 ```
 
-`null` is only for `T?`. `p!` panics if `p` is `null`. `new T { ... }` allocates a heap `T` and returns `T?`. The C++ runtime is a conservative mark-sweep GC (`qplus::alloc`, `qplus::gc_collect`). `if let v = p { }` binds `v: T` when `p` is not `null`. `p?.x` and `p?.method()` are null-safe and yield `U?`. `p ?? y` uses `y` when `p` is `null`. `p?` returns `null` from a function that returns `U?`.
+`null` is only for `T?`. `p!` panics if `p` is `null`. `new T { ... }` allocates a heap `T` and returns `T?`. A value of type `T` coerces to `T?` (heap copy) where `T?` is expected — arguments, returns, `let` annotations, and `if` branches. The C++ runtime is a conservative mark-sweep GC (`qplus::alloc`, `qplus::gc_collect`). `if let v = p { }` binds `v: T` when `p` is not `null`. `p?.x` and `p?.method()` are null-safe and yield `U?`. `p ?? y` uses `y` when `p` is `null`. `p?` returns `null` from a function that returns `U?`.
 
 ```qp
 fn or_zero(p: i32?) -> i32 {
     if let v = p { v } else { 0 }
+}
+
+fn wrap(n: i32) -> i32? {
+    n
 }
 
 struct Point {
