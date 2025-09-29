@@ -12,6 +12,7 @@ enum class TokenKind {
     Int,
     Float,
     String,
+    StringFrag,
     Char,
     KwFn,
     KwLet,
@@ -75,6 +76,7 @@ enum class TokenKind {
     Question,
     QuestionDot,
     QuestionQuestion,
+    DollarBrace,
 };
 
 struct Token {
@@ -124,6 +126,8 @@ inline const char* token_kind_name(TokenKind kind) {
             return "float";
         case TokenKind::String:
             return "string";
+        case TokenKind::StringFrag:
+            return "string fragment";
         case TokenKind::Char:
             return "char";
         case TokenKind::KwFn:
@@ -250,6 +254,8 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'?.'";
         case TokenKind::QuestionQuestion:
             return "'??'";
+        case TokenKind::DollarBrace:
+            return "'${'";
     }
     return "token";
 }

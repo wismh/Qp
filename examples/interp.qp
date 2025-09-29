@@ -1,0 +1,11 @@
+pub fn status(hp: i32) -> string {
+    "hp = ${hp}"
+}
+
+pub fn greet(name: string) -> string {
+    "hello, ${name}"
+}
+
+pub fn mix(a: i32, b: bool) -> string {
+    "${a}:${b}"
+}

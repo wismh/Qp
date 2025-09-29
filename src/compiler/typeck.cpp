@@ -1472,6 +1472,24 @@ private:
                 then_ty = else_ty;
             } else if (coerce_lit(*iff.else_expr, then_ty)) {
                 else_ty = then_ty;
+            } else if (else_ty.kind == TypeKind::Nullable && then_ty == else_ty.elem() && iff.then_tail) {
+                iff.then_tail->coerce_nullable = true;
+                iff.then_tail->ty = else_ty;
+                then_ty = else_ty;
+            } else if (then_ty.kind == TypeKind::Nullable && else_ty == then_ty.elem()) {
+                iff.else_expr->coerce_nullable = true;
+                iff.else_expr->ty = then_ty;
+                else_ty = then_ty;
+            } else if (iff.then_tail && coerce_null_to_nullable(*iff.else_expr, Type::nullable(then_ty))) {
+                iff.then_tail->coerce_nullable = true;
+                iff.then_tail->ty = Type::nullable(then_ty);
+                then_ty = iff.then_tail->ty;
+                else_ty = then_ty;
+            } else if (iff.then_tail && coerce_null_to_nullable(*iff.then_tail, Type::nullable(else_ty))) {
+                iff.else_expr->coerce_nullable = true;
+                iff.else_expr->ty = Type::nullable(else_ty);
+                else_ty = iff.else_expr->ty;
+                then_ty = else_ty;
             }
         }
         if (then_ty != else_ty) {
@@ -1705,6 +1723,22 @@ private:
         return false;
     }
 
+    bool coerce_null_to_nullable(HirExpr& expr, Type want) {
+        if (want.kind != TypeKind::Nullable) {
+            return false;
+        }
+        if (coerce_lit(expr, want)) {
+            return true;
+        }
+        if (auto* eif = std::get_if<HirIf>(&expr.kind)) {
+            if (eif->then_tail && !eif->else_expr && coerce_lit(*eif->then_tail, want)) {
+                expr.ty = want;
+                return true;
+            }
+        }
+        return false;
+    }
+
     Type check_binop(HirBinary& bin, std::size_t offset) {
         Type lhs = check_expr(*bin.lhs);
         Type rhs = check_expr(*bin.rhs);
@@ -1862,6 +1896,41 @@ private:
         return result;
     }
 
+    bool can_to_string(const Type& ty) {
+        if (is_numeric(ty) || ty == Type::boolean() || ty == Type::char_() || ty == Type::string() ||
+            ty == Type::error()) {
+            return true;
+        }
+        if (ty.kind == TypeKind::Named) {
+            return c_enums_.contains(lookup_named(ty.name)) || c_enums_.contains(ty.name);
+        }
+        return false;
+    }
+
+    Type check_to_string_builtin(HirCall& call, std::size_t offset) {
+        if (call.callee != "to_string") {
+            return Type::unknown();
+        }
+        if (!call.type_args.empty()) {
+            error(offset, "'to_string' cannot take type arguments");
+            return Type::error();
+        }
+        for (auto& arg : call.args) {
+            check_expr(*arg);
+        }
+        if (call.args.size() != 1) {
+            error(offset, "function 'to_string' expects 1 argument(s), got " +
+                              std::to_string(call.args.size()));
+            return Type::error();
+        }
+        if (!can_to_string(call.args[0]->ty)) {
+            error(call.args[0]->offset,
+                  "cannot convert '" + type_name(call.args[0]->ty) + "' to string");
+            return Type::error();
+        }
+        return Type::string();
+    }
+
     Type check_call(HirCall& call, HirExpr& expr) {
         const std::size_t offset = expr.offset;
         if (call.callee_expr) {
@@ -1892,6 +1961,10 @@ private:
                     check_expr(*arg);
                 }
                 return Type::error();
+            }
+            const Type to_string_ty = check_to_string_builtin(call, offset);
+            if (to_string_ty.kind != TypeKind::Unknown) {
+                return to_string_ty;
             }
             const Type math = check_math_builtin(call, offset);
             if (math.kind != TypeKind::Unknown) {
@@ -2652,6 +2725,11 @@ private:
         }
         if (got == expected || got == Type::error() || expected == Type::error() ||
             got.kind == TypeKind::Never) {
+            return;
+        }
+        if (expected.kind == TypeKind::Nullable && got == expected.elem()) {
+            expr.coerce_nullable = true;
+            expr.ty = expected;
             return;
         }
         if (expected.kind == TypeKind::Dyn && got.kind == TypeKind::Named) {

@@ -1,0 +1,23 @@
+pub fn wrap(n: i32) -> i32? {
+    n
+}
+
+pub fn take(p: i32?) -> i32 {
+    if let v = p {
+        v
+    } else {
+        0
+    }
+}
+
+pub fn run() -> i32 {
+    take(7) + take(wrap(3))
+}
+
+pub fn either(flag: bool) -> i32? {
+    if flag {
+        1
+    } else {
+        null
+    }
+}

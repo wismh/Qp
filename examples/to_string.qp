@@ -1,0 +1,16 @@
+pub fn label(n: i32) -> string {
+    "n=" + to_string(n)
+}
+
+pub fn flag(b: bool) -> string {
+    to_string(b)
+}
+
+pub enum Color {
+    Red,
+    Green,
+}
+
+pub fn color_name(c: Color) -> string {
+    to_string(c)
+}

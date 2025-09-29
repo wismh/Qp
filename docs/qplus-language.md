@@ -137,7 +137,7 @@ Without this, generated C++ is not self-contained.
 
 Comments: `//`, `/* */`. Unicode identifiers. Convention: `snake_case` for values and functions, `PascalCase` for types. Keywords are English.
 
-Strings: `"hello"`, interpolation `"hp = ${hp}"`, raw `#"path\raw"#`.
+Strings: `"hello"`, interpolation `"hp = ${hp}"` (each `${expr}` is `to_string(expr)`), raw `#"path\raw"#`.
 
 Numbers: `10`, `10_000`, `0xFF`, `3.14` (default **`f32`**), `3.14f64`, suffixes `i32`/`u64`.
 
@@ -205,9 +205,9 @@ let x = p?.x;            // f32?
 | `x?` | propagate null from a function that returns `U?` |
 | `if let v = x { }` | in the branch, `v: T` |
 
-There is no implicit `T` → `T?`: value and reference are different. To put a value on the heap, use `new`.
+There is an implicit `T` → `T?`: the value is copied onto the Q+ heap (`nullable_of` / `alloc`). Prefer `new` when constructing a struct in one step. `T?` → `T` stays explicit (`!`, `??`, `if let`).
 
-`T?` in C++: `T*` plus a contract. `null` is `nullptr`. `p!` is `unwrap(p)` (abort if null). `new T { }` is `qplus::alloc(T{...})`. Value `T` in C++: `struct T` by value.
+`T?` in C++: `T*` plus a contract. `null` is `nullptr`. `p!` is `unwrap(p)` (abort if null). `new T { }` is `qplus::alloc(T{...})`. A value `T` where `T?` is expected is `qplus::nullable_of(T{...})`. Value `T` in C++: `struct T` by value.
 
 v0 GC is conservative mark-sweep over `alloc` objects. Host C++ must keep live `T*` on the stack (or they may be collected).
 
@@ -428,6 +428,20 @@ fn wrap(x: f32) -> f32 {
 
 There is no separate math package; these names are always in scope.
 
+### 5.9 `to_string`
+
+`to_string(x) -> string` converts a value for display and concatenation. Always in scope; a user `fn` of the same name shadows it.
+
+Accepted arguments: integers, floats, `bool`, `char`, `string`, and C-style `enum` (as its integer discriminant). Other types are a type error.
+
+```qp
+fn label(n: i32) -> string {
+    "n=" + to_string(n)
+}
+```
+
+`bool` becomes `"true"` / `"false"`. `string` is returned unchanged. Interpolation (`"hp = ${hp}"`) uses `to_string` on each `${...}` expression.
+
 ---
 
 ## 6. Variables and control flow
@@ -593,6 +607,7 @@ JIT in debug: panic shows the Q+ stack through LLVM debug info.
 | `fn f(mut self)` | `S::f()` non-const / `S&` |
 | `T?` | `T*` |
 | `new T { }` | `qplus::alloc<T>(...)` |
+| `T` where `T?` expected | `qplus::nullable_of(T)` |
 | `string` | `qplus::String` |
 | `[T]` | `qplus::List<T>` |
 | `[T; N]` | `qplus::Array<T, N>` |
@@ -610,6 +625,7 @@ JIT in debug: panic shows the Q+ stack through LLVM debug info.
 | `null` | `nullptr` |
 | `panic` | `qplus::panic(...)` |
 | `sin` / `sqrt` / `fmod` / … | `std::sin` / `std::sqrt` / `std::fmod` / … (`<cmath>`) |
+| `to_string(x)` | `qplus::to_string(x)` |
 
 The generator does not use C++ exceptions in the public ABI of Q+ functions.
 

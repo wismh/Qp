@@ -90,11 +90,15 @@ fn widen(x: i32) -> i64 {
 }
 ```
 
-`null` is only for `T?`. `p!` panics if `p` is `null`. `new T { ... }` allocates a heap `T` and returns `T?`. The C++ runtime is a conservative mark-sweep GC (`qplus::alloc`, `qplus::gc_collect`). `if let v = p { }` binds `v: T` when `p` is not `null`. `p?.x` and `p?.method()` are null-safe and yield `U?`. `p ?? y` uses `y` when `p` is `null`. `p?` returns `null` from a function that returns `U?`.
+`null` is only for `T?`. `p!` panics if `p` is `null`. `new T { ... }` allocates a heap `T` and returns `T?`. A value of type `T` coerces to `T?` (heap copy) where `T?` is expected — arguments, returns, `let` annotations, and `if` branches. The C++ runtime is a conservative mark-sweep GC (`qplus::alloc`, `qplus::gc_collect`). `if let v = p { }` binds `v: T` when `p` is not `null`. `p?.x` and `p?.method()` are null-safe and yield `U?`. `p ?? y` uses `y` when `p` is `null`. `p?` returns `null` from a function that returns `U?`.
 
 ```qp
 fn or_zero(p: i32?) -> i32 {
     if let v = p { v } else { 0 }
+}
+
+fn wrap(n: i32) -> i32? {
+    n
 }
 
 struct Point {
@@ -123,13 +127,29 @@ fn sum(a: i32?, b: i32?) -> i32? {
 }
 ```
 
-Strings concatenate with `+`:
+Strings concatenate with `+`. Convert values with `to_string`:
 
 ```qp
 fn greet(name: string) -> string {
     "hello, " + name
 }
+
+fn label(n: i32) -> string {
+    "n=" + to_string(n)
+}
 ```
+
+`to_string` accepts integers, floats, `bool`, `char`, `string`, and C-style `enum`. It is always in scope; a user `fn` of the same name wins.
+
+Interpolation embeds expressions with `${...}`:
+
+```qp
+fn status(hp: i32) -> string {
+    "hp = ${hp}"
+}
+```
+
+That is the same as `"hp = " + to_string(hp)`. Nested braces in the expression are fine (`"${Point { x: 1 }.x}"`).
 
 ---
 
@@ -550,6 +570,6 @@ Examples live in [`examples/`](../examples/).
 These are in the language design, but do not use them yet:
 
 - a separate package system / a JIT or WASM backend of its own
-- string interpolation, tuples `(A, B)`, `Result`, `xs.enumerate()`
+- tuples `(A, B)`, `Result`, `xs.enumerate()`
 
 There is no borrow checker, no classes, and no C++ exceptions in the Q+ public ABI.

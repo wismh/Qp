@@ -257,22 +257,117 @@ struct Lexer {
     void scan_string() {
         const std::size_t begin = i;
         ++i;
-        while (!eof() && text[i] != '"' && text[i] != '\n') {
+        if (!string_has_interp(i)) {
+            while (!eof() && text[i] != '"' && text[i] != '\n') {
+                if (text[i] == '\\') {
+                    ++i;
+                    if (eof()) {
+                        break;
+                    }
+                }
+                ++i;
+            }
+            if (eof() || text[i] != '"') {
+                diags.error(src, begin, "unterminated string literal");
+                i = text.size();
+                return;
+            }
+            ++i;
+            push(TokenKind::String, begin, i);
+            return;
+        }
+
+        std::size_t frag_begin = i;
+        while (true) {
+            if (eof() || text[i] == '\n') {
+                diags.error(src, begin, "unterminated string literal");
+                i = text.size();
+                return;
+            }
             if (text[i] == '\\') {
                 ++i;
-                if (eof()) {
-                    break;
+                if (!eof()) {
+                    ++i;
                 }
+                continue;
+            }
+            if (text[i] == '"') {
+                push(TokenKind::StringFrag, frag_begin, i);
+                ++i;
+                return;
+            }
+            if (text[i] == '$' && ahead(1) == '{') {
+                push(TokenKind::StringFrag, frag_begin, i);
+                push(TokenKind::DollarBrace, i, i + 2);
+                i += 2;
+                scan_interp_expr();
+                frag_begin = i;
+                continue;
             }
             ++i;
         }
-        if (eof() || text[i] != '"') {
-            diags.error(src, begin, "unterminated string literal");
-            i = text.size();
-            return;
+    }
+
+    [[nodiscard]] bool string_has_interp(std::size_t from) const {
+        for (std::size_t j = from; j < text.size() && text[j] != '"' && text[j] != '\n';) {
+            if (text[j] == '\\') {
+                j += (j + 1 < text.size()) ? 2 : 1;
+                continue;
+            }
+            if (text[j] == '$' && j + 1 < text.size() && text[j + 1] == '{') {
+                return true;
+            }
+            ++j;
         }
-        ++i;
-        push(TokenKind::String, begin, i);
+        return false;
+    }
+
+    void scan_interp_expr() {
+        const std::size_t begin = i;
+        int depth = 1;
+        while (!eof() && depth > 0) {
+            skip_spaces();
+            if (try_line_comment() || try_block_comment()) {
+                continue;
+            }
+            if (eof()) {
+                break;
+            }
+            const char c = text[i];
+            if (c == '{') {
+                push(TokenKind::LBrace, i, i + 1);
+                ++i;
+                ++depth;
+                continue;
+            }
+            if (c == '}') {
+                push(TokenKind::RBrace, i, i + 1);
+                ++i;
+                --depth;
+                continue;
+            }
+            if (c == '"') {
+                scan_string();
+                continue;
+            }
+            if (c == '\'') {
+                scan_char();
+                continue;
+            }
+            if (is_ident_start(c)) {
+                scan_ident();
+                continue;
+            }
+            if (is_digit(c)) {
+                scan_number();
+                continue;
+            }
+            scan_punct();
+        }
+        if (depth != 0) {
+            diags.error(src, begin, "unterminated string interpolation");
+            i = text.size();
+        }
     }
 
     void scan_char() {

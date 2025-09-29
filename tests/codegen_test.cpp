@@ -321,6 +321,16 @@ TEST(Codegen, TryOperator) {
     EXPECT_NE(compiled.result.output.source.find("return nullptr;"), std::string::npos);
 }
 
+TEST(Codegen, CoerceValueToNullable) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn wrap(n: i32) -> i32? { n }
+        pub fn take(p: i32?) -> i32 { if let v = p { v } else { 0 } }
+        pub fn run() -> i32 { take(7) }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("nullable_of("), std::string::npos);
+}
+
 TEST(Codegen, GenericStructTemplate) {
     auto compiled = qpc::test::compile_string(R"(
         struct Pair<T> { mut a: T, mut b: T }
@@ -479,4 +489,23 @@ TEST(Codegen, NestedExternHoistedToRoot) {
     ASSERT_NE(tick_ext, std::string::npos);
     EXPECT_LT(world_ext, eng);
     EXPECT_LT(tick_ext, eng);
+}
+
+TEST(Codegen, ToStringBuiltin) {
+    auto compiled = qpc::test::compile_string(R"(
+        enum Color { Red }
+        pub fn run(n: i32) -> string {
+            to_string(n) + to_string(true) + to_string(Color::Red)
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("inline String to_string(bool v)"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("to_string("), std::string::npos);
+}
+
+TEST(Codegen, StringInterpolation) {
+    auto compiled = qpc::test::compile_string("pub fn status(hp: i32) -> string { \"hp = ${hp}\" }");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("to_string("), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("String(\"hp = \")"), std::string::npos);
 }

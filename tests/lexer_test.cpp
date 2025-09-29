@@ -219,3 +219,20 @@ TEST(Lexer, DynKeyword) {
     EXPECT_EQ(tokens[0].kind, TokenKind::KwDyn);
     EXPECT_EQ(tokens[1].kind, TokenKind::Eof);
 }
+
+TEST(Lexer, StringInterpolationTokens) {
+    auto src = Source::from_string("t.qp", "\"hp = ${hp}\"");
+    DiagnosticEngine diags;
+    const auto tokens = lex(src, diags);
+    ASSERT_FALSE(diags.has_errors()) << diags.all().front().message;
+    ASSERT_EQ(tokens.size(), 6u);
+    EXPECT_EQ(tokens[0].kind, TokenKind::StringFrag);
+    EXPECT_EQ(tokens[0].text(src.view()), "hp = ");
+    EXPECT_EQ(tokens[1].kind, TokenKind::DollarBrace);
+    EXPECT_EQ(tokens[2].kind, TokenKind::Ident);
+    EXPECT_EQ(tokens[2].text(src.view()), "hp");
+    EXPECT_EQ(tokens[3].kind, TokenKind::RBrace);
+    EXPECT_EQ(tokens[4].kind, TokenKind::StringFrag);
+    EXPECT_EQ(tokens[4].text(src.view()), "");
+    EXPECT_EQ(tokens[5].kind, TokenKind::Eof);
+}
