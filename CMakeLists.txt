@@ -668,3 +668,24 @@ add_executable(interp_host
 target_include_directories(interp_host PRIVATE ${INTERP_GEN_DIR})
 
 add_test(NAME interp_host COMMAND interp_host)
+
+set(COERCE_NULL_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_coerce_null)
+set(COERCE_NULL_GEN_H ${COERCE_NULL_GEN_DIR}/coerce_null.h)
+set(COERCE_NULL_GEN_CPP ${COERCE_NULL_GEN_DIR}/coerce_null.cpp)
+
+add_custom_command(
+    OUTPUT ${COERCE_NULL_GEN_H} ${COERCE_NULL_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${COERCE_NULL_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/coerce_null.qp -o ${COERCE_NULL_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/coerce_null.qp
+    COMMENT "qpc compile examples/coerce_null.qp"
+    VERBATIM
+)
+
+add_executable(coerce_null_host
+    examples/coerce_null_host/main.cpp
+    ${COERCE_NULL_GEN_CPP}
+)
+target_include_directories(coerce_null_host PRIVATE ${COERCE_NULL_GEN_DIR})
+
+add_test(NAME coerce_null_host COMMAND coerce_null_host)

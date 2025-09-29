@@ -321,6 +321,16 @@ TEST(Codegen, TryOperator) {
     EXPECT_NE(compiled.result.output.source.find("return nullptr;"), std::string::npos);
 }
 
+TEST(Codegen, CoerceValueToNullable) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn wrap(n: i32) -> i32? { n }
+        pub fn take(p: i32?) -> i32 { if let v = p { v } else { 0 } }
+        pub fn run() -> i32 { take(7) }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("nullable_of("), std::string::npos);
+}
+
 TEST(Codegen, GenericStructTemplate) {
     auto compiled = qpc::test::compile_string(R"(
         struct Pair<T> { mut a: T, mut b: T }

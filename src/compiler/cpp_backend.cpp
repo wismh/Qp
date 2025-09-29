@@ -424,7 +424,11 @@ void emit_if_stmt(std::ostringstream& out, const HirIf& iff, IfSink sink, const 
 }
 
 void emit_expr(std::ostringstream& out, const HirExpr& expr) {
+    const bool wrap_null = expr.coerce_nullable;
     const bool wrap_dyn = !expr.coerce_dyn.empty();
+    if (wrap_null) {
+        out << "nullable_of(";
+    }
     if (wrap_dyn) {
         out << "make_dyn_" << expr.coerce_dyn << "(";
     }
@@ -741,6 +745,9 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
         },
         expr.kind);
     if (wrap_dyn) {
+        out << ")";
+    }
+    if (wrap_null) {
         out << ")";
     }
 }
