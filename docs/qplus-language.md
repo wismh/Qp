@@ -137,7 +137,7 @@ Without this, generated C++ is not self-contained.
 
 Comments: `//`, `/* */`. Unicode identifiers. Convention: `snake_case` for values and functions, `PascalCase` for types. Keywords are English.
 
-Strings: `"hello"`, interpolation `"hp = ${hp}"`, raw `#"path\raw"#`.
+Strings: `"hello"`, interpolation `"hp = ${hp}"` (each `${expr}` is `to_string(expr)`), raw `#"path\raw"#`.
 
 Numbers: `10`, `10_000`, `0xFF`, `3.14` (default **`f32`**), `3.14f64`, suffixes `i32`/`u64`.
 

@@ -647,3 +647,24 @@ add_executable(to_string_host
 target_include_directories(to_string_host PRIVATE ${TO_STRING_GEN_DIR})
 
 add_test(NAME to_string_host COMMAND to_string_host)
+
+set(INTERP_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_interp)
+set(INTERP_GEN_H ${INTERP_GEN_DIR}/interp.h)
+set(INTERP_GEN_CPP ${INTERP_GEN_DIR}/interp.cpp)
+
+add_custom_command(
+    OUTPUT ${INTERP_GEN_H} ${INTERP_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${INTERP_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/interp.qp -o ${INTERP_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/interp.qp
+    COMMENT "qpc compile examples/interp.qp"
+    VERBATIM
+)
+
+add_executable(interp_host
+    examples/interp_host/main.cpp
+    ${INTERP_GEN_CPP}
+)
+target_include_directories(interp_host PRIVATE ${INTERP_GEN_DIR})
+
+add_test(NAME interp_host COMMAND interp_host)

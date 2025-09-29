@@ -156,6 +156,9 @@ std::string unescape_string(std::string_view raw, const Source& src, std::size_t
             case '0':
                 out.push_back('\0');
                 break;
+            case '$':
+                out.push_back('$');
+                break;
             default:
                 diags.error(src, offset, "unknown string escape");
                 break;

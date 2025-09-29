@@ -610,3 +610,22 @@ TEST(E2E, CompileToStringExampleToFiles) {
     EXPECT_NE(header_text.find("String label(std::int32_t n)"), std::string::npos);
     EXPECT_NE(header_text.find("inline String to_string(bool v)"), std::string::npos);
 }
+
+TEST(E2E, CompileInterpExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_interp";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input =
+        std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "interp.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto source = out_dir / "interp.cpp";
+    ASSERT_TRUE(std::filesystem::exists(source));
+    std::ifstream source_in(source);
+    const std::string source_text((std::istreambuf_iterator<char>(source_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(source_text.find("to_string("), std::string::npos);
+    EXPECT_NE(source_text.find("String(\"hp = \")"), std::string::npos);
+}

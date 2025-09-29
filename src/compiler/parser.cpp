@@ -1820,6 +1820,48 @@ private:
         return args;
     }
 
+    std::optional<ExprPtr> parse_string_interp() {
+        const std::size_t off = peek().offset;
+        ExprPtr acc;
+        auto append = [&](ExprPtr part) {
+            if (!acc) {
+                acc = std::move(part);
+            } else {
+                acc = make_expr(off, ExprBinary{TokenKind::Plus, std::move(acc), std::move(part)});
+            }
+        };
+
+        while (at(TokenKind::StringFrag)) {
+            const std::size_t frag_off = peek().offset;
+            std::string raw = "\"";
+            raw.append(peek_text());
+            raw.push_back('"');
+            advance();
+            append(make_expr(frag_off, LitString{std::move(raw)}));
+
+            if (!consume(TokenKind::DollarBrace)) {
+                break;
+            }
+            auto inner = parse_expr(true);
+            if (!inner) {
+                return std::nullopt;
+            }
+            if (!expect(TokenKind::RBrace, "'}' after interpolation")) {
+                return std::nullopt;
+            }
+            auto callee = make_expr((*inner)->offset, ExprIdent{"to_string"});
+            std::vector<ExprPtr> args;
+            args.push_back(std::move(*inner));
+            append(make_expr(frag_off, ExprCall{std::move(callee), {}, std::move(args)}));
+        }
+
+        if (!acc) {
+            diags_.error(src_, off, "expected string literal");
+            return std::nullopt;
+        }
+        return acc;
+    }
+
     std::optional<ExprPtr> parse_primary(bool allow_struct = true) {
         if (at(TokenKind::KwIf)) {
             return parse_if();
@@ -1861,6 +1903,10 @@ private:
             std::string raw(peek_text());
             advance();
             return make_expr(off, LitString{std::move(raw)});
+        }
+
+        if (at(TokenKind::StringFrag)) {
+            return parse_string_interp();
         }
 
         if (at(TokenKind::Char)) {

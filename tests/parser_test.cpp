@@ -410,3 +410,10 @@ TEST(Parser, DynTraitType) {
     EXPECT_EQ(parsed.ast.functions[0].params[0].ty.kind, qpc::TypeExpr::Kind::Dyn);
     EXPECT_EQ(parsed.ast.functions[0].params[0].ty.name, "Area");
 }
+
+TEST(Parser, StringInterpolationDesugarsToConcat) {
+    auto parsed = qpc::test::parse_string("fn status(hp: i32) -> string { \"hp = ${hp}\" }");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_TRUE(parsed.ast.functions[0].body.tail);
+    EXPECT_TRUE(std::holds_alternative<qpc::ExprBinary>(parsed.ast.functions[0].body.tail->kind));
+}

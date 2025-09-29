@@ -137,6 +137,16 @@ fn label(n: i32) -> string {
 
 `to_string` accepts integers, floats, `bool`, `char`, `string`, and C-style `enum`. It is always in scope; a user `fn` of the same name wins.
 
+Interpolation embeds expressions with `${...}`:
+
+```qp
+fn status(hp: i32) -> string {
+    "hp = ${hp}"
+}
+```
+
+That is the same as `"hp = " + to_string(hp)`. Nested braces in the expression are fine (`"${Point { x: 1 }.x}"`).
+
 ---
 
 ## Control flow
@@ -556,6 +566,6 @@ Examples live in [`examples/`](../examples/).
 These are in the language design, but do not use them yet:
 
 - a separate package system / a JIT or WASM backend of its own
-- string interpolation, tuples `(A, B)`, `Result`, `xs.enumerate()`
+- tuples `(A, B)`, `Result`, `xs.enumerate()`
 
 There is no borrow checker, no classes, and no C++ exceptions in the Q+ public ABI.
