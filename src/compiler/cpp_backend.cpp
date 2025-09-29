@@ -1327,6 +1327,7 @@ std::string emit_header(const HirModule& mod) {
     header << "#include <map>\n";
     header << "#include <new>\n";
     header << "#include <string>\n";
+    header << "#include <type_traits>\n";
     header << "#include <utility>\n";
     header << "#include <variant>\n";
     header << "#include <vector>\n";
@@ -1354,6 +1355,56 @@ std::string emit_header(const HirModule& mod) {
     header << "template <typename T, std::size_t N>\nusing Array = std::array<T, N>;\n";
     header << "template <typename K, typename V>\nusing Dict = std::map<K, V>;\n";
     header << "template <typename T>\nusing Fn = std::function<T>;\n\n";
+    header << R"cpp(inline String to_string(bool v) {
+    return v ? String("true") : String("false");
+}
+
+inline String to_string(char32_t c) {
+    String out;
+    const auto u = static_cast<std::uint32_t>(c);
+    if (u <= 0x7Fu) {
+        out.push_back(static_cast<char>(u));
+    } else if (u <= 0x7FFu) {
+        out.push_back(static_cast<char>(0xC0u | (u >> 6)));
+        out.push_back(static_cast<char>(0x80u | (u & 0x3Fu)));
+    } else if (u <= 0xFFFFu) {
+        out.push_back(static_cast<char>(0xE0u | (u >> 12)));
+        out.push_back(static_cast<char>(0x80u | ((u >> 6) & 0x3Fu)));
+        out.push_back(static_cast<char>(0x80u | (u & 0x3Fu)));
+    } else {
+        out.push_back(static_cast<char>(0xF0u | (u >> 18)));
+        out.push_back(static_cast<char>(0x80u | ((u >> 12) & 0x3Fu)));
+        out.push_back(static_cast<char>(0x80u | ((u >> 6) & 0x3Fu)));
+        out.push_back(static_cast<char>(0x80u | (u & 0x3Fu)));
+    }
+    return out;
+}
+
+inline String to_string(const String& s) {
+    return s;
+}
+
+inline String to_string(float v) {
+    return std::to_string(v);
+}
+
+inline String to_string(double v) {
+    return std::to_string(v);
+}
+
+template <typename T>
+    requires std::is_integral_v<T>
+String to_string(T v) {
+    return std::to_string(v);
+}
+
+template <typename E>
+    requires std::is_enum_v<E>
+String to_string(E v) {
+    return std::to_string(static_cast<std::underlying_type_t<E>>(v));
+}
+
+)cpp";
     header << "template <typename T>\nT unwrap(T* p) {\n    if (p == nullptr) {\n        std::abort();\n    }\n    return *p;\n}\n\n";
     header << R"cpp(struct GcHeader {
     GcHeader* next;

@@ -626,3 +626,24 @@ target_include_directories(engine_api_host PRIVATE
 )
 
 add_test(NAME engine_api_host COMMAND engine_api_host)
+
+set(TO_STRING_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_to_string)
+set(TO_STRING_GEN_H ${TO_STRING_GEN_DIR}/to_string.h)
+set(TO_STRING_GEN_CPP ${TO_STRING_GEN_DIR}/to_string.cpp)
+
+add_custom_command(
+    OUTPUT ${TO_STRING_GEN_H} ${TO_STRING_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${TO_STRING_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/to_string.qp -o ${TO_STRING_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/to_string.qp
+    COMMENT "qpc compile examples/to_string.qp"
+    VERBATIM
+)
+
+add_executable(to_string_host
+    examples/to_string_host/main.cpp
+    ${TO_STRING_GEN_CPP}
+)
+target_include_directories(to_string_host PRIVATE ${TO_STRING_GEN_DIR})
+
+add_test(NAME to_string_host COMMAND to_string_host)

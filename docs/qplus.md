@@ -123,13 +123,19 @@ fn sum(a: i32?, b: i32?) -> i32? {
 }
 ```
 
-Strings concatenate with `+`:
+Strings concatenate with `+`. Convert values with `to_string`:
 
 ```qp
 fn greet(name: string) -> string {
     "hello, " + name
 }
+
+fn label(n: i32) -> string {
+    "n=" + to_string(n)
+}
 ```
+
+`to_string` accepts integers, floats, `bool`, `char`, `string`, and C-style `enum`. It is always in scope; a user `fn` of the same name wins.
 
 ---
 

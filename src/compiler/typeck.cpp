@@ -1862,6 +1862,41 @@ private:
         return result;
     }
 
+    bool can_to_string(const Type& ty) {
+        if (is_numeric(ty) || ty == Type::boolean() || ty == Type::char_() || ty == Type::string() ||
+            ty == Type::error()) {
+            return true;
+        }
+        if (ty.kind == TypeKind::Named) {
+            return c_enums_.contains(lookup_named(ty.name)) || c_enums_.contains(ty.name);
+        }
+        return false;
+    }
+
+    Type check_to_string_builtin(HirCall& call, std::size_t offset) {
+        if (call.callee != "to_string") {
+            return Type::unknown();
+        }
+        if (!call.type_args.empty()) {
+            error(offset, "'to_string' cannot take type arguments");
+            return Type::error();
+        }
+        for (auto& arg : call.args) {
+            check_expr(*arg);
+        }
+        if (call.args.size() != 1) {
+            error(offset, "function 'to_string' expects 1 argument(s), got " +
+                              std::to_string(call.args.size()));
+            return Type::error();
+        }
+        if (!can_to_string(call.args[0]->ty)) {
+            error(call.args[0]->offset,
+                  "cannot convert '" + type_name(call.args[0]->ty) + "' to string");
+            return Type::error();
+        }
+        return Type::string();
+    }
+
     Type check_call(HirCall& call, HirExpr& expr) {
         const std::size_t offset = expr.offset;
         if (call.callee_expr) {
@@ -1892,6 +1927,10 @@ private:
                     check_expr(*arg);
                 }
                 return Type::error();
+            }
+            const Type to_string_ty = check_to_string_builtin(call, offset);
+            if (to_string_ty.kind != TypeKind::Unknown) {
+                return to_string_ty;
             }
             const Type math = check_math_builtin(call, offset);
             if (math.kind != TypeKind::Unknown) {

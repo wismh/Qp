@@ -758,3 +758,28 @@ TEST(Typeck, NestedExternModuleUse) {
     )");
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
+
+TEST(Typeck, ToStringBuiltin) {
+    auto compiled = qpc::test::compile_string(R"(
+        enum Color { Red, Green }
+        fn run(n: i32, flag: bool, c: Color, s: string) -> string {
+            to_string(n) + to_string(flag) + to_string(c) + to_string(s) + to_string('x')
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, ToStringWrongTypeIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { x: i32 }
+        fn f(p: Point) -> string { to_string(p) }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("cannot convert"), std::string::npos);
+}
+
+TEST(Typeck, ToStringArityIsError) {
+    auto compiled = qpc::test::compile_string("fn f() -> string { to_string() }");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("expects 1"), std::string::npos);
+}
