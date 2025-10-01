@@ -512,6 +512,27 @@ Module `let` / `let mut` globals (statics) follow the same rule: short name insi
 
 Both files at once is an error. Neither is an error. A cycle (`a` → `b` → `a`) is an error.
 
+### 7.0 External packages (`packages.toml`)
+
+To pull a module from outside the current tree, put a `packages.toml` in the project (or a parent directory). `qpc` walks upward from the compiled `.qp` and loads the first one it finds.
+
+```toml
+[package]
+name = "app"
+
+[dependencies]
+math = { path = "../libs/math" }
+```
+
+`path` is a directory (relative to the `packages.toml` file, or absolute). That directory is the module root: it must contain `mod.qp` or `<name>.qp` (same exclusivity rules as local file modules).
+
+```qp
+mod math;          // local first; else packages.toml dependency "math"
+use math::*;
+```
+
+Local `math.qp` / `math/mod.qp` next to the importer still wins. Nested `mod` inside a package resolve relative to that package root. Versioned registries are not in v0 — only path dependencies.
+
 `extern` declares a symbol the host (C++) provides:
 
 ```qp

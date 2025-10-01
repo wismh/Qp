@@ -1,0 +1,6 @@
+mod math;
+use math::*;
+
+pub fn run() -> i32 {
+    add(2, 3) + answer()
+}

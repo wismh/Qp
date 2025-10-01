@@ -647,3 +647,43 @@ TEST(E2E, CompileCoerceNullExampleToFiles) {
                                   std::istreambuf_iterator<char>());
     EXPECT_NE(source_text.find("nullable_of("), std::string::npos);
 }
+
+TEST(E2E, CompilePackagesAppExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_packages_app";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input =
+        std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "packages_app" / "app.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "app.h";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    std::ifstream header_in(header);
+    const std::string header_text((std::istreambuf_iterator<char>(header_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("namespace math"), std::string::npos);
+    EXPECT_NE(header_text.find("std::int32_t add("), std::string::npos);
+}
+
+TEST(E2E, PackageDependencyResolvesOutsideTree) {
+    const auto root = std::filesystem::temp_directory_path() / "qplus_e2e_pkg_dep";
+    std::filesystem::remove_all(root);
+    const auto app = root / "app";
+    const auto lib = root / "lib" / "math";
+    std::filesystem::create_directories(app);
+    std::filesystem::create_directories(lib);
+    {
+        std::ofstream{(app / "packages.toml").string()} << R"(
+[dependencies]
+math = { path = "../lib/math" }
+)";
+        std::ofstream{(app / "main.qp").string()} << "mod math;\nuse math::*;\npub fn run() -> i32 { add(1, 2) }\n";
+        std::ofstream{(lib / "mod.qp").string()} << "pub fn add(a: i32, b: i32) -> i32 { a + b }\n";
+    }
+
+    qpc::DiagnosticEngine diags;
+    ASSERT_TRUE(qpc::compile_file(app / "main.qp", root / "out", diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+}
