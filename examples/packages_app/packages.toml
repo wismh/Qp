@@ -1,0 +1,5 @@
+[package]
+name = "packages_app"
+
+[dependencies]
+math = { path = "../packages_lib/math" }

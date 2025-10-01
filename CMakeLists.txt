@@ -28,9 +28,12 @@ set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 set(SPDLOG_INSTALL OFF CACHE BOOL "" FORCE)
 
+set(tomlplusplus_INSTALL OFF CACHE BOOL "" FORCE)
+
 add_subdirectory(third_party/googletest)
 add_subdirectory(third_party/benchmark)
 add_subdirectory(third_party/spdlog)
+add_subdirectory(third_party/tomlplusplus)
 
 add_library(qplus_compiler
     src/compiler/source.cpp
@@ -40,10 +43,11 @@ add_library(qplus_compiler
     src/compiler/lower.cpp
     src/compiler/typeck.cpp
     src/compiler/cpp_backend.cpp
+    src/compiler/packages.cpp
     src/compiler/compile.cpp
 )
 target_include_directories(qplus_compiler PUBLIC ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(qplus_compiler PUBLIC spdlog::spdlog)
+target_link_libraries(qplus_compiler PUBLIC spdlog::spdlog tomlplusplus::tomlplusplus)
 
 add_executable(qpc src/qpc/main.cpp)
 target_link_libraries(qpc PRIVATE qplus_compiler)
@@ -56,6 +60,7 @@ add_executable(qplus_tests
     tests/parser_test.cpp
     tests/typeck_test.cpp
     tests/codegen_test.cpp
+    tests/packages_test.cpp
     tests/e2e_test.cpp
 )
 target_link_libraries(qplus_tests PRIVATE qplus_compiler GTest::gtest_main)
@@ -689,3 +694,27 @@ add_executable(coerce_null_host
 target_include_directories(coerce_null_host PRIVATE ${COERCE_NULL_GEN_DIR})
 
 add_test(NAME coerce_null_host COMMAND coerce_null_host)
+
+set(PACKAGES_APP_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_packages_app)
+set(PACKAGES_APP_GEN_H ${PACKAGES_APP_GEN_DIR}/app.h)
+set(PACKAGES_APP_GEN_CPP ${PACKAGES_APP_GEN_DIR}/app.cpp)
+
+add_custom_command(
+    OUTPUT ${PACKAGES_APP_GEN_H} ${PACKAGES_APP_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${PACKAGES_APP_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/packages_app/app.qp -o ${PACKAGES_APP_GEN_DIR}
+    DEPENDS qpc
+        ${CMAKE_SOURCE_DIR}/examples/packages_app/app.qp
+        ${CMAKE_SOURCE_DIR}/examples/packages_app/packages.toml
+        ${CMAKE_SOURCE_DIR}/examples/packages_lib/math/mod.qp
+    COMMENT "qpc compile examples/packages_app/app.qp"
+    VERBATIM
+)
+
+add_executable(packages_app_host
+    examples/packages_app_host/main.cpp
+    ${PACKAGES_APP_GEN_CPP}
+)
+target_include_directories(packages_app_host PRIVATE ${PACKAGES_APP_GEN_DIR})
+
+add_test(NAME packages_app_host COMMAND packages_app_host)

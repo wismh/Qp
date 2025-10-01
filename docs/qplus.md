@@ -489,6 +489,22 @@ Rules:
 - module globals (`let` / `let mut`) work the same way: `ecs::hits`, or `use ecs::hits` / `use ecs::*`
 - `extern` may sit in a nested module (`mod engine;` + `use engine::*`); host ABI stays `qplus::Name` (short name)
 
+### External packages
+
+`packages.toml` (found by walking up from the `.qp`) maps dependency names to directories outside the current folder:
+
+```toml
+[dependencies]
+math = { path = "../libs/math" }
+```
+
+```qp
+mod math;
+use math::*;
+```
+
+The path is the module root (`mod.qp` or `math.qp` inside it). A local module of the same name still wins. See [`examples/packages_app/`](../examples/packages_app/).
+
 Example: [`examples/mods.qp`](../examples/mods.qp). Nested module types: [`examples/mod_types.qp`](../examples/mod_types.qp). Globals via `use`: [`examples/use_statics.qp`](../examples/use_statics.qp). Nested C-`enum`: [`examples/nested_enum.qp`](../examples/nested_enum.qp). Engine bindings module: [`examples/engine_api.qp`](../examples/engine_api.qp).
 
 ---
@@ -569,7 +585,8 @@ Examples live in [`examples/`](../examples/).
 
 These are in the language design, but do not use them yet:
 
-- a separate package system / a JIT or WASM backend of its own
+- a JIT or WASM backend of its own
 - tuples `(A, B)`, `Result`, `xs.enumerate()`
+- versioned package registries (only `path` deps in `packages.toml` for now)
 
 There is no borrow checker, no classes, and no C++ exceptions in the Q+ public ABI.

@@ -2,6 +2,7 @@
 
 #include "compiler/lexer.hpp"
 #include "compiler/lower.hpp"
+#include "compiler/packages.hpp"
 #include "compiler/parser.hpp"
 #include "compiler/typeck.hpp"
 
@@ -9,9 +10,11 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -47,29 +50,71 @@ std::string canon_key(const fs::path& path) {
     return canon.generic_string();
 }
 
+struct ModLookup {
+    fs::path file_qp;
+    fs::path dir_qp;
+    fs::path child_mod_dir;
+};
+
+std::optional<ModLookup> local_mod_paths(const fs::path& mod_dir, const std::string& name) {
+    ModLookup out;
+    out.file_qp = mod_dir / (name + ".qp");
+    out.dir_qp = mod_dir / name / "mod.qp";
+    out.child_mod_dir = mod_dir / name;
+    return out;
+}
+
+std::optional<ModLookup> package_mod_paths(const PackageManifest& packages, const std::string& name) {
+    auto it = packages.dependencies.find(name);
+    if (it == packages.dependencies.end()) {
+        return std::nullopt;
+    }
+    ModLookup out;
+    out.file_qp = it->second / (name + ".qp");
+    out.dir_qp = it->second / "mod.qp";
+    out.child_mod_dir = it->second;
+    return out;
+}
+
 bool resolve_file_mods(AstFile& file, const Source& src, const fs::path& mod_dir,
-                       std::deque<Source>& extras, std::unordered_set<std::string>& loading,
-                       DiagnosticEngine& diags);
+                       const PackageManifest* packages, std::deque<Source>& extras,
+                       std::unordered_set<std::string>& loading, DiagnosticEngine& diags);
 
 bool load_file_module(ModDecl& m, const Source& parent, const fs::path& mod_dir,
-                      std::deque<Source>& extras, std::unordered_set<std::string>& loading,
-                      DiagnosticEngine& diags) {
-    const fs::path file_qp = mod_dir / (m.name + ".qp");
-    const fs::path dir_qp = mod_dir / m.name / "mod.qp";
-    const bool has_file = exists_regular(file_qp);
-    const bool has_dir = exists_regular(dir_qp);
+                      const PackageManifest* packages, std::deque<Source>& extras,
+                      std::unordered_set<std::string>& loading, DiagnosticEngine& diags) {
+    auto local = *local_mod_paths(mod_dir, m.name);
+    bool has_file = exists_regular(local.file_qp);
+    bool has_dir = exists_regular(local.dir_qp);
+    ModLookup chosen = local;
+    const char* via = "local";
+
+    if (!has_file && !has_dir && packages) {
+        if (auto pkg = package_mod_paths(*packages, m.name)) {
+            chosen = *pkg;
+            has_file = exists_regular(chosen.file_qp);
+            has_dir = exists_regular(chosen.dir_qp);
+            via = "package";
+        }
+    }
+
     if (has_file && has_dir) {
-        diags.error(parent, m.offset, "module '" + m.name + "' has both '" + file_qp.generic_string() +
-                                          "' and '" + dir_qp.generic_string() + "'");
+        diags.error(parent, m.offset, "module '" + m.name + "' has both '" + chosen.file_qp.generic_string() +
+                                          "' and '" + chosen.dir_qp.generic_string() + "'");
         return false;
     }
     if (!has_file && !has_dir) {
-        diags.error(parent, m.offset, "cannot find module '" + m.name + "', expected '" +
-                                          file_qp.generic_string() + "' or '" + dir_qp.generic_string() + "'");
+        std::string msg = "cannot find module '" + m.name + "', expected '" + local.file_qp.generic_string() +
+                          "' or '" + local.dir_qp.generic_string() + "'";
+        if (packages && packages->dependencies.contains(m.name)) {
+            auto pkg = package_mod_paths(*packages, m.name);
+            msg += ", or package path '" + pkg->child_mod_dir.generic_string() + "'";
+        }
+        diags.error(parent, m.offset, std::move(msg));
         return false;
     }
 
-    const fs::path path = has_file ? file_qp : dir_qp;
+    const fs::path path = has_file ? chosen.file_qp : chosen.dir_qp;
     const auto key = canon_key(path);
     if (loading.contains(key)) {
         diags.error(parent, m.offset, "cyclic module '" + m.name + "'");
@@ -87,7 +132,7 @@ bool load_file_module(ModDecl& m, const Source& parent, const fs::path& mod_dir,
     m.source = &child_src;
     loading.insert(key);
 
-    spdlog::debug("mod {} -> {}", m.name, child_src.path());
+    spdlog::debug("mod {} -> {} ({})", m.name, child_src.path(), via);
     const auto tokens = lex(child_src, diags);
     if (diags.has_errors()) {
         loading.erase(key);
@@ -99,14 +144,15 @@ bool load_file_module(ModDecl& m, const Source& parent, const fs::path& mod_dir,
         return false;
     }
     m.body = std::make_unique<AstFile>(std::move(ast));
-    const bool ok = resolve_file_mods(*m.body, child_src, mod_dir / m.name, extras, loading, diags);
+    const bool ok =
+        resolve_file_mods(*m.body, child_src, chosen.child_mod_dir, packages, extras, loading, diags);
     loading.erase(key);
     return ok;
 }
 
 bool resolve_file_mods(AstFile& file, const Source& src, const fs::path& mod_dir,
-                       std::deque<Source>& extras, std::unordered_set<std::string>& loading,
-                       DiagnosticEngine& diags) {
+                       const PackageManifest* packages, std::deque<Source>& extras,
+                       std::unordered_set<std::string>& loading, DiagnosticEngine& diags) {
     std::unordered_set<std::string> names;
     for (auto& m : file.mods) {
         if (!names.insert(m.name).second) {
@@ -114,12 +160,13 @@ bool resolve_file_mods(AstFile& file, const Source& src, const fs::path& mod_dir
             return false;
         }
         if (m.file) {
-            if (!load_file_module(m, src, mod_dir, extras, loading, diags)) {
+            if (!load_file_module(m, src, mod_dir, packages, extras, loading, diags)) {
                 return false;
             }
             continue;
         }
-        if (m.body && !resolve_file_mods(*m.body, src, mod_dir / m.name, extras, loading, diags)) {
+        if (m.body &&
+            !resolve_file_mods(*m.body, src, mod_dir / m.name, packages, extras, loading, diags)) {
             return false;
         }
     }
@@ -153,8 +200,21 @@ CompileResult compile_to_memory(const Source& src, DiagnosticEngine& diags) {
     if (!src.path().empty()) {
         loading.insert(canon_key(root));
     }
+
+    std::optional<PackageManifest> packages;
+    if (!src.path().empty()) {
+        if (auto manifest = find_packages_toml(dir)) {
+            spdlog::debug("packages.toml {}", manifest->generic_string());
+            packages = load_packages_toml(*manifest, diags);
+            if (diags.has_errors()) {
+                return result;
+            }
+        }
+    }
+
     spdlog::debug("resolve modules in {}", dir.generic_string());
-    if (!resolve_file_mods(ast, src, dir, extras, loading, diags) || diags.has_errors()) {
+    const PackageManifest* packages_ptr = packages ? &*packages : nullptr;
+    if (!resolve_file_mods(ast, src, dir, packages_ptr, extras, loading, diags) || diags.has_errors()) {
         return result;
     }
 
