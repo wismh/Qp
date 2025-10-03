@@ -38,13 +38,21 @@ add_subdirectory(third_party/tomlplusplus)
 add_library(qplus_compiler
     src/compiler/source.cpp
     src/compiler/diagnostic.cpp
-    src/compiler/lexer.cpp
-    src/compiler/parser.cpp
-    src/compiler/lower.cpp
-    src/compiler/typeck.cpp
-    src/compiler/cpp_backend.cpp
-    src/compiler/packages.cpp
-    src/compiler/compile.cpp
+    src/compiler/lexer/lexer.cpp
+    src/compiler/parser/parser.cpp
+    src/compiler/parser/parser_core.cpp
+    src/compiler/parser/parse_item.cpp
+    src/compiler/parser/parse_stmt.cpp
+    src/compiler/parser/parse_expr.cpp
+    src/compiler/lower/lower.cpp
+    src/compiler/typeck/typeck.cpp
+    src/compiler/typeck/type_checker.cpp
+    src/compiler/typeck/collect.cpp
+    src/compiler/typeck/check_stmt.cpp
+    src/compiler/typeck/check_expr.cpp
+    src/compiler/codegen/cpp_backend.cpp
+    src/compiler/packages/packages.cpp
+    src/compiler/compile/compile.cpp
 )
 target_include_directories(qplus_compiler PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(qplus_compiler PUBLIC spdlog::spdlog tomlplusplus::tomlplusplus)
