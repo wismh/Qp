@@ -1,11 +1,4 @@
-#pragma once
+﻿#pragma once
 
-#include "compiler/diagnostic.hpp"
-#include "compiler/hir.hpp"
-#include "compiler/source.hpp"
+#include "compiler/typeck/typeck.hpp"
 
-namespace qpc {
-
-void typeck(const Source& src, HirModule& mod, DiagnosticEngine& diags);
-
-}  // namespace qpc
