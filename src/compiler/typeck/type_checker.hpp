@@ -33,9 +33,9 @@ private:
     std::unordered_map<std::string, StructInfo> structs_;
     std::unordered_map<std::string, CEnumInfo> c_enums_;
     std::unordered_map<std::string, EnumInfo> variants_;
-    std::unordered_map<std::string, FnSig> sigs_;
+    std::unordered_map<std::string, std::vector<FnSig>> sigs_;
     std::unordered_map<std::string, Binding> statics_;
-    std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> methods_;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::vector<MethodSig>>> methods_;
     std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> op_impls_;
     std::unordered_map<std::string, std::unordered_map<std::string, MethodSig>> trait_methods_;
     std::unordered_map<std::string, std::unordered_set<std::string>> trait_impls_;
@@ -213,6 +213,29 @@ private:
     void bind_or_infer_type_args(const std::vector<HirTypeParam>& tps, std::vector<Type>& type_args,
                                  const std::vector<Type>& params, std::vector<HirExprPtr>& args,
                                  std::size_t offset, std::unordered_map<std::string, Type>& mapping);
+
+    /// -1 = incompatible; higher is a better overload match (exact > coerce; concrete > generic).
+    int overload_arg_score(const HirExpr& expr, const Type& expected) const;
+
+    bool try_score_overload(const std::vector<HirTypeParam>& type_params, const std::vector<Type>& params,
+                            std::vector<Type> type_args, const std::vector<HirExprPtr>& args, int& score,
+                            const std::unordered_map<std::string, Type>* base_mapping,
+                            std::unordered_map<std::string, Type>& mapping);
+
+    const FnSig* resolve_fn_overload(const std::vector<FnSig>& candidates, const std::string& name,
+                                     HirCall& call, std::size_t offset,
+                                     std::unordered_map<std::string, Type>& mapping);
+
+    const MethodSig* resolve_method_overload(const std::vector<MethodSig>& candidates,
+                                             const std::string& method, HirMethodCall& call,
+                                             std::size_t offset, std::unordered_map<std::string, Type>& mapping);
+
+    static bool same_param_types(const std::vector<Type>& a, const std::vector<Type>& b);
+
+    bool add_fn_sig(const std::string& key, FnSig sig, std::size_t offset, const std::string& display_name);
+
+    bool add_method_sig(std::unordered_map<std::string, std::vector<MethodSig>>& table, const std::string& name,
+                        MethodSig sig, std::size_t offset);
 
 
     Type check_if(HirIf& iff, std::size_t offset);
