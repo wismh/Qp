@@ -22,6 +22,7 @@ struct FnSig {
     std::vector<Type> params;
     Type ret = Type::unit();
     std::size_t offset = 0;
+    bool c_abi = false;
 };
 
 struct MethodSig {

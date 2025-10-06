@@ -807,3 +807,69 @@ TEST(Typeck, StringInterpolation) {
     )");
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
+
+TEST(Typeck, FunctionOverloadByType) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn abs(x: i32) -> i32 { if x < 0 { -x } else { x } }
+        fn abs(x: f32) -> f32 { if x < 0.0 { -x } else { x } }
+        fn run() -> i32 { abs(-3) }
+        fn runf() -> f32 { abs(-2.5) }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, FunctionOverloadByArity) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn add(a: i32) -> i32 { a }
+        fn add(a: i32, b: i32) -> i32 { a + b }
+        fn run() -> i32 { add(1) + add(2, 3) }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, MethodOverload) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Counter { mut n: i32 }
+        impl Counter {
+            fn bump(mut self) { self.n = self.n + 1; }
+            fn bump(mut self, by: i32) { self.n = self.n + by; }
+        }
+        fn run() -> i32 {
+            let mut c = Counter { n: 0 };
+            c.bump();
+            c.bump(4);
+            c.n
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, DuplicateOverloadParamsIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn f(x: i32) -> i32 { x }
+        fn f(x: i32) -> f32 { 0.0 }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("duplicate function"), std::string::npos);
+}
+
+TEST(Typeck, AmbiguousOverloadIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn f(a: [i32]) -> i32 { 1 }
+        fn f(a: [f32]) -> i32 { 2 }
+        fn run() -> i32 { f([]) }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("ambiguous"), std::string::npos);
+}
+
+TEST(Typeck, ExternCOverloadIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        extern "C" {
+            fn f(x: i32) -> i32;
+            fn f(x: i64) -> i64;
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("cannot overload extern \"C\""), std::string::npos);
+}

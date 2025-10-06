@@ -487,6 +487,25 @@ pub fn min(a: i32, b: i32) -> i32 {
 }
 ```
 
+Functions and `impl` methods may be **overloaded**: several declarations may share a name if their parameter type lists differ (arity or types). The return type alone does not distinguish overloads.
+
+```qp
+fn abs(x: i32) -> i32 { if x < 0 { -x } else { x } }
+fn abs(x: f32) -> f32 { if x < 0.0 { -x } else { x } }
+
+struct Counter {
+    mut n: i32,
+}
+impl Counter {
+    fn bump(mut self) { self.n = self.n + 1 }
+    fn bump(mut self, by: i32) { self.n = self.n + by }
+}
+```
+
+Call resolution picks the unique best match after the arguments are typed: an exact parameter match beats a coercion (`T` → `T?`, unsuffixed literal widen, empty collection, `dyn Trait`). A concrete overload beats a generic one when both fit. If nothing fits, or two fits tie, it is an error. Identical parameter lists (same types) are a duplicate, even when return types differ.
+
+`extern "C"` functions cannot be overloaded (C has no overloads). Trait method names stay unique within a trait; `impl Trait for T` still supplies one method per trait item. A user overload set for a name shadows builtins of that name (`sin`, `to_string`, …).
+
 Visibility: module by default; `pub` is outside.
 
 ```qp
