@@ -836,24 +836,22 @@ Type TypeChecker::check_call(HirCall& call, HirExpr& expr) {
             call.callee = path_leaf(call.callee);
         }
 
-        const FnSig& sig = it->second;
         for (auto& arg : call.args) {
             check_expr(*arg);
         }
 
         std::unordered_map<std::string, Type> mapping;
-        bind_or_infer_type_args(sig.type_params, call.type_args, sig.params, call.args, offset, mapping);
-
-        if (call.args.size() != sig.params.size()) {
-            error(offset, "function '" + call.callee + "' expects " + std::to_string(sig.params.size()) +
-                              " argument(s), got " + std::to_string(call.args.size()));
+        const FnSig* chosen = resolve_fn_overload(it->second, call.callee, call, offset, mapping);
+        if (!chosen) {
+            return Type::error();
         }
-
-        const std::size_t n = std::min(call.args.size(), sig.params.size());
-        for (std::size_t i = 0; i < n; ++i) {
-            expect_expr(*call.args[i], subst_type(sig.params[i], mapping), call.args[i]->offset, "argument");
+        for (std::size_t i = 0; i < call.args.size(); ++i) {
+            expect_expr(*call.args[i], subst_type(chosen->params[i], mapping), call.args[i]->offset, "argument");
         }
-        return subst_type(sig.ret, mapping);
+        if (!chosen->type_params.empty()) {
+            check_type_arg_bounds(chosen->type_params, call.type_args, offset);
+        }
+        return subst_type(chosen->ret, mapping);
     }
 
 Type TypeChecker::check_assign(HirAssign& as, std::size_t offset) {
@@ -1172,14 +1170,6 @@ Type TypeChecker::check_method_call(HirMethodCall& call, std::size_t offset) {
             return Type::error();
         }
 
-        const MethodSig& sig = method_it->second;
-        if (associated && sig.self_kind != SelfKind::None) {
-            error(offset, "cannot call instance method '" + call.method + "' on type '" + recv_ty.name + "'");
-        }
-        if (!associated && sig.self_kind == SelfKind::Mut && !is_mut_place(*call.receiver)) {
-            error(offset, "cannot call '" + call.method + "' on an immutable receiver");
-        }
-
         for (auto& arg : call.args) {
             check_expr(*arg);
         }
@@ -1188,18 +1178,18 @@ Type TypeChecker::check_method_call(HirMethodCall& call, std::size_t offset) {
         if (const StructInfo* st = struct_of(recv_ty)) {
             mapping = struct_subst(*st, recv_ty);
         }
-        bind_or_infer_type_args(sig.type_params, call.type_args, sig.params, call.args, offset, mapping);
-
-        if (call.args.size() != sig.params.size()) {
-            error(offset, "method '" + call.method + "' expects " + std::to_string(sig.params.size()) +
-                              " argument(s), got " + std::to_string(call.args.size()));
+        const MethodSig* chosen =
+            resolve_method_overload(method_it->second, call.method, call, offset, mapping);
+        if (!chosen) {
+            return Type::error();
         }
-
-        const std::size_t n = std::min(call.args.size(), sig.params.size());
-        for (std::size_t i = 0; i < n; ++i) {
-            expect_expr(*call.args[i], subst_type(sig.params[i], mapping), call.args[i]->offset, "argument");
+        for (std::size_t i = 0; i < call.args.size(); ++i) {
+            expect_expr(*call.args[i], subst_type(chosen->params[i], mapping), call.args[i]->offset, "argument");
         }
-        Type ret = subst_type(sig.ret, mapping);
+        if (!chosen->type_params.empty()) {
+            check_type_arg_bounds(chosen->type_params, call.type_args, offset);
+        }
+        Type ret = subst_type(chosen->ret, mapping);
         if (call.null_safe) {
             call.wrap_ret = ret.kind != TypeKind::Nullable;
             return as_nullable(std::move(ret));

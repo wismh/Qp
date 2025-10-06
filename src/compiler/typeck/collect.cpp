@@ -521,14 +521,6 @@ void TypeChecker::collect_sigs_of(HirModule& m, const std::string& prefix) {
             const auto qname = qualify(prefix, fn.name);
             const bool root_abi = fn.is_extern || fn.c_abi;
             const auto name = root_abi ? fn.name : qname;
-            if (sigs_.contains(name)) {
-                error(fn.offset, "duplicate function '" + name + "'");
-                continue;
-            }
-            if (root_abi && !prefix.empty() && sigs_.contains(qname)) {
-                error(fn.offset, "duplicate function '" + qname + "'");
-                continue;
-            }
             generic_params_.clear();
             for (const auto& tp : fn.type_params) {
                 generic_params_.insert(tp.name);
@@ -538,6 +530,7 @@ void TypeChecker::collect_sigs_of(HirModule& m, const std::string& prefix) {
             sig.type_params = fn.type_params;
             sig.ret = fn.return_ty;
             sig.offset = fn.offset;
+            sig.c_abi = fn.c_abi;
             sig.params.reserve(fn.params.size());
             for (auto& p : fn.params) {
                 resolve_type(p.ty, p.offset);
@@ -550,12 +543,14 @@ void TypeChecker::collect_sigs_of(HirModule& m, const std::string& prefix) {
                 }
             }
             generic_params_.clear();
-            sigs_.emplace(name, sig);
+            if (!add_fn_sig(name, sig, fn.offset, name)) {
+                continue;
+            }
             if (!prefix.empty()) {
                 if (root_abi) {
-                    sigs_.emplace(qname, sig);
+                    add_fn_sig(qname, sig, fn.offset, qname);
                 } else {
-                    sigs_.emplace(fn.name, std::move(sig));
+                    add_fn_sig(fn.name, std::move(sig), fn.offset, fn.name);
                 }
             }
         }
@@ -681,10 +676,6 @@ void TypeChecker::collect_methods_of(HirModule& m, const std::string& prefix) {
 
             auto& table = methods_[method_key];
             for (auto& method : impl.methods) {
-                if (table.contains(method.name)) {
-                    error(method.offset, "duplicate method '" + method.name + "'");
-                    continue;
-                }
                 generic_params_.clear();
                 for (const auto& tp : impl.type_params) {
                     generic_params_.insert(tp.name);
@@ -704,9 +695,11 @@ void TypeChecker::collect_methods_of(HirModule& m, const std::string& prefix) {
                     sig.params.push_back(p.ty);
                 }
                 generic_params_.clear();
-                table.emplace(method.name, sig);
+                if (!add_method_sig(table, method.name, sig, method.offset)) {
+                    continue;
+                }
                 if (!prefix.empty()) {
-                    methods_[impl.type_name].emplace(method.name, std::move(sig));
+                    add_method_sig(methods_[impl.type_name], method.name, std::move(sig), method.offset);
                 }
             }
         }

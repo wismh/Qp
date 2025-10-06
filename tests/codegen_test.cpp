@@ -509,3 +509,16 @@ TEST(Codegen, StringInterpolation) {
     EXPECT_NE(compiled.result.output.source.find("to_string("), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("String(\"hp = \")"), std::string::npos);
 }
+
+TEST(Codegen, FunctionOverloads) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn abs(x: i32) -> i32 { if x < 0 { -x } else { x } }
+        pub fn abs(x: f32) -> f32 { if x < 0.0 { -x } else { x } }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    const auto& h = compiled.result.output.header;
+    const auto first = h.find("std::int32_t abs(std::int32_t");
+    const auto second = h.find("float abs(float");
+    ASSERT_NE(first, std::string::npos);
+    ASSERT_NE(second, std::string::npos);
+}
