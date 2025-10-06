@@ -648,6 +648,28 @@ TEST(E2E, CompileCoerceNullExampleToFiles) {
     EXPECT_NE(source_text.find("nullable_of("), std::string::npos);
 }
 
+TEST(E2E, CompileOverloadExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_overload";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input =
+        std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "overload.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "overload.h";
+    const auto source = out_dir / "overload.cpp";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    ASSERT_TRUE(std::filesystem::exists(source));
+
+    std::ifstream header_in(header);
+    const std::string header_text((std::istreambuf_iterator<char>(header_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("abs(std::int32_t"), std::string::npos);
+    EXPECT_NE(header_text.find("abs(float"), std::string::npos);
+}
+
 TEST(E2E, CompilePackagesAppExampleToFiles) {
     const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_packages_app";
     std::filesystem::remove_all(out_dir);

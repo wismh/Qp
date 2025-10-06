@@ -726,3 +726,24 @@ add_executable(packages_app_host
 target_include_directories(packages_app_host PRIVATE ${PACKAGES_APP_GEN_DIR})
 
 add_test(NAME packages_app_host COMMAND packages_app_host)
+
+set(OVERLOAD_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_overload)
+set(OVERLOAD_GEN_H ${OVERLOAD_GEN_DIR}/overload.h)
+set(OVERLOAD_GEN_CPP ${OVERLOAD_GEN_DIR}/overload.cpp)
+
+add_custom_command(
+    OUTPUT ${OVERLOAD_GEN_H} ${OVERLOAD_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${OVERLOAD_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/overload.qp -o ${OVERLOAD_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/overload.qp
+    COMMENT "qpc compile examples/overload.qp"
+    VERBATIM
+)
+
+add_executable(overload_host
+    examples/overload_host/main.cpp
+    ${OVERLOAD_GEN_CPP}
+)
+target_include_directories(overload_host PRIVATE ${OVERLOAD_GEN_DIR})
+
+add_test(NAME overload_host COMMAND overload_host)
