@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if git describe --exact-match --tags HEAD >/dev/null 2>&1; then
+            echo "HEAD is already tagged; skip"
+            exit 0
+          fi
+          last="$(git tag -l 'v0.*' --sort=-v:refname | head -n1 || true)"
+          if [ -z "${last}" ]; then
+            next=v0.1
+          else
+            n="${last#v0.}"
+            next="v0.$((n + 1))"
+          fi
+          echo "Creating ${next}"
+          gh release create "${next}" \
+            --target "${GITHUB_SHA}" \
+            --title "Q+ ${next}" \
+            --generate-notes
