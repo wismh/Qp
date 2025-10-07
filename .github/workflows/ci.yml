@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure --parallel
+
+  bench:
+    name: bench
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      deployments: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel --target qplus_bench
+
+      - name: Run benches
+        run: |
+          mkdir -p build
+          ./build/qplus_bench \
+            --benchmark_min_time=0.1s \
+            --benchmark_out=build/bench.json \
+            --benchmark_out_format=json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qplus-bench-${{ github.sha }}
+          path: build/bench.json
+          if-no-files-found: error
+
+      # Compare against the last main result. Do not push history from PRs.
+      - name: Comment bench comparison
+        if: github.event_name == 'pull_request'
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: qplus_bench
+          tool: googlecpp
+          output-file-path: build/bench.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: false
+          save-data-file: false
+          comment-always: true
+          summary-always: true
+          alert-threshold: "200%"
+          comment-on-alert: true
+          fail-on-alert: false
+
+      # Persist the series on gh-pages after landings on main.
+      - name: Store bench result
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: qplus_bench
+          tool: googlecpp
+          output-file-path: build/bench.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          summary-always: true
+          alert-threshold: "200%"
+          comment-on-alert: true
+          fail-on-alert: false
+          max-items-in-chart: 50
