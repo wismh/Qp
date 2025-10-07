@@ -64,6 +64,23 @@ jobs:
           path: build/bench.json
           if-no-files-found: error
 
+      # github-action-benchmark fetches gh-pages for the previous series.
+      - name: Ensure gh-pages branch
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            echo "gh-pages already exists"
+            exit 0
+          fi
+          empty="$(git hash-object -t tree --stdin </dev/null)"
+          commit="$(git commit-tree "${empty}" -m "chore: bootstrap gh-pages for bench history")"
+          git push origin "${commit}:refs/heads/gh-pages"
+
       # Compare against the last main result. Do not push history from PRs.
       - name: Comment bench comparison
         if: github.event_name == 'pull_request'
