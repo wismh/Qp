@@ -17,6 +17,7 @@
 #include "compiler/ast/expr_struct_lit.hpp"
 #include "compiler/ast/expr_match.hpp"
 #include "compiler/ast/expr_list_lit.hpp"
+#include "compiler/ast/expr_tuple.hpp"
 #include "compiler/ast/expr_dict_lit.hpp"
 #include "compiler/ast/expr_if.hpp"
 #include "compiler/ast/expr_range.hpp"
@@ -36,8 +37,8 @@ struct Expr {
     std::size_t offset = 0;
     std::variant<LitInt, LitFloat, LitBool, LitChar, LitString, LitNull, ExprIdent, ExprPath, ExprBinary,
                  ExprUnary, ExprCall, ExprAssign, ExprField, ExprIndex, ExprStructLit, ExprMatch,
-                 ExprListLit, ExprDictLit, ExprIf, ExprRange, ExprClosure, ExprCast, ExprUnwrap, ExprNew,
-                 ExprCoalesce, ExprTry>
+                 ExprListLit, ExprTuple, ExprDictLit, ExprIf, ExprRange, ExprClosure, ExprCast, ExprUnwrap,
+                 ExprNew, ExprCoalesce, ExprTry>
         kind;
 };
 
