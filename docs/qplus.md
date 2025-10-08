@@ -79,6 +79,7 @@ fn bump() -> i32 {
 | `char` | `'a'` |
 | `string` | `"hello"` |
 | `()` | unit; you can omit `-> ()` |
+| `(i32, string)` | tuple; access `.0`, `.1`; unpack in `for (a, b) in xs` |
 | `fn(i32) -> i32` | closure / function value |
 | `T?` | nullable pointer to `T`; only this may be `null` |
 
@@ -208,7 +209,7 @@ fn sum_map(m: {i32: i32}) -> i32 {
 }
 ```
 
-`0..5` is a half-open range: `0, 1, 2, 3, 4`. Loops may use `break` and `continue`. `for (k, v) in dict` walks a dictionary.
+`0..5` is a half-open range: `0, 1, 2, 3, 4`. Loops may use `break` and `continue`. `for (k, v) in dict` walks a dictionary. `for (a, b) in pairs` unpacks each 2-tuple from a list.
 
 ---
 
@@ -306,6 +307,7 @@ let xs: [i32] = [1, 2, 3];           // list
 let buf: [i32; 2] = [10, 20];        // fixed-size array
 let hp: i32 = stats["hp"];           // dictionary
 let stats: {string: i32} = {"hp": 7};
+let pair: (i32, i32) = (1, 2);
 let mut total = 0;
 for (k, v) in stats {
     total = total + v;
@@ -317,6 +319,7 @@ for (k, v) in stats {
 | `[T]` | list |
 | `[T; N]` | array of `N` elements |
 | `{K: V}` | dictionary |
+| `(A, B)` | tuple (`std::tuple`); fields `.0`, `.1` |
 
 Reading `xs[i]` or `map[key]` panics if the index or key is missing. Walk a dict with `for (k, v) in map`.
 
@@ -586,7 +589,7 @@ Examples live in [`examples/`](../examples/).
 These are in the language design, but do not use them yet:
 
 - a JIT or WASM backend of its own
-- tuples `(A, B)`, `Result`, `xs.enumerate()`
+- `Result`, `xs.enumerate()`
 - versioned package registries (only `path` deps in `packages.toml` for now)
 
 There is no borrow checker, no classes, and no C++ exceptions in the Q+ public ABI.
