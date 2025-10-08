@@ -54,6 +54,8 @@ Type TypeChecker::check_expr(HirExpr& expr) {
                     ty = check_index_assign(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirListLit>) {
                     ty = check_list_lit(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirTupleLit>) {
+                    ty = check_tuple_lit(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirDictLit>) {
                     ty = check_dict_lit(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirMatch>) {
@@ -915,6 +917,19 @@ Type TypeChecker::check_field(HirFieldAccess& field, std::size_t offset) {
             }
             struct_ty = base_ty.elem();
         }
+        if (struct_ty.kind == TypeKind::Tuple) {
+            const auto idx = tuple_field_index(field.name);
+            if (!idx || *idx >= struct_ty.args.size()) {
+                error(offset, "unknown field '" + field.name + "' on '" + type_name(struct_ty) + "'");
+                return Type::error();
+            }
+            Type field_ty = struct_ty.args[*idx];
+            if (field.null_safe) {
+                field.take_addr = field_ty.kind != TypeKind::Nullable;
+                return as_nullable(std::move(field_ty));
+            }
+            return field_ty;
+        }
         const StructInfo* st = struct_of(struct_ty);
         if (!st) {
             if (struct_ty != Type::error()) {
@@ -1200,6 +1215,18 @@ Type TypeChecker::check_method_call(HirMethodCall& call, std::size_t offset) {
 Type TypeChecker::check_field_assign(HirFieldAssign& as, std::size_t offset) {
         const Type base_ty = check_expr(*as.base);
         const Type value_ty = check_expr(*as.value);
+        if (base_ty.kind == TypeKind::Tuple) {
+            const auto idx = tuple_field_index(as.field);
+            if (!idx || *idx >= base_ty.args.size()) {
+                error(offset, "unknown field '" + as.field + "' on '" + type_name(base_ty) + "'");
+                return Type::error();
+            }
+            if (!is_mut_place(*as.base)) {
+                error(offset, "cannot assign to field '" + as.field + "' through an immutable value");
+            }
+            expect_expr(*as.value, base_ty.args[*idx], as.value->offset, "assignment");
+            return base_ty.args[*idx];
+        }
         const StructInfo* st = struct_of(base_ty);
         if (!st) {
             if (base_ty != Type::error()) {
@@ -1269,6 +1296,19 @@ Type TypeChecker::check_list_lit(HirListLit& lit, std::size_t offset) {
             return Type::array(elem, lit.elems.size());
         }
         return Type::list(elem);
+    }
+
+Type TypeChecker::check_tuple_lit(HirTupleLit& lit, std::size_t offset) {
+        if (lit.elems.size() < 2) {
+            error(offset, "tuple literal needs at least two elements");
+            return Type::error();
+        }
+        std::vector<Type> args;
+        args.reserve(lit.elems.size());
+        for (auto& elem : lit.elems) {
+            args.push_back(check_expr(*elem));
+        }
+        return Type::tuple(std::move(args));
     }
 
 Type TypeChecker::check_dict_lit(HirDictLit& lit, std::size_t offset) {

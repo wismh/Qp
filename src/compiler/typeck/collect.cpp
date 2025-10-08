@@ -83,9 +83,9 @@ bool TypeChecker::resolve_type(Type& ty, std::size_t offset) {
             const bool ok_val = resolve_type(ty.args[1], offset);
             return ok_key && ok_val;
         }
-        if (ty.kind == TypeKind::Fn) {
+        if (ty.kind == TypeKind::Fn || ty.kind == TypeKind::Tuple) {
             if (ty.args.empty()) {
-                error(offset, "invalid fn type");
+                error(offset, ty.kind == TypeKind::Fn ? "invalid fn type" : "invalid tuple type");
                 ty = Type::error();
                 return false;
             }
