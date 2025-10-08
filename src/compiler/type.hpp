@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -29,6 +30,7 @@ enum class TypeKind {
     List,
     Array,
     Dict,
+    Tuple,
     Fn,
     Never,
     Nullable,
@@ -81,6 +83,13 @@ struct Type {
         t.kind = TypeKind::Dict;
         t.args.push_back(std::move(key));
         t.args.push_back(std::move(value));
+        return t;
+    }
+
+    static Type tuple(std::vector<Type> elems) {
+        Type t;
+        t.kind = TypeKind::Tuple;
+        t.args = std::move(elems);
         return t;
     }
 
@@ -226,6 +235,17 @@ inline std::string type_name(const Type& ty) {
             return "[" + type_name(ty.elem()) + "; " + std::to_string(ty.size) + "]";
         case TypeKind::Dict:
             return "{" + type_name(ty.key()) + ": " + type_name(ty.value()) + "}";
+        case TypeKind::Tuple: {
+            std::string out = "(";
+            for (std::size_t i = 0; i < ty.args.size(); ++i) {
+                if (i != 0) {
+                    out += ", ";
+                }
+                out += type_name(ty.args[i]);
+            }
+            out += ")";
+            return out;
+        }
         case TypeKind::Fn: {
             std::string out = "fn(";
             for (std::size_t i = 0; i + 1 < ty.args.size(); ++i) {
@@ -298,6 +318,17 @@ inline std::string cpp_type_name(const Type& ty) {
             return "Array<" + cpp_type_name(ty.elem()) + ", " + std::to_string(ty.size) + ">";
         case TypeKind::Dict:
             return "Dict<" + cpp_type_name(ty.key()) + ", " + cpp_type_name(ty.value()) + ">";
+        case TypeKind::Tuple: {
+            std::string out = "std::tuple<";
+            for (std::size_t i = 0; i < ty.args.size(); ++i) {
+                if (i != 0) {
+                    out += ", ";
+                }
+                out += cpp_type_name(ty.args[i]);
+            }
+            out += ">";
+            return out;
+        }
         case TypeKind::Fn: {
             std::string out = "Fn<";
             out += ty.args.empty() ? "void" : cpp_type_name(ty.args.back());
@@ -318,6 +349,20 @@ inline std::string cpp_type_name(const Type& ty) {
         default:
             return "void";
     }
+}
+
+inline std::optional<std::size_t> tuple_field_index(std::string_view name) {
+    if (name.empty() || (name.size() > 1 && name.front() == '0')) {
+        return std::nullopt;
+    }
+    std::size_t n = 0;
+    for (char c : name) {
+        if (c < '0' || c > '9') {
+            return std::nullopt;
+        }
+        n = n * 10u + static_cast<std::size_t>(c - '0');
+    }
+    return n;
 }
 
 inline Type type_from_name(std::string_view name) {
