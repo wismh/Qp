@@ -1,0 +1,23 @@
+pub fn make_pair() -> (i32, i32) {
+    (2, 3)
+}
+
+pub fn first(p: (i32, i32)) -> i32 {
+    p.0
+}
+
+pub fn rest(p: (i32, i32, i32)) -> i32 {
+    p.1 + p.2
+}
+
+pub fn sum_pairs(xs: [(i32, i32)]) -> i32 {
+    let mut s = 0;
+    for (a, b) in xs {
+        s = s + a + b;
+    }
+    s
+}
+
+pub fn run() -> i32 {
+    first(make_pair()) + rest((1, 2, 3)) + sum_pairs([(4, 5), (6, 7)])
+}
