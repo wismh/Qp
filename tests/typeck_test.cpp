@@ -177,7 +177,7 @@ TEST(Typeck, ForPairOnListIsError) {
         }
     )");
     EXPECT_FALSE(compiled.result.ok);
-    EXPECT_NE(first_error(compiled.diags).find("binds one variable"), std::string::npos);
+    EXPECT_NE(first_error(compiled.diags).find("2-tuple element"), std::string::npos);
 }
 
 TEST(Typeck, OperatorImplAllowsPlus) {
@@ -872,4 +872,38 @@ TEST(Typeck, ExternCOverloadIsError) {
     )");
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("cannot overload extern \"C\""), std::string::npos);
+}
+
+TEST(Typeck, TupleLiteralAndIndex) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn f() -> i32 {
+            let p: (i32, i32) = (2, 3);
+            p.0 + p.1
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, TupleArityMismatchIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn f() -> i32 {
+            let p: (i32, i32) = (1, 2, 3);
+            p.0
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("expected '(i32, i32)'"), std::string::npos);
+}
+
+TEST(Typeck, ForUnpacksTupleList) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn sum(xs: [(i32, i32)]) -> i32 {
+            let mut s = 0;
+            for (a, b) in xs {
+                s = s + a + b;
+            }
+            s
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
