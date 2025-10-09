@@ -486,7 +486,11 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 emit_expr(out, *kind.value);
                 out << ')';
             } else if constexpr (std::is_same_v<K, HirFieldAccess>) {
-                if (kind.null_safe) {
+                if (kind.base->ty.kind == TypeKind::Tuple) {
+                    out << "std::get<" << kind.name << ">(";
+                    emit_expr(out, *kind.base);
+                    out << ')';
+                } else if (kind.null_safe) {
                     const std::string tmp = "__qn" + std::to_string(++g_if_tmp);
                     out << "([&]() { " << cpp_type_name(kind.base->ty) << ' ' << tmp << " = ";
                     emit_expr(out, *kind.base);
@@ -586,8 +590,14 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 }
             } else if constexpr (std::is_same_v<K, HirFieldAssign>) {
                 out << '(';
-                emit_receiver(out, *kind.base);
-                out << '.' << kind.field << " = ";
+                if (kind.base->ty.kind == TypeKind::Tuple) {
+                    out << "std::get<" << kind.field << ">(";
+                    emit_expr(out, *kind.base);
+                    out << ") = ";
+                } else {
+                    emit_receiver(out, *kind.base);
+                    out << '.' << kind.field << " = ";
+                }
                 emit_expr(out, *kind.value);
                 out << ')';
             } else if constexpr (std::is_same_v<K, HirIndexAssign>) {
@@ -599,6 +609,10 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 emit_expr(out, *kind.value);
                 out << ')';
             } else if constexpr (std::is_same_v<K, HirListLit>) {
+                out << cpp_type_name(expr.ty) << '{';
+                emit_comma_list(out, kind.elems);
+                out << '}';
+            } else if constexpr (std::is_same_v<K, HirTupleLit>) {
                 out << cpp_type_name(expr.ty) << '{';
                 emit_comma_list(out, kind.elems);
                 out << '}';
@@ -813,6 +827,10 @@ void emit_try_setup(std::ostringstream& out, const HirExpr& expr) {
                 emit_try_setup(out, *kind.index);
                 emit_try_setup(out, *kind.value);
             } else if constexpr (std::is_same_v<K, HirListLit>) {
+                for (const auto& elem : kind.elems) {
+                    emit_try_setup(out, *elem);
+                }
+            } else if constexpr (std::is_same_v<K, HirTupleLit>) {
                 for (const auto& elem : kind.elems) {
                     emit_try_setup(out, *elem);
                 }
@@ -1334,6 +1352,7 @@ std::string emit_header(const HirModule& mod) {
     header << "#include <map>\n";
     header << "#include <new>\n";
     header << "#include <string>\n";
+    header << "#include <tuple>\n";
     header << "#include <type_traits>\n";
     header << "#include <utility>\n";
     header << "#include <variant>\n";
