@@ -465,6 +465,7 @@ for i in 0..10 { ... }
 for item in xs { ... }
 for (k, v) in stats { ... }
 for (a, b) in pairs { ... }  // pairs: [(i32, i32)]
+for (t, b) in query { ... }  // query.next() -> (T, B)?
 
 loop {
     if done { break; }
@@ -478,7 +479,7 @@ match n {
 }
 ```
 
-A `mut x: T` parameter is locally mutable. `mut self` — see §5.3. `for (k, v) in dict` binds the key and value; both are immutable. `for (a, b) in xs` unpacks a 2-tuple element the same way. `.enumerate()` is not in v0.
+A `mut x: T` parameter is locally mutable. `mut self` — see §5.3. `for (k, v) in dict` binds the key and value; both are immutable. `for (a, b) in xs` unpacks a 2-tuple element the same way. A type with `fn next(mut self) -> T?` is an iterator: `for` copies the value and calls `next` until `null`. If `T` is a 2-tuple, unpack with `for (a, b) in query`. `.enumerate()` is not in v0.
 
 ---
 
@@ -656,6 +657,7 @@ JIT in debug: panic shows the Q+ stack through LLVM debug info.
 | `[T; N]` | `qplus::Array<T, N>` |
 | `{K: V}` | `qplus::Dict<K, V>` |
 | `(A, B)` | `std::tuple<A, B>` |
+| `for x in it` (`next() -> T?`) | copy, then `next()` until `null` |
 | `fn(T) -> R` / `|x: T| ...` | `qplus::Fn<R(T)>` (`std::function`) |
 | `enum E { A, B }` | `enum class E` |
 | `variant E { A, B { x } }` | `std::variant` tagged union |
