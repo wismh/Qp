@@ -12,6 +12,7 @@ struct HirFor {
     HirExprPtr iter;
     std::vector<HirStmtPtr> stmts;
     HirExprPtr tail;
+    bool by_next = false;
 };
 
 }  // namespace qpc
