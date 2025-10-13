@@ -907,3 +907,60 @@ TEST(Typeck, ForUnpacksTupleList) {
     )");
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
+
+TEST(Typeck, CustomIteratorFor) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Counter { mut n: i32 }
+        impl Counter {
+            fn next(mut self) -> i32? {
+                if self.n <= 0 { return null; }
+                self.n = self.n - 1;
+                self.n
+            }
+        }
+        fn sum() -> i32 {
+            let c = Counter { n: 3 };
+            let mut s = 0;
+            for x in c {
+                s = s + x;
+            }
+            s
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, CustomIteratorUnpack) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Query<A, B> { mut i: i32, n: i32, a: [A], b: [B] }
+        impl Query<A, B> {
+            fn next(mut self) -> (A, B)? {
+                if self.i >= self.n { return null; }
+                let item = (self.a[self.i], self.b[self.i]);
+                self.i = self.i + 1;
+                item
+            }
+        }
+        fn sum() -> i32 {
+            let q = Query { i: 0, n: 1, a: [2], b: [3] };
+            let mut s = 0;
+            for (t, b) in q {
+                s = s + t + b;
+            }
+            s
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, StructWithoutNextIsNotIterable) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { x: i32 }
+        fn f(p: Point) -> i32 {
+            for x in p { }
+            0
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("iterator"), std::string::npos);
+}

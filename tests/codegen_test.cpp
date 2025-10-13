@@ -540,3 +540,27 @@ TEST(Codegen, TupleStdGetAndUnpack) {
     EXPECT_NE(compiled.result.output.source.find("std::get<0>("), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("for (const auto& [a, b] : "), std::string::npos);
 }
+
+TEST(Codegen, CustomIteratorNextLoop) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Counter { mut n: i32 }
+        impl Counter {
+            fn next(mut self) -> i32? {
+                if self.n <= 0 { return null; }
+                self.n = self.n - 1;
+                self.n
+            }
+        }
+        pub fn sum() -> i32 {
+            let c = Counter { n: 2 };
+            let mut s = 0;
+            for x in c {
+                s = s + x;
+            }
+            s
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find(".next()"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("== nullptr"), std::string::npos);
+}
