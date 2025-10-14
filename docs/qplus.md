@@ -48,7 +48,7 @@ fn steps(n: i32) -> i32 {
 
 You can omit the type on `let` when the initializer makes it obvious. Parameter types and `->` are required.
 
-Closures are `|x: i32| x + 1`. Capture is by copy. `ref || { n = n + 1 }` captures by reference and can assign to outer `mut` bindings. Pass `ref |x: T| { ... }` into a method when the callback should update outer `mut` state. The type is `fn(i32) -> i32`.
+Closures are `|x: i32| x + 1`. Capture is by copy. `ref || { n = n + 1 }` captures by reference and can assign to outer `mut` bindings. Pass `ref |x: T| { ... }` into a method when the callback should update outer `mut` state. The type is `fn(i32) -> i32`. A named `fn` is the same kind of value: `apply(inc, 4)` or `let f = inc`.
 
 ```qp
 fn twice(n: i32) -> i32 {
