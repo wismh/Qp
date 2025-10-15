@@ -1,0 +1,44 @@
+pub fn inc(x: i32) -> i32 {
+    x + 1
+}
+
+pub fn apply(f: fn(i32) -> i32, x: i32) -> i32 {
+    f(x)
+}
+
+fn id<T>(x: T) -> T {
+    x
+}
+
+struct Point {
+    x: i32,
+}
+
+impl Point {
+    fn origin() -> Point {
+        Point { x: 0 }
+    }
+}
+
+pub fn via_name() -> i32 {
+    apply(inc, 4)
+}
+
+pub fn via_let() -> i32 {
+    let f = inc;
+    f(4)
+}
+
+pub fn via_generic() -> i32 {
+    let f: fn(i32) -> i32 = id;
+    f(7)
+}
+
+pub fn via_assoc() -> i32 {
+    let f: fn() -> Point = Point::origin;
+    f().x
+}
+
+pub fn run() -> i32 {
+    via_name() + via_let() + via_generic() + via_assoc()
+}

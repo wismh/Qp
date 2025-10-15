@@ -789,3 +789,24 @@ add_executable(query_host
 target_include_directories(query_host PRIVATE ${QUERY_GEN_DIR})
 
 add_test(NAME query_host COMMAND query_host)
+
+set(FN_VALUE_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_fn_value)
+set(FN_VALUE_GEN_H ${FN_VALUE_GEN_DIR}/fn_value.h)
+set(FN_VALUE_GEN_CPP ${FN_VALUE_GEN_DIR}/fn_value.cpp)
+
+add_custom_command(
+    OUTPUT ${FN_VALUE_GEN_H} ${FN_VALUE_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${FN_VALUE_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/fn_value.qp -o ${FN_VALUE_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/fn_value.qp
+    COMMENT "qpc compile examples/fn_value.qp"
+    VERBATIM
+)
+
+add_executable(fn_value_host
+    examples/fn_value_host/main.cpp
+    ${FN_VALUE_GEN_CPP}
+)
+target_include_directories(fn_value_host PRIVATE ${FN_VALUE_GEN_DIR})
+
+add_test(NAME fn_value_host COMMAND fn_value_host)
