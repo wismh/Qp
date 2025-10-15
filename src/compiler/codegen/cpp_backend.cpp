@@ -456,7 +456,22 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
             } else if constexpr (std::is_same_v<K, HirLitNull>) {
                 out << "nullptr";
             } else if constexpr (std::is_same_v<K, HirVar>) {
-                out << kind.name;
+                if (kind.fn_value && expr.ty.kind == TypeKind::Fn) {
+                    std::string ptr = expr.ty.args.empty() ? "void" : cpp_type_name(expr.ty.args.back());
+                    ptr += "(*)(";
+                    for (std::size_t i = 0; i + 1 < expr.ty.args.size(); ++i) {
+                        if (i != 0) {
+                            ptr += ", ";
+                        }
+                        ptr += cpp_type_name(expr.ty.args[i]);
+                    }
+                    ptr += ')';
+                    out << cpp_type_name(expr.ty) << "{static_cast<" << ptr << ">(" << kind.name;
+                    emit_type_args(out, kind.type_args);
+                    out << ")}";
+                } else {
+                    out << kind.name;
+                }
             } else if constexpr (std::is_same_v<K, HirBinary>) {
                 out << '(';
                 emit_expr(out, *kind.lhs);
