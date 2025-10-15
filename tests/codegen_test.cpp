@@ -564,3 +564,14 @@ TEST(Codegen, CustomIteratorNextLoop) {
     EXPECT_NE(compiled.result.output.source.find(".next()"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("== nullptr"), std::string::npos);
 }
+
+TEST(Codegen, NamedFnValueCast) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn inc(x: i32) -> i32 { x + 1 }
+        pub fn apply(f: fn(i32) -> i32, x: i32) -> i32 { f(x) }
+        pub fn run() -> i32 { apply(inc, 4) }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("static_cast<"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("inc"), std::string::npos);
+}

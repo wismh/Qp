@@ -964,3 +964,74 @@ TEST(Typeck, StructWithoutNextIsNotIterable) {
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("iterator"), std::string::npos);
 }
+
+TEST(Typeck, NamedFnAsValue) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn inc(x: i32) -> i32 { x + 1 }
+        fn apply(f: fn(i32) -> i32, x: i32) -> i32 { f(x) }
+        fn run() -> i32 { apply(inc, 4) }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, NamedFnLetBinding) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn inc(x: i32) -> i32 { x + 1 }
+        fn run() -> i32 {
+            let f = inc;
+            f(4)
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, GenericFnValueNeedsExpectedType) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn id<T>(x: T) -> T { x }
+        fn run() -> i32 {
+            let f = id;
+            f(1)
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("cannot infer"), std::string::npos);
+}
+
+TEST(Typeck, GenericFnValueFromAnnotation) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn id<T>(x: T) -> T { x }
+        fn run() -> i32 {
+            let f: fn(i32) -> i32 = id;
+            f(1)
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, OverloadedFnValueNeedsAnnotation) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn abs(x: i32) -> i32 { x }
+        fn abs(x: f32) -> f32 { x }
+        fn run() -> i32 {
+            let f = abs;
+            f(1)
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("cannot infer"), std::string::npos);
+}
+
+TEST(Typeck, MethodWithSelfIsNotAValue) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { x: i32 }
+        impl Point {
+            fn mag(self) -> i32 { self.x }
+        }
+        fn run() -> i32 {
+            let f = Point::mag;
+            0
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("cannot use method"), std::string::npos);
+}
