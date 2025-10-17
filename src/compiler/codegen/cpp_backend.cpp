@@ -261,7 +261,7 @@ void emit_template_head(std::ostringstream& out, const std::vector<HirTypeParam>
         if (i != 0) {
             out << ", ";
         }
-        out << "typename " << tps[i].name;
+        out << (tps[i].pack ? "typename... " : "typename ") << tps[i].name;
     }
     out << ">\n";
 }
