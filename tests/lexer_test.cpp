@@ -236,3 +236,12 @@ TEST(Lexer, StringInterpolationTokens) {
     EXPECT_EQ(tokens[4].text(src.view()), "");
     EXPECT_EQ(tokens[5].kind, TokenKind::Eof);
 }
+
+TEST(Lexer, DotDotDotPack) {
+    auto src = Source::from_string("t.qp", "<...T> 0..5");
+    DiagnosticEngine diags;
+    const auto tokens = lex(src, diags);
+    ASSERT_FALSE(diags.has_errors());
+    EXPECT_EQ(tokens[1].kind, TokenKind::DotDotDot);
+    EXPECT_EQ(tokens[5].kind, TokenKind::DotDot);
+}
