@@ -794,6 +794,7 @@ std::optional<std::vector<Param>> Parser::parse_params(FnDecl& fn, bool in_impl)
 std::optional<Param> Parser::parse_param() {
         Param p;
         p.offset = peek().offset;
+        p.mut = consume(TokenKind::KwMut);
 
         auto name = take_ident("parameter name");
         if (!name) {
