@@ -466,6 +466,8 @@ for item in xs { ... }
 for (k, v) in stats { ... }
 for (a, b) in pairs { ... }  // pairs: [(i32, i32)]
 for (t, b) in query { ... }  // query.next() -> (T, B)?
+for mut x in xs { x = x + 1; }
+for (mut a, mut b) in pairs { a = a + 1; }
 
 loop {
     if done { break; }
@@ -479,7 +481,7 @@ match n {
 }
 ```
 
-A `mut x: T` parameter is locally mutable. `mut self` — see §5.3. `for (k, v) in dict` binds the key and value; both are immutable. `for (a, b) in xs` unpacks a 2-tuple element the same way. A type with `fn next(mut self) -> T?` is an iterator: `for` copies the value and calls `next` until `null`. If `T` is a 2-tuple, unpack with `for (a, b) in query`. `.enumerate()` is not in v0.
+A `mut x: T` parameter is an exclusive view into the argument (`T&` in C++), like `mut self`. The call must pass a mutable place. A parameter without `mut` is a local copy (still assignable inside the function). `for (k, v) in dict` binds the key and value; both are immutable. `for mut x in xs` and `for (mut a, mut b) in pairs` bind references into the collection or iterator storage so assignments update the world. Dict keys cannot be `mut`. A type with `fn next(mut self) -> T?` is an iterator: `for x in it` copies; `for mut x in it` binds `T&` to `*next()` and does not copy the iterator. If `T` is a 2-tuple, unpack with `for (a, b) in query` or `for (mut a, mut b) in query`. `.enumerate()` is not in v0.
 
 ---
 
@@ -660,6 +662,8 @@ JIT in debug: panic shows the Q+ stack through LLVM debug info.
 | `{K: V}` | `qplus::Dict<K, V>` |
 | `(A, B)` | `std::tuple<A, B>` |
 | `for x in it` (`next() -> T?`) | copy, then `next()` until `null` |
+| `for mut x in it` | `auto&&` iterator, `T&` to `*next()` |
+| `mut x: T` parameter | `T&` |
 | `fn(T) -> R` / `|x: T| ...` | `qplus::Fn<R(T)>` (`std::function`) |
 | `enum E { A, B }` | `enum class E` |
 | `variant E { A, B { x } }` | `std::variant` tagged union |
