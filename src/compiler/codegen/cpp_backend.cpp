@@ -304,7 +304,11 @@ void emit_params(std::ostringstream& out, const std::vector<HirParam>& params) {
         if (i != 0) {
             out << ", ";
         }
-        out << cpp_type_name(params[i].ty) << ' ' << params[i].name;
+        out << cpp_type_name(params[i].ty);
+        if (params[i].mut) {
+            out << '&';
+        }
+        out << ' ' << params[i].name;
     }
 }
 
@@ -925,19 +929,21 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
                 }
                 out << "    }\n";
             } else if constexpr (std::is_same_v<K, HirFor>) {
+                const bool mut_bind = kind.mut_name || kind.mut_second;
+                const char* ref = mut_bind ? "auto& " : "const auto& ";
                 if (kind.by_next) {
                     const std::string it = "__qit" + std::to_string(++g_if_tmp);
                     const std::string nxt = "__qnxt" + std::to_string(g_if_tmp);
-                    out << "    {\n    auto " << it << " = ";
+                    out << "    {\n    auto" << (mut_bind ? "&& " : " ") << it << " = ";
                     emit_expr(out, *kind.iter);
                     out << ";\n    for (;;) {\n";
                     out << "        auto " << nxt << " = " << it << ".next();\n";
                     out << "        if (" << nxt << " == nullptr) {\n            break;\n        }\n";
                     if (!kind.second.empty()) {
-                        out << "        const auto& [" << kind.name << ", " << kind.second << "] = *" << nxt
+                        out << "        " << ref << "[" << kind.name << ", " << kind.second << "] = *" << nxt
                             << ";\n";
                     } else {
-                        out << "        const auto& " << kind.name << " = *" << nxt << ";\n";
+                        out << "        " << ref << kind.name << " = *" << nxt << ";\n";
                     }
                 } else if (const auto* range = std::get_if<HirRange>(&kind.iter->kind)) {
                     out << "    for (" << cpp_type_name(kind.iter->ty) << ' ' << kind.name << " = ";
@@ -946,11 +952,11 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
                     emit_expr(out, *range->end);
                     out << "; ++" << kind.name << ") {\n";
                 } else if (!kind.second.empty()) {
-                    out << "    for (const auto& [" << kind.name << ", " << kind.second << "] : ";
+                    out << "    for (" << ref << "[" << kind.name << ", " << kind.second << "] : ";
                     emit_expr(out, *kind.iter);
                     out << ") {\n";
                 } else {
-                    out << "    for (const auto& " << kind.name << " : ";
+                    out << "    for (" << ref << kind.name << " : ";
                     emit_expr(out, *kind.iter);
                     out << ") {\n";
                 }
