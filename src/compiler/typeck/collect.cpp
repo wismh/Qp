@@ -537,6 +537,10 @@ void TypeChecker::collect_sigs_of(HirModule& m, const std::string& prefix) {
             for (auto& p : fn.params) {
                 resolve_type(p.ty, p.offset);
                 sig.params.push_back(p.ty);
+                sig.param_mut.push_back(p.mut ? 1 : 0);
+                if (fn.c_abi && p.mut) {
+                    error(p.offset, "extern \"C\" cannot take a mut parameter");
+                }
             }
             if (fn.c_abi) {
                 check_c_abi_type(fn.return_ty, fn.offset, fn.name);
@@ -578,6 +582,7 @@ void TypeChecker::collect_trait_methods_of(HirModule& m, const std::string& pref
                 for (auto& p : method.params) {
                     resolve_type(p.ty, p.offset);
                     sig.params.push_back(p.ty);
+                    sig.param_mut.push_back(p.mut ? 1 : 0);
                 }
                 table.emplace(method.name, sig);
                 if (!prefix.empty()) {
@@ -662,6 +667,7 @@ void TypeChecker::collect_methods_of(HirModule& m, const std::string& prefix) {
                     for (auto& p : method.params) {
                         resolve_type(p.ty, p.offset);
                         sig.params.push_back(p.ty);
+                        sig.param_mut.push_back(p.mut ? 1 : 0);
                     }
                     auto& table = op_impls_[method_key];
                     if (table.contains(trait)) {
@@ -699,6 +705,7 @@ void TypeChecker::collect_methods_of(HirModule& m, const std::string& prefix) {
                 for (auto& p : method.params) {
                     resolve_type(p.ty, p.offset);
                     sig.params.push_back(p.ty);
+                    sig.param_mut.push_back(p.mut ? 1 : 0);
                 }
                 generic_params_.clear();
                 if (!add_method_sig(table, method.name, sig, method.offset)) {

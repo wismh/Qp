@@ -20,6 +20,7 @@ struct Binding {
 struct FnSig {
     std::vector<HirTypeParam> type_params;
     std::vector<Type> params;
+    std::vector<char> param_mut;
     Type ret = Type::unit();
     std::size_t offset = 0;
     bool c_abi = false;
@@ -29,6 +30,7 @@ struct MethodSig {
     SelfKind self_kind = SelfKind::None;
     std::vector<HirTypeParam> type_params;
     std::vector<Type> params;
+    std::vector<char> param_mut;
     Type ret = Type::unit();
     std::size_t offset = 0;
 };

@@ -95,6 +95,9 @@ void TypeChecker::check_stmt(HirStmt& stmt) {
                         if (pair) {
                             error(stmt.offset, "for-loop over a range binds one variable");
                         }
+                        if (kind.mut_name || kind.mut_second) {
+                            error(stmt.offset, "cannot mutate a range loop variable in place");
+                        }
                         elem = iter_ty;
                     } else if (iter_ty.kind == TypeKind::List || iter_ty.kind == TypeKind::Array) {
                         if (pair) {
@@ -113,6 +116,9 @@ void TypeChecker::check_stmt(HirStmt& stmt) {
                     } else if (iter_ty.kind == TypeKind::Dict) {
                         if (!pair) {
                             error(stmt.offset, "for-loop over a dict requires '(key, value)'");
+                        }
+                        if (kind.mut_name) {
+                            error(stmt.offset, "cannot mutate dict keys");
                         }
                         elem = iter_ty.key();
                         value = iter_ty.value();
@@ -138,9 +144,18 @@ void TypeChecker::check_stmt(HirStmt& stmt) {
                     }
                     ++loop_depth_;
                     push_scope();
-                    declare(kind.name, Binding{elem, false}, stmt.offset);
+                    if ((kind.mut_name || kind.mut_second) && !is_mut_place(*kind.iter) &&
+                        !std::holds_alternative<HirListLit>(kind.iter->kind) &&
+                        !std::holds_alternative<HirTupleLit>(kind.iter->kind) &&
+                        !std::holds_alternative<HirDictLit>(kind.iter->kind) &&
+                        !std::holds_alternative<HirStructLit>(kind.iter->kind) &&
+                        !std::holds_alternative<HirCall>(kind.iter->kind) &&
+                        !std::holds_alternative<HirMethodCall>(kind.iter->kind)) {
+                        error(stmt.offset, "in-place for-loop needs a mutable place");
+                    }
+                    declare(kind.name, Binding{elem, kind.mut_name}, stmt.offset);
                     if (pair) {
-                        declare(kind.second, Binding{value, false}, stmt.offset);
+                        declare(kind.second, Binding{value, kind.mut_second}, stmt.offset);
                     }
                     for (auto& s : kind.stmts) {
                         check_stmt(*s);
