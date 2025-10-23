@@ -831,3 +831,24 @@ add_executable(pack_host
 target_include_directories(pack_host PRIVATE ${PACK_GEN_DIR})
 
 add_test(NAME pack_host COMMAND pack_host)
+
+set(MUT_ITER_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_mut_iter)
+set(MUT_ITER_GEN_H ${MUT_ITER_GEN_DIR}/mut_iter.h)
+set(MUT_ITER_GEN_CPP ${MUT_ITER_GEN_DIR}/mut_iter.cpp)
+
+add_custom_command(
+    OUTPUT ${MUT_ITER_GEN_H} ${MUT_ITER_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${MUT_ITER_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/mut_iter.qp -o ${MUT_ITER_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/mut_iter.qp
+    COMMENT "qpc compile examples/mut_iter.qp"
+    VERBATIM
+)
+
+add_executable(mut_iter_host
+    examples/mut_iter_host/main.cpp
+    ${MUT_ITER_GEN_CPP}
+)
+target_include_directories(mut_iter_host PRIVATE ${MUT_ITER_GEN_DIR})
+
+add_test(NAME mut_iter_host COMMAND mut_iter_host)
