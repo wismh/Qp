@@ -361,7 +361,7 @@ impl Pair<T> {
 
 A generic `struct` is monomorphized (`template <typename T> struct Pair`). Write `Pair<i32>` in types. A literal `Pair { a: 1, b: 2 }` infers `T` from the fields; `Pair<i32> { a: 1, b: 2 }` is explicit.
 
-A method may take a callback `fn(...)`. Extra type parameters on the method (`zip<U>`) are inferred from the arguments, including from the callback's `fn` type. A type-parameter pack `<...T: Bound>` is the C++-style pack (not C varargs): it must be last. `fn count<...T: Component>()` and `struct Query<...T>` take zero or more type arguments in place of `T`. Each argument must satisfy `Bound` when it is present.
+A method may take a callback `fn(...)`. Extra type parameters on the method (`zip<U>`) are inferred from the arguments, including from the callback's `fn` type. A type-parameter pack `<...T: Bound>` is the C++-style pack (not C varargs): it must be last. `fn count<...T: Component>()` and `struct Query<...T>` take zero or more type arguments in place of `T`. Each argument must satisfy `Bound` when it is present. Write `T...` to expand the pack into a parameter list: `fn(i32, Cs...)`, `fn apply<...Cs>(f: fn(Cs...) -> i32, ...xs: Cs)`, and `(Cs...)` as a tuple type. Expand a value pack with `xs...`.
 
 Monomorphization in C++ (templates) and in the LLVM JIT (a copy of the function per type set). Dynamic dispatch: `dyn Trait` is a fat pointer `(data*, vtable*)`. A value of a type that `impl`s the trait coerces to `dyn Trait` at an expected type (arguments, returns, `let` annotations). v0 only dispatches `self` methods, not `mut self`. The payload is copied onto the Q+ heap so the fat pointer stays valid after the call.
 
