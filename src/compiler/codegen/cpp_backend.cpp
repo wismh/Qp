@@ -305,7 +305,11 @@ void emit_params(std::ostringstream& out, const std::vector<HirParam>& params) {
             out << ", ";
         }
         out << cpp_type_name(params[i].ty);
-        if (params[i].mut) {
+        if (params[i].pack) {
+            if (!params[i].ty.pack_expand) {
+                out << "...";
+            }
+        } else if (params[i].mut) {
             out << '&';
         }
         out << ' ' << params[i].name;
@@ -473,6 +477,12 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                     out << cpp_type_name(expr.ty) << "{static_cast<" << ptr << ">(" << kind.name;
                     emit_type_args(out, kind.type_args);
                     out << ")}";
+                } else if (kind.pack_expand) {
+                    if (expr.ty.kind == TypeKind::Tuple) {
+                        out << "std::make_tuple(" << kind.name << "...)";
+                    } else {
+                        out << kind.name << "...";
+                    }
                 } else {
                     out << kind.name;
                 }
