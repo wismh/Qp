@@ -159,7 +159,13 @@ bool TypeChecker::try_score_overload(const std::vector<HirTypeParam>& type_param
                                      const std::unordered_map<std::string, Type>* base_mapping,
                                      std::unordered_map<std::string, Type>& mapping) {
         mapping = base_mapping ? *base_mapping : std::unordered_map<std::string, Type>{};
-        if (params.size() != args.size()) {
+        const bool last_value_pack = !params.empty() && params.back().pack_expand &&
+                                     params.back().kind == TypeKind::Named;
+        const std::size_t nfixed = last_value_pack ? params.size() - 1 : params.size();
+        if (args.size() < nfixed) {
+            return false;
+        }
+        if (!last_value_pack && params.size() != args.size()) {
             return false;
         }
         if (!type_args.empty()) {
@@ -170,9 +176,18 @@ bool TypeChecker::try_score_overload(const std::vector<HirTypeParam>& type_param
             for (std::size_t i = 0; i < prefix; ++i) {
                 mapping[type_params[i].name] = type_args[i];
             }
+            if (last_value_pack) {
+                const std::size_t pack_n = type_args.size() - prefix;
+                if (args.size() - nfixed != pack_n) {
+                    return false;
+                }
+            }
         } else if (last_is_pack(type_params)) {
             return false;
         } else if (!type_params.empty()) {
+            if (last_value_pack) {
+                return false;
+            }
             for (std::size_t i = 0; i < params.size(); ++i) {
                 if (!unify_type(params[i], args[i]->ty, type_params, mapping)) {
                     if (!(params[i].kind == TypeKind::Named && is_generic_param(type_params, params[i].name))) {
@@ -197,12 +212,23 @@ bool TypeChecker::try_score_overload(const std::vector<HirTypeParam>& type_param
         }
 
         score = type_params.empty() ? 1000 : 0;
-        for (std::size_t i = 0; i < params.size(); ++i) {
-            const int s = overload_arg_score(*args[i], subst_type(params[i], mapping));
+        for (std::size_t i = 0; i < nfixed; ++i) {
+            const Type want = subst_type(expand_packs(params[i], type_params, type_args), mapping);
+            const int s = overload_arg_score(*args[i], want);
             if (s < 0) {
                 return false;
             }
             score += s;
+        }
+        if (last_value_pack && !type_args.empty()) {
+            const std::size_t prefix = pack_prefix(type_params);
+            for (std::size_t j = 0; j < args.size() - nfixed; ++j) {
+                const int s = overload_arg_score(*args[nfixed + j], type_args[prefix + j]);
+                if (s < 0) {
+                    return false;
+                }
+                score += s;
+            }
         }
         return true;
     }

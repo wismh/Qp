@@ -15,6 +15,7 @@ namespace qpc::detail {
 struct Binding {
     Type ty;
     bool mut = false;
+    bool pack = false;
 };
 
 struct FnSig {
