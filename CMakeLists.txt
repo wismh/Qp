@@ -852,3 +852,24 @@ add_executable(mut_iter_host
 target_include_directories(mut_iter_host PRIVATE ${MUT_ITER_GEN_DIR})
 
 add_test(NAME mut_iter_host COMMAND mut_iter_host)
+
+set(EXPAND_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_expand)
+set(EXPAND_GEN_H ${EXPAND_GEN_DIR}/expand.h)
+set(EXPAND_GEN_CPP ${EXPAND_GEN_DIR}/expand.cpp)
+
+add_custom_command(
+    OUTPUT ${EXPAND_GEN_H} ${EXPAND_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${EXPAND_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/expand.qp -o ${EXPAND_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/expand.qp
+    COMMENT "qpc compile examples/expand.qp"
+    VERBATIM
+)
+
+add_executable(expand_host
+    examples/expand_host/main.cpp
+    ${EXPAND_GEN_CPP}
+)
+target_include_directories(expand_host PRIVATE ${EXPAND_GEN_DIR})
+
+add_test(NAME expand_host COMMAND expand_host)
