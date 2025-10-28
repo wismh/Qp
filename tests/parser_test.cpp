@@ -472,3 +472,16 @@ TEST(Parser, TypeParamPackMustBeLast) {
     EXPECT_TRUE(parsed.diags.has_errors());
     EXPECT_NE(parsed.diags.all().front().message.find("last"), std::string::npos);
 }
+
+TEST(Parser, PackExpandFnTypeAndValuePack) {
+    auto parsed = qpc::test::parse_string(
+        "fn apply<...Cs>(f: fn(Cs...) -> i32, ...xs: Cs) -> (Cs...) { xs... }");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.functions.size(), 1u);
+    ASSERT_EQ(parsed.ast.functions[0].params.size(), 2u);
+    EXPECT_FALSE(parsed.ast.functions[0].params[0].pack);
+    EXPECT_TRUE(parsed.ast.functions[0].params[0].ty.args.front().pack_expand);
+    EXPECT_TRUE(parsed.ast.functions[0].params[1].pack);
+    ASSERT_TRUE(parsed.ast.functions[0].return_ty);
+    EXPECT_TRUE(parsed.ast.functions[0].return_ty->args.front().pack_expand);
+}

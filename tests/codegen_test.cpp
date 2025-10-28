@@ -586,6 +586,22 @@ TEST(Codegen, TypeParamPackTemplate) {
     EXPECT_NE(compiled.result.output.source.find("count<std::int32_t, std::int32_t>"), std::string::npos);
 }
 
+TEST(Codegen, PackExpandFnAndTuple) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn apply<...Cs>(f: fn(Cs...) -> i32, ...xs: Cs) -> i32 { f(xs...) }
+        pub fn as_tuple<...Cs>(...xs: Cs) -> (Cs...) { xs... }
+        pub fn add(a: i32, b: i32) -> i32 { a + b }
+        pub fn run() -> i32 {
+            let t = as_tuple<i32, i32>(3, 4);
+            apply<i32, i32>(add, 1, 2) + t.0
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("Cs..."), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("f(xs...)"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("std::make_tuple(xs...)"), std::string::npos);
+}
+
 TEST(Codegen, MutForAndMutParamRef) {
     auto compiled = qpc::test::compile_string(R"(
         pub fn bump(mut n: i32) { n = n + 1; }
