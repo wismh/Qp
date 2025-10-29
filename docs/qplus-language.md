@@ -444,6 +444,28 @@ fn label(n: i32) -> string {
 
 `bool` becomes `"true"` / `"false"`. `string` is returned unchanged. Interpolation (`"hp = ${hp}"`) uses `to_string` on each `${...}` expression.
 
+### 5.10 TypeId and reflection
+
+Always in scope; a user `fn` of the same name shadows them. They need a concrete type (not a generic parameter).
+
+| Call | Result |
+|---|---|
+| `type_name<T>()` | `string` name of `T` (`"Health"`, `"i32"`, `"fn(i32) -> i32"`) |
+| `type_id<T>()` | stable `u64` for `T` (same name ⇒ same id) |
+| `field_count<T>()` | `i32` field count of a `struct` |
+| `field_name<T>(i)` | `string` name of field `i` (0-based; panics if out of range) |
+| `field_type_name<T>(i)` | `string` type name of field `i` |
+| `fn_name(f)` | `string` name of a named `fn` value, not a closure |
+
+```qp
+struct Health { hp: i32, max: i32 }
+fn ping() -> i32 { 1 }
+
+fn inspect() -> i32 {
+    if type_name<Health>() == "Health" { 1 } else { 0 }
+}
+```
+
 ---
 
 ## 6. Variables and control flow
