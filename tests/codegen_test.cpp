@@ -503,6 +503,23 @@ TEST(Codegen, ToStringBuiltin) {
     EXPECT_NE(compiled.result.output.source.find("to_string("), std::string::npos);
 }
 
+TEST(Codegen, TypeIdAndReflect) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Health { hp: i32, max: i32 }
+        pub fn ping() -> i32 { 1 }
+        pub fn run() -> string {
+            type_name<Health>() + field_name<Health>(0) + fn_name(ping)
+        }
+        pub fn n() -> i32 { field_count<Health>() }
+        pub fn id() -> u64 { type_id<Health>() }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("String(\"Health\")"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("String(\"hp\")"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("String(\"ping\")"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("ull"), std::string::npos);
+}
+
 TEST(Codegen, StringInterpolation) {
     auto compiled = qpc::test::compile_string("pub fn status(hp: i32) -> string { \"hp = ${hp}\" }");
     ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
