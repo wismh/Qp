@@ -873,3 +873,24 @@ add_executable(expand_host
 target_include_directories(expand_host PRIVATE ${EXPAND_GEN_DIR})
 
 add_test(NAME expand_host COMMAND expand_host)
+
+set(REFLECT_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_reflect)
+set(REFLECT_GEN_H ${REFLECT_GEN_DIR}/reflect.h)
+set(REFLECT_GEN_CPP ${REFLECT_GEN_DIR}/reflect.cpp)
+
+add_custom_command(
+    OUTPUT ${REFLECT_GEN_H} ${REFLECT_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${REFLECT_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/reflect.qp -o ${REFLECT_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/reflect.qp
+    COMMENT "qpc compile examples/reflect.qp"
+    VERBATIM
+)
+
+add_executable(reflect_host
+    examples/reflect_host/main.cpp
+    ${REFLECT_GEN_CPP}
+)
+target_include_directories(reflect_host PRIVATE ${REFLECT_GEN_DIR})
+
+add_test(NAME reflect_host COMMAND reflect_host)
