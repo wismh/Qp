@@ -70,7 +70,8 @@ void Parser::recover_to_item() {
         while (!at(TokenKind::Eof) && !at(TokenKind::KwFn) && !at(TokenKind::KwPub) &&
                !at(TokenKind::KwStruct) && !at(TokenKind::KwImpl) && !at(TokenKind::KwEnum) &&
                !at(TokenKind::KwVariant) && !at(TokenKind::KwExtern) && !at(TokenKind::KwLet) &&
-               !at(TokenKind::KwMod) && !at(TokenKind::KwUse) && !at(TokenKind::KwTrait)) {
+               !at(TokenKind::KwMod) && !at(TokenKind::KwUse) && !at(TokenKind::KwFrom) &&
+               !at(TokenKind::KwTrait)) {
             advance();
         }
     }
