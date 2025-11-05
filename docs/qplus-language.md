@@ -544,15 +544,21 @@ mod util { pub fn id<T>(x: T) -> T { x } }
 
 use math::Vec2;
 use util::*;
+use math::{add, twice};
+
+from actions use *;
+from math use { add, twice };
 ```
 
 A module becomes a C++ namespace. `use` does not affect ABI, only names in Q+.
+
+`from NAME use *;` and `from NAME use { a, b };` load file module `NAME` if this file has no `mod NAME` yet (same lookup as `mod NAME;`: `NAME.qp`, `NAME/mod.qp`, or a `packages.toml` dependency), then import those names. `mod` still declares the tree without importing: `mod actions;` keeps `actions::foo`. `use` never searches the filesystem.
 
 Types declared in a nested module are visible inside that module by their short name (`World`). From outside, write a path (`ecs::World`) or `use ecs::World` / `use ecs::*`. Sibling modules do not see each other's types without `use`.
 
 Module `let` / `let mut` globals (statics) follow the same rule: short name inside the module, `ecs::hits` or `use ecs::hits` / `use ecs::*` from outside.
 
-`extern` / `extern "C"` may live in a nested module (for example `mod engine;` + `use engine::*`). Host symbols still bind in `namespace qplus` under the short name (`qplus::World`, not `qplus::engine::World`).
+`extern` / `extern "C"` may live in a nested module (`mod engine;` + `use engine::*`, or `from engine use *`). Host symbols still bind in `namespace qplus` under the short name (`qplus::World`, not `qplus::engine::World`).
 
 `mod math { ... }` — body in this file. `mod math;` — a file module:
 
@@ -578,6 +584,8 @@ math = { path = "../libs/math" }
 ```qp
 mod math;          // local first; else packages.toml dependency "math"
 use math::*;
+
+from math use *;   // same load, then import
 ```
 
 Local `math.qp` / `math/mod.qp` next to the importer still wins. Nested `mod` inside a package resolve relative to that package root. Versioned registries are not in v0 — only path dependencies.
@@ -611,8 +619,7 @@ fn demo() -> i32 {
 Bindings may be grouped in a nested module and imported:
 
 ```qp
-mod engine;
-use engine::*;
+from engine use *;
 
 fn tick() -> i32 { world.step() }
 ```
@@ -753,7 +760,7 @@ pub fn longest(a: Vec2?, b: Vec2?) -> Vec2? {
 
 ```
 as async break const continue dyn else enum extern false fn for
-if impl in let loop match mod mut new null pub return struct
+from if impl in let loop match mod mut new null pub return struct
 trait true type use variant while
 ```
 
