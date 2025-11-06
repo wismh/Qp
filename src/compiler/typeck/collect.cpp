@@ -310,6 +310,23 @@ void TypeChecker::collect_type_details(HirModule& m, const std::string& prefix) 
 
 void TypeChecker::apply_uses(HirModule& m, const std::string& prefix) {
         SrcGuard src_guard(current_src_, m.source);
+        auto apply_one = [&](const std::string& full, const std::string& last) {
+            if (structs_.contains(full) || c_enums_.contains(full) || variants_.contains(full)) {
+                type_aliases_.emplace(last, full);
+            }
+            if (auto it = sigs_.find(full); it != sigs_.end()) {
+                sigs_.emplace(last, it->second);
+            }
+            if (auto it = methods_.find(full); it != methods_.end()) {
+                methods_.emplace(last, it->second);
+            }
+            if (auto it = traits_.find(full); it != traits_.end()) {
+                traits_.insert(last);
+            }
+            if (statics_.contains(full)) {
+                static_aliases_.emplace(last, full);
+            }
+        };
         for (auto& u : m.uses) {
             if (u.path.empty() && !u.glob) {
                 continue;
@@ -363,29 +380,20 @@ void TypeChecker::apply_uses(HirModule& m, const std::string& prefix) {
                 }
                 continue;
             }
-            std::string full;
+            std::string head;
             for (std::size_t i = 0; i < u.path.size(); ++i) {
                 if (i != 0) {
-                    full += "::";
+                    head += "::";
                 }
-                full += u.path[i];
+                head += u.path[i];
             }
-            const std::string last = u.path.back();
-            if (structs_.contains(full) || c_enums_.contains(full) || variants_.contains(full)) {
-                type_aliases_.emplace(last, full);
+            if (!u.names.empty()) {
+                for (const auto& name : u.names) {
+                    apply_one(head + "::" + name, name);
+                }
+                continue;
             }
-            if (auto it = sigs_.find(full); it != sigs_.end()) {
-                sigs_.emplace(last, it->second);
-            }
-            if (auto it = methods_.find(full); it != methods_.end()) {
-                methods_.emplace(last, it->second);
-            }
-            if (auto it = traits_.find(full); it != traits_.end()) {
-                traits_.insert(last);
-            }
-            if (statics_.contains(full)) {
-                static_aliases_.emplace(last, full);
-            }
+            apply_one(head, u.path.back());
         }
         for (auto& child : m.mods) {
             apply_uses(child, qualify(prefix, child.name));
