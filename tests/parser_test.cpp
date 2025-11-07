@@ -234,6 +234,35 @@ TEST(Parser, ControlModUseAndGenerics) {
     EXPECT_EQ(*parsed.ast.impls[0].methods[0].type_params[0].bound, "Component");
 }
 
+TEST(Parser, FromUseGlobAndBraceList) {
+    auto parsed = qpc::test::parse_string(R"(
+        from actions use *;
+        from math use { add, twice };
+        use util::{one};
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.uses.size(), 3u);
+    EXPECT_TRUE(parsed.ast.uses[0].from_load);
+    EXPECT_TRUE(parsed.ast.uses[0].glob);
+    ASSERT_EQ(parsed.ast.uses[0].path.size(), 1u);
+    EXPECT_EQ(parsed.ast.uses[0].path[0], "actions");
+    EXPECT_TRUE(parsed.ast.uses[1].from_load);
+    ASSERT_EQ(parsed.ast.uses[1].names.size(), 2u);
+    EXPECT_EQ(parsed.ast.uses[1].names[0], "add");
+    EXPECT_EQ(parsed.ast.uses[1].names[1], "twice");
+    EXPECT_FALSE(parsed.ast.uses[2].from_load);
+    ASSERT_EQ(parsed.ast.uses[2].path.size(), 1u);
+    EXPECT_EQ(parsed.ast.uses[2].path[0], "util");
+    ASSERT_EQ(parsed.ast.uses[2].names.size(), 1u);
+    EXPECT_EQ(parsed.ast.uses[2].names[0], "one");
+}
+
+TEST(Parser, FromUseNeedsStarOrBrace) {
+    auto parsed = qpc::test::parse_string("from math use add;");
+    EXPECT_TRUE(parsed.diags.has_errors());
+    EXPECT_NE(parsed.diags.all().front().message.find("'*' or '{'"), std::string::npos);
+}
+
 TEST(Parser, ExternOpaqueStructImplAndStatic) {
     auto parsed = qpc::test::parse_string(R"(
         extern {

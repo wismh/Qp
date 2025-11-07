@@ -121,11 +121,11 @@ TEST(Lexer, ExternKeyword) {
 }
 
 TEST(Lexer, ControlModAndCompareTokens) {
-    auto src = Source::from_string("t.qp", "if else while in break continue mod use trait == != <= >= && || ! ..");
+    auto src = Source::from_string("t.qp", "if else while in break continue mod use from trait == != <= >= && || ! ..");
     DiagnosticEngine diags;
     const auto tokens = lex(src, diags);
     ASSERT_FALSE(diags.has_errors()) << diags.all().front().message;
-    ASSERT_EQ(tokens.size(), 18u);
+    ASSERT_EQ(tokens.size(), 19u);
     EXPECT_EQ(tokens[0].kind, TokenKind::KwIf);
     EXPECT_EQ(tokens[1].kind, TokenKind::KwElse);
     EXPECT_EQ(tokens[2].kind, TokenKind::KwWhile);
@@ -134,16 +134,17 @@ TEST(Lexer, ControlModAndCompareTokens) {
     EXPECT_EQ(tokens[5].kind, TokenKind::KwContinue);
     EXPECT_EQ(tokens[6].kind, TokenKind::KwMod);
     EXPECT_EQ(tokens[7].kind, TokenKind::KwUse);
-    EXPECT_EQ(tokens[8].kind, TokenKind::KwTrait);
-    EXPECT_EQ(tokens[9].kind, TokenKind::EqEq);
-    EXPECT_EQ(tokens[10].kind, TokenKind::BangEq);
-    EXPECT_EQ(tokens[11].kind, TokenKind::Le);
-    EXPECT_EQ(tokens[12].kind, TokenKind::Ge);
-    EXPECT_EQ(tokens[13].kind, TokenKind::AmpAmp);
-    EXPECT_EQ(tokens[14].kind, TokenKind::PipePipe);
-    EXPECT_EQ(tokens[15].kind, TokenKind::Bang);
-    EXPECT_EQ(tokens[16].kind, TokenKind::DotDot);
-        EXPECT_EQ(tokens[17].kind, TokenKind::Eof);
+    EXPECT_EQ(tokens[8].kind, TokenKind::KwFrom);
+    EXPECT_EQ(tokens[9].kind, TokenKind::KwTrait);
+    EXPECT_EQ(tokens[10].kind, TokenKind::EqEq);
+    EXPECT_EQ(tokens[11].kind, TokenKind::BangEq);
+    EXPECT_EQ(tokens[12].kind, TokenKind::Le);
+    EXPECT_EQ(tokens[13].kind, TokenKind::Ge);
+    EXPECT_EQ(tokens[14].kind, TokenKind::AmpAmp);
+    EXPECT_EQ(tokens[15].kind, TokenKind::PipePipe);
+    EXPECT_EQ(tokens[16].kind, TokenKind::Bang);
+    EXPECT_EQ(tokens[17].kind, TokenKind::DotDot);
+        EXPECT_EQ(tokens[18].kind, TokenKind::Eof);
 }
 
 TEST(Lexer, PipeAndOr) {
