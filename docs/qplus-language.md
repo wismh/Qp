@@ -137,6 +137,8 @@ Without this, generated C++ is not self-contained.
 
 Comments: `//`, `/* */`. Unicode identifiers. Convention: `snake_case` for values and functions, `PascalCase` for types. Keywords are English.
 
+Editor syntax highlighting for `.qp` lives in [`editors/`](../editors/) (VS Code / Cursor, CLion TextMate).
+
 Strings: `"hello"`, interpolation `"hp = ${hp}"` (each `${expr}` is `to_string(expr)`), raw `#"path\raw"#`.
 
 Numbers: `10`, `10_000`, `0xFF`, `3.14` (default **`f32`**), `3.14f64`, suffixes `i32`/`u64`.
