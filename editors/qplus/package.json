@@ -1,0 +1,33 @@
+{
+  "name": "qplus",
+  "displayName": "Q+",
+  "description": "Syntax highlighting for Q+ (.qp)",
+  "version": "0.3.0",
+  "publisher": "wismh",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": ["Programming Languages"],
+  "keywords": ["qplus", "q+", "qp"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wismh/Qp"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "qplus",
+        "aliases": ["Q+", "QPlus", "qplus"],
+        "extensions": [".qp"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "qplus",
+        "scopeName": "source.qplus",
+        "path": "./Syntaxes/qplus.tmLanguage.json"
+      }
+    ]
+  }
+}
