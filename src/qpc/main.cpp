@@ -1,4 +1,5 @@
 #include "compiler/compile.hpp"
+#include "compiler/lsp.hpp"
 
 #include <iostream>
 #include <spdlog/spdlog.h>
@@ -6,10 +7,23 @@
 #include <string_view>
 #include <vector>
 
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
+
 namespace {
 
 void print_usage() {
-    std::cerr << "usage: qpc compile <file.qp> -o <dir> [-v|--verbose]\n";
+    std::cerr << "usage: qpc compile <file.qp> -o <dir> [-v|--verbose]\n"
+              << "       qpc lsp\n";
+}
+
+void set_stdio_binary() {
+#ifdef _WIN32
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
 }
 
 }  // namespace
@@ -23,6 +37,14 @@ int main(int argc, char** argv) {
     if (args.empty() || args[0] == "-h" || args[0] == "--help") {
         print_usage();
         return args.empty() ? 1 : 0;
+    }
+
+    if (args[0] == "lsp") {
+        const bool verbose =
+            args.size() > 1 && (args[1] == "-v" || args[1] == "--verbose");
+        spdlog::set_level(verbose ? spdlog::level::debug : spdlog::level::err);
+        set_stdio_binary();
+        return qpc::lsp::run_lsp(std::cin, std::cout);
     }
 
     if (args[0] != "compile") {

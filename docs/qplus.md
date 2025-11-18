@@ -22,7 +22,7 @@ That writes `app.h` and `app.cpp` under `gen/`. From C++, call `qplus::add(1, 2)
 
 Names: `snake_case` for functions and variables, `PascalCase` for types. Comments: `//` and `/* */`.
 
-Syntax highlighting for `.qp`: [`editors/`](../editors/) (VS Code / Cursor extension and CLion TextMate bundle).
+Syntax highlighting and editor hints for `.qp`: [`editors/`](../editors/) (VS Code / Cursor extension and CLion TextMate bundle). Completions, hover, and diagnostics are `qpc lsp`.
 
 ---
 
@@ -587,9 +587,12 @@ Q+ uses `self`, not `self: Test`. A global is `let mut test_object: Test`, not C
 
 ```text
 qpc compile <file.qp> -o <dir> [-v]
+qpc lsp
 ```
 
-One input `.qp` (and its `mod foo;` files) becomes `<stem>.h` / `<stem>.cpp`. Then build with a normal C++ compiler together with the host.
+`compile` writes one input `.qp` (and its `mod foo;` files) as `<stem>.h` / `<stem>.cpp`. Then build with a normal C++ compiler together with the host.
+
+`lsp` speaks Language Server Protocol on stdin/stdout. The VS Code / Cursor extension starts it. CLion uses the plugin in [`editors/clion/`](../editors/clion/).
 
 Generated `.cpp` has `#line` back to the `.qp` file so the debugger shows Q+.
 

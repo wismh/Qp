@@ -1,14 +1,19 @@
 {
   "name": "qplus",
   "displayName": "Q+",
-  "description": "Syntax highlighting for Q+ (.qp)",
-  "version": "0.3.0",
+  "description": "Syntax highlighting and language server for Q+ (.qp)",
+  "version": "0.3.1",
   "publisher": "wismh",
   "engines": {
     "vscode": "^1.74.0"
   },
   "categories": ["Programming Languages"],
   "keywords": ["qplus", "q+", "qp"],
+  "main": "./extension.js",
+  "activationEvents": ["onLanguage:qplus"],
+  "scripts": {
+    "package": "npx --yes @vscode/vsce package --skip-license -o ../../build/qplus-0.3.1.vsix"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/wismh/Qp"
@@ -28,6 +33,16 @@
         "scopeName": "source.qplus",
         "path": "./Syntaxes/qplus.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Q+",
+      "properties": {
+        "qplus.qpcPath": {
+          "type": "string",
+          "default": "qpc",
+          "description": "Path to the qpc compiler. Used as `qpc lsp` for completions, hover, and diagnostics. If unset or not on PATH, the extension looks for cmake-build-debug/qpc.exe in the workspace."
+        }
+      }
+    }
   }
 }

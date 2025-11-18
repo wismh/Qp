@@ -137,7 +137,7 @@ Without this, generated C++ is not self-contained.
 
 Comments: `//`, `/* */`. Unicode identifiers. Convention: `snake_case` for values and functions, `PascalCase` for types. Keywords are English.
 
-Editor syntax highlighting for `.qp` lives in [`editors/`](../editors/) (VS Code / Cursor, CLion TextMate).
+Editor syntax highlighting for `.qp` lives in [`editors/`](../editors/) (VS Code / Cursor, CLion TextMate). Completions, hover types, and diagnostics come from `qpc lsp` (stdio Language Server); the same frontend as `qpc compile`, stopping before C++ codegen.
 
 Strings: `"hello"`, interpolation `"hp = ${hp}"` (each `${expr}` is `to_string(expr)`), raw `#"path\raw"#`.
 

@@ -1,0 +1,5 @@
+**/*.vsix
+.gitignore
+.vscodeignore
+info.plist
+Preferences/**

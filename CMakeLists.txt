@@ -53,12 +53,29 @@ add_library(qplus_compiler
     src/compiler/codegen/cpp_backend.cpp
     src/compiler/packages/packages.cpp
     src/compiler/compile/compile.cpp
+    src/compiler/frontend/frontend.cpp
+    src/compiler/lsp/analyze.cpp
+    src/compiler/lsp/json.cpp
+    src/compiler/lsp/protocol.cpp
 )
 target_include_directories(qplus_compiler PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(qplus_compiler PUBLIC spdlog::spdlog tomlplusplus::tomlplusplus)
 
 add_executable(qpc src/qpc/main.cpp)
 target_link_libraries(qpc PRIVATE qplus_compiler)
+if(MINGW)
+    # Editors spawn `qpc lsp` without the toolchain on PATH; Windows loads these from the exe dir.
+    cmake_path(GET CMAKE_CXX_COMPILER PARENT_PATH QPC_MINGW_BIN)
+    file(GLOB QPC_MINGW_RUNTIME_DLLS
+        "${QPC_MINGW_BIN}/libstdc++*.dll"
+        "${QPC_MINGW_BIN}/libgcc_s_*.dll"
+        "${QPC_MINGW_BIN}/libwinpthread*.dll")
+    foreach(dll ${QPC_MINGW_RUNTIME_DLLS})
+        add_custom_command(TARGET qpc POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${dll}" "$<TARGET_FILE_DIR:qpc>"
+            VERBATIM)
+    endforeach()
+endif()
 
 include(GoogleTest)
 
@@ -70,6 +87,7 @@ add_executable(qplus_tests
     tests/codegen_test.cpp
     tests/packages_test.cpp
     tests/e2e_test.cpp
+    tests/lsp_test.cpp
 )
 target_link_libraries(qplus_tests PRIVATE qplus_compiler GTest::gtest_main)
 target_include_directories(qplus_tests PRIVATE ${CMAKE_SOURCE_DIR}/tests)
