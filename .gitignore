@@ -10,5 +10,11 @@
 *.suo
 cmake-build-*/
 compile_commands.json
+editors/clion/.gradle/
+editors/clion/.kotlin/
+editors/clion/.intellijPlatform/
+editors/clion/build/
+editors/qplus/node_modules/
+*.vsix
 .DS_Store
 Thumbs.db

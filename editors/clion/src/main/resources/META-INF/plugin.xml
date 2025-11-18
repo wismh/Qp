@@ -1,0 +1,20 @@
+<idea-plugin>
+    <id>com.qplus.ide</id>
+    <name>Q+</name>
+    <vendor url="https://github.com/wismh/Qp">wismh</vendor>
+    <description><![CDATA[
+      Starts <code>qpc lsp</code> for Q+ (<code>.qp</code>) files: completions, hover, and diagnostics.
+      Syntax highlighting still comes from the TextMate bundle in <code>editors/qplus</code>.
+    ]]></description>
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.ultimate</depends>
+    <idea-version since-build="261"/>
+    <extensions defaultExtensionNs="com.intellij">
+        <platform.lsp.serverSupportProvider implementation="com.qplus.ide.QplusLspServerSupportProvider"/>
+        <applicationService serviceImplementation="com.qplus.ide.QplusSettings"/>
+        <applicationConfigurable parentId="language"
+                                 instance="com.qplus.ide.QplusConfigurable"
+                                 id="com.qplus.ide.settings"
+                                 displayName="Q+"/>
+    </extensions>
+</idea-plugin>
