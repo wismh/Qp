@@ -768,3 +768,24 @@ add_executable(tuple_host
 target_include_directories(tuple_host PRIVATE ${TUPLE_GEN_DIR})
 
 add_test(NAME tuple_host COMMAND tuple_host)
+
+set(QUERY_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_query)
+set(QUERY_GEN_H ${QUERY_GEN_DIR}/query.h)
+set(QUERY_GEN_CPP ${QUERY_GEN_DIR}/query.cpp)
+
+add_custom_command(
+    OUTPUT ${QUERY_GEN_H} ${QUERY_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${QUERY_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/query.qp -o ${QUERY_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/query.qp
+    COMMENT "qpc compile examples/query.qp"
+    VERBATIM
+)
+
+add_executable(query_host
+    examples/query_host/main.cpp
+    ${QUERY_GEN_CPP}
+)
+target_include_directories(query_host PRIVATE ${QUERY_GEN_DIR})
+
+add_test(NAME query_host COMMAND query_host)

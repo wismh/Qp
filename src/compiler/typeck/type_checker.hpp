@@ -94,6 +94,9 @@ private:
     std::unordered_map<std::string, Type> struct_subst(const StructInfo& st, const Type& ty) const;
 
 
+    bool iterator_item(const Type& iter_ty, std::size_t offset, Type& item);
+
+
     const StructInfo* struct_of(const Type& ty) const;
 
 

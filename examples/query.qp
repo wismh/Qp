@@ -1,0 +1,26 @@
+pub struct Query<A, B> {
+    mut i: i32,
+    n: i32,
+    a: [A],
+    b: [B],
+}
+
+impl Query<A, B> {
+    pub fn next(mut self) -> (A, B)? {
+        if self.i >= self.n {
+            return null;
+        }
+        let item = (self.a[self.i], self.b[self.i]);
+        self.i = self.i + 1;
+        item
+    }
+}
+
+pub fn sum_query() -> i32 {
+    let q = Query { i: 0, n: 2, a: [1, 2], b: [10, 20] };
+    let mut s = 0;
+    for (t, b) in q {
+        s = s + t + b;
+    }
+    s
+}

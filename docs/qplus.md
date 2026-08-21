@@ -209,7 +209,7 @@ fn sum_map(m: {i32: i32}) -> i32 {
 }
 ```
 
-`0..5` is a half-open range: `0, 1, 2, 3, 4`. Loops may use `break` and `continue`. `for (k, v) in dict` walks a dictionary. `for (a, b) in pairs` unpacks each 2-tuple from a list.
+`0..5` is a half-open range: `0, 1, 2, 3, 4`. Loops may use `break` and `continue`. `for (k, v) in dict` walks a dictionary. `for (a, b) in pairs` unpacks each 2-tuple from a list. A type with `fn next(mut self) -> T?` is iterable: `for x in it` (or `for (a, b) in query` when `T` is a 2-tuple).
 
 ---
 

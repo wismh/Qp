@@ -910,7 +910,21 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
                 }
                 out << "    }\n";
             } else if constexpr (std::is_same_v<K, HirFor>) {
-                if (const auto* range = std::get_if<HirRange>(&kind.iter->kind)) {
+                if (kind.by_next) {
+                    const std::string it = "__qit" + std::to_string(++g_if_tmp);
+                    const std::string nxt = "__qnxt" + std::to_string(g_if_tmp);
+                    out << "    {\n    auto " << it << " = ";
+                    emit_expr(out, *kind.iter);
+                    out << ";\n    for (;;) {\n";
+                    out << "        auto " << nxt << " = " << it << ".next();\n";
+                    out << "        if (" << nxt << " == nullptr) {\n            break;\n        }\n";
+                    if (!kind.second.empty()) {
+                        out << "        const auto& [" << kind.name << ", " << kind.second << "] = *" << nxt
+                            << ";\n";
+                    } else {
+                        out << "        const auto& " << kind.name << " = *" << nxt << ";\n";
+                    }
+                } else if (const auto* range = std::get_if<HirRange>(&kind.iter->kind)) {
                     out << "    for (" << cpp_type_name(kind.iter->ty) << ' ' << kind.name << " = ";
                     emit_expr(out, *range->start);
                     out << "; " << kind.name << " < ";
@@ -934,6 +948,9 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
                     out << ";\n";
                 }
                 out << "    }\n";
+                if (kind.by_next) {
+                    out << "    }\n";
+                }
             } else if constexpr (std::is_same_v<K, HirBreak>) {
                 out << "    break;\n";
             } else if constexpr (std::is_same_v<K, HirContinue>) {
