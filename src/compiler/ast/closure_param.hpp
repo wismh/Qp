@@ -9,6 +9,7 @@ namespace qpc {
 struct ClosureParam {
     std::string name;
     TypeExpr ty;
+    bool mut = false;
     std::size_t offset = 0;
 };
 

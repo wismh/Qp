@@ -585,3 +585,41 @@ TEST(Codegen, TypeParamPackTemplate) {
     EXPECT_NE(compiled.result.output.header.find("typename... T"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("count<std::int32_t, std::int32_t>"), std::string::npos);
 }
+
+TEST(Codegen, MutForAndMutParamRef) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn bump(mut n: i32) { n = n + 1; }
+        pub fn run() -> i32 {
+            let mut xs = [1, 2];
+            for mut x in xs { x = x + 1; }
+            let mut pairs = [(1, 2)];
+            for (mut a, mut b) in pairs { a = a + 1; }
+            xs[0]
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("std::int32_t& n"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("for (auto& x : "), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("for (auto& [a, b] : "), std::string::npos);
+}
+
+TEST(Codegen, MutIteratorNoCopy) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Counter { mut n: i32 }
+        impl Counter {
+            fn next(mut self) -> i32? {
+                if self.n <= 0 { return null; }
+                self.n = self.n - 1;
+                self.n
+            }
+        }
+        pub fn run() -> i32 {
+            let mut c = Counter { n: 2 };
+            for mut x in c { x = x; }
+            0
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("auto&& "), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("auto& x = *"), std::string::npos);
+}

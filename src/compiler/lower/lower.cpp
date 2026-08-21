@@ -327,6 +327,8 @@ HirStmtPtr lower_stmt(const Source& src, StmtPtr stmt, DiagnosticEngine& diags) 
                 HirFor f;
                 f.name = std::move(kind.name);
                 f.second = std::move(kind.second);
+                f.mut_name = kind.mut_name;
+                f.mut_second = kind.mut_second;
                 f.iter = lower_expr(src, std::move(kind.iter), diags);
                 auto body = lower_block(src, std::move(*kind.body), diags);
                 f.stmts = std::move(body.stmts);
@@ -567,6 +569,7 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                     HirParam hp;
                     hp.name = std::move(p.name);
                     hp.offset = p.offset;
+                    hp.mut = p.mut;
                     hp.ty = lower_type(p.ty);
                     clo.params.push_back(std::move(hp));
                 }
@@ -640,6 +643,7 @@ HirFn lower_fn(const Source& src, FnDecl& fn, DiagnosticEngine& diags, std::stri
         HirParam hp;
         hp.name = std::move(p.name);
         hp.offset = p.offset;
+        hp.mut = p.mut;
         hp.ty = lower_type(p.ty);
         hfn.params.push_back(std::move(hp));
     }
@@ -788,6 +792,7 @@ HirModule lower_file(const Source& src, AstFile ast, DiagnosticEngine& diags) {
                 HirParam hp;
                 hp.name = std::move(p.name);
                 hp.offset = p.offset;
+                hp.mut = p.mut;
                 hp.ty = lower_type(p.ty);
                 hm.params.push_back(std::move(hp));
             }

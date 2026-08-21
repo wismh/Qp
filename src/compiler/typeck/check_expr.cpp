@@ -999,6 +999,9 @@ Type TypeChecker::check_call(HirCall& call, HirExpr& expr) {
         }
         for (std::size_t i = 0; i < call.args.size(); ++i) {
             expect_expr(*call.args[i], subst_type(chosen->params[i], mapping), call.args[i]->offset, "argument");
+            if (i < chosen->param_mut.size() && chosen->param_mut[i] && !is_mut_place(*call.args[i])) {
+                error(call.args[i]->offset, "mut argument must be a mutable place");
+            }
         }
         if (!chosen->type_params.empty()) {
             check_type_arg_bounds(chosen->type_params, call.type_args, offset);
@@ -1355,6 +1358,9 @@ Type TypeChecker::check_method_call(HirMethodCall& call, std::size_t offset) {
         }
         for (std::size_t i = 0; i < call.args.size(); ++i) {
             expect_expr(*call.args[i], subst_type(chosen->params[i], mapping), call.args[i]->offset, "argument");
+            if (i < chosen->param_mut.size() && chosen->param_mut[i] && !is_mut_place(*call.args[i])) {
+                error(call.args[i]->offset, "mut argument must be a mutable place");
+            }
         }
         if (!chosen->type_params.empty()) {
             check_type_arg_bounds(chosen->type_params, call.type_args, offset);

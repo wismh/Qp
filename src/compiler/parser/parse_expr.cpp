@@ -355,6 +355,7 @@ std::optional<ExprPtr> Parser::parse_closure(bool by_ref) {
                 while (true) {
                     ClosureParam p;
                     p.offset = peek().offset;
+                    p.mut = consume(TokenKind::KwMut);
                     auto name = take_ident("closure parameter");
                     if (!name) {
                         return std::nullopt;

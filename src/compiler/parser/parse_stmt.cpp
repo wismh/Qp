@@ -109,7 +109,10 @@ std::optional<StmtPtr> Parser::parse_for() {
         advance();
         std::string name;
         std::string second;
+        bool mut_name = false;
+        bool mut_second = false;
         if (consume(TokenKind::LParen)) {
+            mut_name = consume(TokenKind::KwMut);
             auto key = take_ident("loop variable");
             if (!key) {
                 return std::nullopt;
@@ -118,6 +121,7 @@ std::optional<StmtPtr> Parser::parse_for() {
             if (!expect(TokenKind::Comma, "','")) {
                 return std::nullopt;
             }
+            mut_second = consume(TokenKind::KwMut);
             auto val = take_ident("loop variable");
             if (!val) {
                 return std::nullopt;
@@ -127,6 +131,7 @@ std::optional<StmtPtr> Parser::parse_for() {
                 return std::nullopt;
             }
         } else {
+            mut_name = consume(TokenKind::KwMut);
             auto ident = take_ident("loop variable");
             if (!ident) {
                 return std::nullopt;
@@ -147,6 +152,8 @@ std::optional<StmtPtr> Parser::parse_for() {
         StmtFor loop;
         loop.name = std::move(name);
         loop.second = std::move(second);
+        loop.mut_name = mut_name;
+        loop.mut_second = mut_second;
         loop.iter = std::move(*iter);
         loop.body = std::make_unique<Block>(std::move(*body));
         return make_stmt(off, std::move(loop));
