@@ -8,7 +8,9 @@ namespace qpc {
 
 struct UseDecl {
     std::vector<std::string> path;
+    std::vector<std::string> names;
     bool glob = false;
+    bool from_load = false;
     std::size_t offset = 0;
 };
 

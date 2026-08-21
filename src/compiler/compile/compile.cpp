@@ -10,6 +10,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -154,6 +155,25 @@ bool resolve_file_mods(AstFile& file, const Source& src, const fs::path& mod_dir
                        const PackageManifest* packages, std::deque<Source>& extras,
                        std::unordered_set<std::string>& loading, DiagnosticEngine& diags) {
     std::unordered_set<std::string> names;
+    for (const auto& m : file.mods) {
+        names.insert(m.name);
+    }
+    for (const auto& u : file.uses) {
+        if (!u.from_load || u.path.empty()) {
+            continue;
+        }
+        const auto& name = u.path.front();
+        if (!names.insert(name).second) {
+            continue;
+        }
+        ModDecl m;
+        m.file = true;
+        m.name = name;
+        m.offset = u.offset;
+        m.body = std::make_unique<AstFile>();
+        file.mods.push_back(std::move(m));
+    }
+    names.clear();
     for (auto& m : file.mods) {
         if (!names.insert(m.name).second) {
             diags.error(src, m.offset, "duplicate module '" + m.name + "'");

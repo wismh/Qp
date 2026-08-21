@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -66,6 +67,15 @@ bool Parser::parse_item(AstFile& file) {
 
         if (at(TokenKind::KwUse)) {
             auto use = parse_use();
+            if (!use) {
+                return false;
+            }
+            file.uses.push_back(std::move(*use));
+            return true;
+        }
+
+        if (at(TokenKind::KwFrom)) {
+            auto use = parse_from();
             if (!use) {
                 return false;
             }
@@ -489,6 +499,39 @@ std::optional<ModDecl> Parser::parse_mod() {
         return m;
     }
 
+std::optional<std::vector<std::string>> Parser::parse_use_brace_names() {
+        if (!expect(TokenKind::LBrace, "'{'")) {
+            return std::nullopt;
+        }
+        std::vector<std::string> names;
+        std::unordered_set<std::string> seen;
+        if (at(TokenKind::RBrace)) {
+            error(peek(), "expected imported name");
+            return std::nullopt;
+        }
+        while (true) {
+            auto name = take_ident("imported name");
+            if (!name) {
+                return std::nullopt;
+            }
+            if (!seen.insert(*name).second) {
+                error(peek(), "duplicate name '" + *name + "' in use list");
+                return std::nullopt;
+            }
+            names.push_back(std::move(*name));
+            if (!consume(TokenKind::Comma)) {
+                break;
+            }
+            if (at(TokenKind::RBrace)) {
+                break;
+            }
+        }
+        if (!expect(TokenKind::RBrace, "'}'")) {
+            return std::nullopt;
+        }
+        return names;
+    }
+
 std::optional<UseDecl> Parser::parse_use() {
         UseDecl u;
         u.offset = peek().offset;
@@ -501,6 +544,18 @@ std::optional<UseDecl> Parser::parse_use() {
                 advance();
                 break;
             }
+            if (at(TokenKind::LBrace)) {
+                if (u.path.empty()) {
+                    error(peek(), "use list needs a path, like 'use math::{min, max}'");
+                    return std::nullopt;
+                }
+                auto names = parse_use_brace_names();
+                if (!names) {
+                    return std::nullopt;
+                }
+                u.names = std::move(*names);
+                break;
+            }
             auto part = take_ident("path segment");
             if (!part) {
                 return std::nullopt;
@@ -509,6 +564,39 @@ std::optional<UseDecl> Parser::parse_use() {
             if (!consume(TokenKind::ColonColon)) {
                 break;
             }
+        }
+        if (!expect(TokenKind::Semicolon, "';'")) {
+            return std::nullopt;
+        }
+        return u;
+    }
+
+std::optional<UseDecl> Parser::parse_from() {
+        UseDecl u;
+        u.from_load = true;
+        u.offset = peek().offset;
+        if (!expect(TokenKind::KwFrom, "'from'")) {
+            return std::nullopt;
+        }
+        auto name = take_ident("module name");
+        if (!name) {
+            return std::nullopt;
+        }
+        u.path.push_back(std::move(*name));
+        if (!expect(TokenKind::KwUse, "'use'")) {
+            return std::nullopt;
+        }
+        if (consume(TokenKind::Star)) {
+            u.glob = true;
+        } else if (at(TokenKind::LBrace)) {
+            auto names = parse_use_brace_names();
+            if (!names) {
+                return std::nullopt;
+            }
+            u.names = std::move(*names);
+        } else {
+            error(peek(), "expected '*' or '{' after 'from ... use'");
+            return std::nullopt;
         }
         if (!expect(TokenKind::Semicolon, "';'")) {
             return std::nullopt;

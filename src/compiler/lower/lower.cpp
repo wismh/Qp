@@ -753,6 +753,7 @@ HirModule lower_file(const Source& src, AstFile ast, DiagnosticEngine& diags) {
     for (auto& u : ast.uses) {
         HirUse hu;
         hu.path = std::move(u.path);
+        hu.names = std::move(u.names);
         hu.glob = u.glob;
         hu.offset = u.offset;
         mod.uses.push_back(std::move(hu));

@@ -91,6 +91,9 @@ namespace {
     if (text == "use") {
         return TokenKind::KwUse;
     }
+    if (text == "from") {
+        return TokenKind::KwFrom;
+    }
     if (text == "trait") {
         return TokenKind::KwTrait;
     }

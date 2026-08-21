@@ -498,7 +498,8 @@ Rules:
 - `mod math;` looks for `math.qp` **or** `math/mod.qp`
 - both files at once is an error
 - nested `mod vec;` inside `math` looks for `math/vec.qp` or `math/vec/mod.qp`
-- `use math::min;` or `use math::*;`
+- `use math::min;`, `use math::*;`, or `use math::{min, max}`
+- `from math use *;` / `from math use { min, max }` loads `math` if needed, then imports (same files as `mod math;`)
 - inside a nested module, types use their short name (`World`); from outside write `ecs::World` or `use ecs::World` / `use ecs::*`
 - module globals (`let` / `let mut`) work the same way: `ecs::hits`, or `use ecs::hits` / `use ecs::*`
 - `extern` may sit in a nested module (`mod engine;` + `use engine::*`); host ABI stays `qplus::Name` (short name)
@@ -513,13 +514,12 @@ math = { path = "../libs/math" }
 ```
 
 ```qp
-mod math;
-use math::*;
+from math use *;
 ```
 
 The path is the module root (`mod.qp` or `math.qp` inside it). A local module of the same name still wins. See [`examples/packages_app/`](../examples/packages_app/).
 
-Example: [`examples/mods.qp`](../examples/mods.qp). Nested module types: [`examples/mod_types.qp`](../examples/mod_types.qp). Globals via `use`: [`examples/use_statics.qp`](../examples/use_statics.qp). Nested C-`enum`: [`examples/nested_enum.qp`](../examples/nested_enum.qp). Engine bindings module: [`examples/engine_api.qp`](../examples/engine_api.qp).
+Example: [`examples/mods.qp`](../examples/mods.qp). `from` without a separate `mod`: [`examples/from_use.qp`](../examples/from_use.qp). Nested module types: [`examples/mod_types.qp`](../examples/mod_types.qp). Globals via `use`: [`examples/use_statics.qp`](../examples/use_statics.qp). Nested C-`enum`: [`examples/nested_enum.qp`](../examples/nested_enum.qp). Engine bindings module: [`examples/engine_api.qp`](../examples/engine_api.qp).
 
 ---
 

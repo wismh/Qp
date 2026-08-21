@@ -205,6 +205,27 @@ TEST(E2E, CompileModsExampleToFiles) {
     EXPECT_NE(source_text.find("mod.qp"), std::string::npos);
 }
 
+TEST(E2E, CompileFromUseExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_from_use";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const std::filesystem::path input =
+        std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "from_use.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "from_use.h";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    std::ifstream header_in(header);
+    const auto header_text = std::string((std::istreambuf_iterator<char>(header_in)),
+                                         std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("namespace math"), std::string::npos);
+    EXPECT_NE(header_text.find("using math::add;"), std::string::npos);
+    EXPECT_NE(header_text.find("using namespace util;"), std::string::npos);
+    EXPECT_NE(header_text.find("std::int32_t run()"), std::string::npos);
+}
+
 TEST(E2E, CompileModTypesExampleToFiles) {
     const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_mod_types";
     std::filesystem::remove_all(out_dir);
@@ -701,7 +722,7 @@ TEST(E2E, PackageDependencyResolvesOutsideTree) {
 [dependencies]
 math = { path = "../lib/math" }
 )";
-        std::ofstream{(app / "main.qp").string()} << "mod math;\nuse math::*;\npub fn run() -> i32 { add(1, 2) }\n";
+        std::ofstream{(app / "main.qp").string()} << "from math use *;\npub fn run() -> i32 { add(1, 2) }\n";
         std::ofstream{(lib / "mod.qp").string()} << "pub fn add(a: i32, b: i32) -> i32 { a + b }\n";
     }
 

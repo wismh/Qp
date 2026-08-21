@@ -355,6 +355,11 @@ void emit_uses(std::ostringstream& out, const HirModule& mod) {
     for (const auto& u : mod.uses) {
         if (u.glob) {
             out << "using namespace " << join_path(u.path) << ";\n";
+        } else if (!u.names.empty()) {
+            const auto head = join_path(u.path);
+            for (const auto& name : u.names) {
+                out << "using " << head << "::" << name << ";\n";
+            }
         } else if (!u.path.empty()) {
             out << "using " << join_path(u.path) << ";\n";
         }

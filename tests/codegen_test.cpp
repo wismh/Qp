@@ -189,6 +189,21 @@ TEST(Codegen, ControlModGenericsAndStatics) {
     EXPECT_NE(compiled.result.output.source.find("id<std::int32_t>(1)"), std::string::npos);
 }
 
+TEST(Codegen, FromUseAndBraceList) {
+    auto compiled = qpc::test::compile_string(R"(
+        mod math {
+            pub fn min(a: i32, b: i32) -> i32 { if a < b { a } else { b } }
+            pub fn max(a: i32, b: i32) -> i32 { if a > b { a } else { b } }
+        }
+        from math use { min };
+        fn run() -> i32 { min(1, 2) }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("using math::min;"), std::string::npos);
+    EXPECT_EQ(compiled.result.output.header.find("using namespace math;"), std::string::npos);
+    EXPECT_EQ(compiled.result.output.header.find("using math::max;"), std::string::npos);
+}
+
 TEST(Codegen, ExternOpaqueMethodsAndStatic) {
     auto compiled = qpc::test::compile_string(R"(
         extern {

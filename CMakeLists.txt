@@ -894,3 +894,28 @@ add_executable(reflect_host
 target_include_directories(reflect_host PRIVATE ${REFLECT_GEN_DIR})
 
 add_test(NAME reflect_host COMMAND reflect_host)
+
+set(FROM_USE_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_from_use)
+set(FROM_USE_GEN_H ${FROM_USE_GEN_DIR}/from_use.h)
+set(FROM_USE_GEN_CPP ${FROM_USE_GEN_DIR}/from_use.cpp)
+
+add_custom_command(
+    OUTPUT ${FROM_USE_GEN_H} ${FROM_USE_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${FROM_USE_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/from_use.qp -o ${FROM_USE_GEN_DIR}
+    DEPENDS qpc
+        ${CMAKE_SOURCE_DIR}/examples/from_use.qp
+        ${CMAKE_SOURCE_DIR}/examples/math.qp
+        ${CMAKE_SOURCE_DIR}/examples/math/vec.qp
+        ${CMAKE_SOURCE_DIR}/examples/util/mod.qp
+    COMMENT "qpc compile examples/from_use.qp"
+    VERBATIM
+)
+
+add_executable(from_use_host
+    examples/from_use_host/main.cpp
+    ${FROM_USE_GEN_CPP}
+)
+target_include_directories(from_use_host PRIVATE ${FROM_USE_GEN_DIR})
+
+add_test(NAME from_use_host COMMAND from_use_host)

@@ -282,6 +282,37 @@ TEST(Typeck, ModUseGenericsAndAssociated) {
     EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
 }
 
+TEST(Typeck, FromUseImportsInlineMod) {
+    auto compiled = qpc::test::compile_string(R"(
+        mod math {
+            pub struct Point { x: i32, y: i32 }
+            pub struct Size { w: i32 }
+        }
+        from math use { Point };
+        fn run() -> i32 {
+            let p = Point { x: 1, y: 2 };
+            p.x
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, FromUseBraceDoesNotImportOthers) {
+    auto compiled = qpc::test::compile_string(R"(
+        mod math {
+            pub struct Point { x: i32, y: i32 }
+            pub struct Size { w: i32 }
+        }
+        from math use { Point };
+        fn run() -> i32 {
+            let s = Size { w: 1 };
+            s.w
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("unknown struct"), std::string::npos);
+}
+
 TEST(Typeck, TraitBoundIsError) {
     auto compiled = qpc::test::compile_string(R"(
         trait Component {}

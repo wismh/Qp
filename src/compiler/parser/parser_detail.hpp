@@ -92,6 +92,12 @@ private:
     std::optional<UseDecl> parse_use();
 
 
+    std::optional<UseDecl> parse_from();
+
+
+    std::optional<std::vector<std::string>> parse_use_brace_names();
+
+
     std::optional<TraitDecl> parse_trait();
 
 
