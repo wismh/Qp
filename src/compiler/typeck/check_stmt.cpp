@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -97,17 +98,43 @@ void TypeChecker::check_stmt(HirStmt& stmt) {
                         elem = iter_ty;
                     } else if (iter_ty.kind == TypeKind::List || iter_ty.kind == TypeKind::Array) {
                         if (pair) {
-                            error(stmt.offset, "for-loop over a list or array binds one variable");
+                            const Type& item = iter_ty.elem();
+                            if (item.kind != TypeKind::Tuple || item.args.size() != 2) {
+                                error(stmt.offset,
+                                      "for-loop unpack requires a 2-tuple element, found '" +
+                                          type_name(item) + "'");
+                            } else {
+                                elem = item.args[0];
+                                value = item.args[1];
+                            }
+                        } else {
+                            elem = iter_ty.elem();
                         }
-                        elem = iter_ty.elem();
                     } else if (iter_ty.kind == TypeKind::Dict) {
                         if (!pair) {
                             error(stmt.offset, "for-loop over a dict requires '(key, value)'");
                         }
                         elem = iter_ty.key();
                         value = iter_ty.value();
-                    } else if (iter_ty != Type::error()) {
-                        error(stmt.offset, "for-loop requires a list, array, dict or range");
+                    } else {
+                        Type item = Type::error();
+                        if (iterator_item(iter_ty, stmt.offset, item)) {
+                            kind.by_next = true;
+                            if (pair) {
+                                if (item.kind != TypeKind::Tuple || item.args.size() != 2) {
+                                    error(stmt.offset,
+                                          "for-loop unpack requires a 2-tuple element, found '" +
+                                              type_name(item) + "'");
+                                } else {
+                                    elem = item.args[0];
+                                    value = item.args[1];
+                                }
+                            } else {
+                                elem = item;
+                            }
+                        } else if (iter_ty != Type::error()) {
+                            error(stmt.offset, "for-loop requires a list, array, dict, range or iterator");
+                        }
                     }
                     ++loop_depth_;
                     push_scope();
@@ -163,6 +190,48 @@ void TypeChecker::check_return(std::size_t offset, HirReturn& ret) {
         if (current_ret_.kind == TypeKind::Unknown) {
             current_ret_ = Type::unit();
         }
+    }
+
+bool TypeChecker::iterator_item(const Type& iter_ty, std::size_t offset, Type& item) {
+        if (iter_ty.kind != TypeKind::Named) {
+            return false;
+        }
+        auto type_it = methods_.find(lookup_named(iter_ty.name));
+        if (type_it == methods_.end()) {
+            type_it = methods_.find(iter_ty.name);
+        }
+        if (type_it == methods_.end()) {
+            return false;
+        }
+        auto method_it = type_it->second.find("next");
+        if (method_it == type_it->second.end()) {
+            return false;
+        }
+        const MethodSig* chosen = nullptr;
+        for (const auto& sig : method_it->second) {
+            if (sig.self_kind == SelfKind::Mut && sig.params.empty()) {
+                if (chosen) {
+                    error(offset, "ambiguous iterator next()");
+                    return false;
+                }
+                chosen = &sig;
+            }
+        }
+        if (!chosen) {
+            error(offset, "iterator next() must take mut self and no arguments");
+            return false;
+        }
+        std::unordered_map<std::string, Type> mapping;
+        if (const StructInfo* st = struct_of(iter_ty)) {
+            mapping = struct_subst(*st, iter_ty);
+        }
+        Type ret = subst_type(chosen->ret, mapping);
+        if (ret.kind != TypeKind::Nullable) {
+            error(offset, "iterator next() must return T?, found '" + type_name(ret) + "'");
+            return false;
+        }
+        item = ret.elem();
+        return true;
     }
 
 }  // namespace qpc::detail

@@ -54,6 +54,8 @@ Type TypeChecker::check_expr(HirExpr& expr) {
                     ty = check_index_assign(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirListLit>) {
                     ty = check_list_lit(kind, expr.offset);
+                } else if constexpr (std::is_same_v<K, HirTupleLit>) {
+                    ty = check_tuple_lit(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirDictLit>) {
                     ty = check_dict_lit(kind, expr.offset);
                 } else if constexpr (std::is_same_v<K, HirMatch>) {
@@ -127,6 +129,9 @@ Type TypeChecker::check_path_var(HirVar& var, HirExpr& expr) {
             }
             return b->ty;
         }
+        if (bind_fn_value(var, expr, nullptr)) {
+            return expr.ty;
+        }
         error(expr.offset, "unknown identifier '" + var.name + "'");
         return Type::error();
     }
@@ -138,8 +143,137 @@ Type TypeChecker::check_var(HirVar& var, HirExpr& expr) {
         if (auto* b = lookup_binding(var.name)) {
             return b->ty;
         }
+        if (bind_fn_value(var, expr, nullptr)) {
+            return expr.ty;
+        }
         error(expr.offset, "unknown identifier '" + var.name + "'");
         return Type::error();
+    }
+
+bool TypeChecker::bind_fn_value(HirVar& var, HirExpr& expr, const Type* expected) {
+        struct Cand {
+            std::vector<HirTypeParam> type_params;
+            std::vector<Type> params;
+            Type ret;
+        };
+        std::vector<Cand> cands;
+        bool saw_self_method = false;
+        if (name_has_path(var.name)) {
+            const auto pos = var.name.rfind("::");
+            if (pos == std::string::npos || pos == 0 || pos + 2 >= var.name.size()) {
+                return false;
+            }
+            const std::string head = var.name.substr(0, pos);
+            const std::string tail = var.name.substr(pos + 2);
+            if (tail.find("::") != std::string::npos) {
+                return false;
+            }
+            auto type_it = methods_.find(lookup_named(head));
+            if (type_it == methods_.end()) {
+                type_it = methods_.find(head);
+            }
+            if (type_it == methods_.end()) {
+                return false;
+            }
+            auto method_it = type_it->second.find(tail);
+            if (method_it == type_it->second.end()) {
+                return false;
+            }
+            for (const auto& sig : method_it->second) {
+                if (sig.self_kind != SelfKind::None) {
+                    saw_self_method = true;
+                    continue;
+                }
+                cands.push_back(Cand{sig.type_params, sig.params, sig.ret});
+            }
+            if (cands.empty()) {
+                if (saw_self_method) {
+                    error(expr.offset, "cannot use method '" + var.name +
+                                           "' as a value; wrap it in a closure");
+                    expr.ty = Type::error();
+                    return true;
+                }
+                return false;
+            }
+        } else {
+            auto it = sigs_.find(var.name);
+            if (it == sigs_.end()) {
+                return false;
+            }
+            for (const auto& sig : it->second) {
+                cands.push_back(Cand{sig.type_params, sig.params, sig.ret});
+            }
+        }
+
+        auto matches = [&](const Cand& cand, std::vector<Type>& targs) -> bool {
+            if (expected == nullptr || expected->kind != TypeKind::Fn || expected->args.empty()) {
+                return cand.type_params.empty();
+            }
+            if (cand.params.size() + 1 != expected->args.size()) {
+                return false;
+            }
+            if (cand.type_params.empty()) {
+                targs.clear();
+                return Type::fn(cand.params, cand.ret) == *expected;
+            }
+            std::unordered_map<std::string, Type> mapping;
+            for (std::size_t i = 0; i < cand.params.size(); ++i) {
+                if (!unify_type(cand.params[i], expected->args[i], cand.type_params, mapping)) {
+                    return false;
+                }
+            }
+            if (!unify_type(cand.ret, expected->args.back(), cand.type_params, mapping)) {
+                return false;
+            }
+            targs.clear();
+            targs.reserve(cand.type_params.size());
+            for (const auto& tp : cand.type_params) {
+                auto mit = mapping.find(tp.name);
+                if (mit == mapping.end() || mit->second.kind == TypeKind::Unknown ||
+                    mit->second.kind == TypeKind::Error) {
+                    return false;
+                }
+                targs.push_back(mit->second);
+            }
+            return true;
+        };
+
+        std::vector<std::pair<Cand, std::vector<Type>>> fits;
+        for (const auto& cand : cands) {
+            std::vector<Type> targs;
+            if (matches(cand, targs)) {
+                fits.emplace_back(cand, std::move(targs));
+            }
+        }
+        if (expected == nullptr) {
+            if (fits.size() == 1) {
+                var.fn_value = true;
+                var.type_args = std::move(fits[0].second);
+                expr.ty = Type::fn(fits[0].first.params, fits[0].first.ret);
+                return true;
+            }
+            if (!cands.empty()) {
+                var.fn_value = true;
+                expr.ty = Type::unknown();
+                return true;
+            }
+            return false;
+        }
+        if (fits.size() == 1) {
+            var.fn_value = true;
+            var.type_args = std::move(fits[0].second);
+            expr.ty = *expected;
+            return true;
+        }
+        if (fits.size() > 1) {
+            error(expr.offset, "ambiguous function value '" + var.name + "'");
+            expr.ty = Type::error();
+            return true;
+        }
+        if (!cands.empty()) {
+            return false;
+        }
+        return false;
     }
 
 Type TypeChecker::subst_type(Type t, const std::unordered_map<std::string, Type>& mapping) const {
@@ -179,50 +313,64 @@ bool TypeChecker::unify_type(const Type& pattern, const Type& actual, const std:
 
 void TypeChecker::check_type_arg_bounds(const std::vector<HirTypeParam>& tps, const std::vector<Type>& args,
  std::size_t offset) {
-        const std::size_t n = std::min(args.size(), tps.size());
-        for (std::size_t i = 0; i < n; ++i) {
-            if (!tps[i].bound) {
-                continue;
+        auto check_one = [&](const Type& arg, const std::optional<std::string>& bound) {
+            if (!bound) {
+                return;
             }
-            const std::string& bound = *tps[i].bound;
+            const std::string& b = *bound;
             bool ok = false;
-            if (args[i].kind == TypeKind::Named) {
-                const auto type_key = lookup_named(args[i].name);
+            if (arg.kind == TypeKind::Named) {
+                const auto type_key = lookup_named(arg.name);
                 if (auto it = trait_impls_.find(type_key); it != trait_impls_.end()) {
-                    ok = it->second.contains(bound);
+                    ok = it->second.contains(b);
                 }
                 if (!ok) {
-                    if (auto it = trait_impls_.find(args[i].name); it != trait_impls_.end()) {
-                        ok = it->second.contains(bound);
+                    if (auto it = trait_impls_.find(arg.name); it != trait_impls_.end()) {
+                        ok = it->second.contains(b);
                     }
                 }
                 if (!ok) {
                     if (auto it = op_impls_.find(type_key); it != op_impls_.end()) {
-                        ok = it->second.contains(bound);
+                        ok = it->second.contains(b);
                     }
                 }
                 if (!ok) {
-                    if (auto it = op_impls_.find(args[i].name); it != op_impls_.end()) {
-                        ok = it->second.contains(bound);
+                    if (auto it = op_impls_.find(arg.name); it != op_impls_.end()) {
+                        ok = it->second.contains(b);
                     }
                 }
             }
             if (!ok) {
-                error(offset, "type '" + type_name(args[i]) + "' does not implement '" + bound + "'");
+                error(offset, "type '" + type_name(arg) + "' does not implement '" + b + "'");
+            }
+        };
+        const std::size_t prefix = pack_prefix(tps);
+        for (std::size_t i = 0; i < prefix && i < args.size(); ++i) {
+            check_one(args[i], tps[i].bound);
+        }
+        if (last_is_pack(tps)) {
+            for (std::size_t i = prefix; i < args.size(); ++i) {
+                check_one(args[i], tps.back().bound);
             }
         }
     }
 
 void TypeChecker::bind_type_args(const std::vector<HirTypeParam>& tps, std::vector<Type>& args, std::size_t offset,
  std::unordered_map<std::string, Type>& mapping) {
-        if (args.size() != tps.size()) {
-            error(offset, "expects " + std::to_string(tps.size()) + " type argument(s), got " +
-                              std::to_string(args.size()));
+        if (!type_arg_count_ok(tps, args.size())) {
+            error(offset, "expects " +
+                              (last_is_pack(tps) ? "at least " + std::to_string(pack_prefix(tps))
+                                                 : std::to_string(tps.size())) +
+                              " type argument(s), got " + std::to_string(args.size()));
         }
-        const std::size_t n = std::min(args.size(), tps.size());
+        const std::size_t prefix = pack_prefix(tps);
+        const std::size_t n = std::min(args.size(), prefix);
         for (std::size_t i = 0; i < n; ++i) {
             resolve_type(args[i], offset);
             mapping[tps[i].name] = args[i];
+        }
+        for (std::size_t i = n; i < args.size(); ++i) {
+            resolve_type(args[i], offset);
         }
         check_type_arg_bounds(tps, args, offset);
     }
@@ -246,6 +394,10 @@ void TypeChecker::infer_type_args(const std::vector<HirTypeParam>& tps, std::vec
         type_args.clear();
         type_args.reserve(tps.size());
         for (const auto& tp : tps) {
+            if (tp.pack) {
+                error(offset, "cannot infer type-parameter pack '" + tp.name + "', write type arguments");
+                continue;
+            }
             auto it = mapping.find(tp.name);
             if (it == mapping.end() || it->second.kind == TypeKind::Unknown ||
                 it->second.kind == TypeKind::Error) {
@@ -915,6 +1067,19 @@ Type TypeChecker::check_field(HirFieldAccess& field, std::size_t offset) {
             }
             struct_ty = base_ty.elem();
         }
+        if (struct_ty.kind == TypeKind::Tuple) {
+            const auto idx = tuple_field_index(field.name);
+            if (!idx || *idx >= struct_ty.args.size()) {
+                error(offset, "unknown field '" + field.name + "' on '" + type_name(struct_ty) + "'");
+                return Type::error();
+            }
+            Type field_ty = struct_ty.args[*idx];
+            if (field.null_safe) {
+                field.take_addr = field_ty.kind != TypeKind::Nullable;
+                return as_nullable(std::move(field_ty));
+            }
+            return field_ty;
+        }
         const StructInfo* st = struct_of(struct_ty);
         if (!st) {
             if (struct_ty != Type::error()) {
@@ -1014,6 +1179,11 @@ Type TypeChecker::check_struct_lit(HirStructLit& lit, std::size_t offset) {
                 }
                 lit.type_args.reserve(st.type_params.size());
                 for (const auto& tp : st.type_params) {
+                    if (tp.pack) {
+                        error(offset, "cannot infer type-parameter pack '" + tp.name +
+                                          "', write type arguments");
+                        continue;
+                    }
                     auto mit = mapping.find(tp.name);
                     if (mit == mapping.end() || mit->second.kind == TypeKind::Unknown ||
                         mit->second.kind == TypeKind::Error) {
@@ -1200,6 +1370,18 @@ Type TypeChecker::check_method_call(HirMethodCall& call, std::size_t offset) {
 Type TypeChecker::check_field_assign(HirFieldAssign& as, std::size_t offset) {
         const Type base_ty = check_expr(*as.base);
         const Type value_ty = check_expr(*as.value);
+        if (base_ty.kind == TypeKind::Tuple) {
+            const auto idx = tuple_field_index(as.field);
+            if (!idx || *idx >= base_ty.args.size()) {
+                error(offset, "unknown field '" + as.field + "' on '" + type_name(base_ty) + "'");
+                return Type::error();
+            }
+            if (!is_mut_place(*as.base)) {
+                error(offset, "cannot assign to field '" + as.field + "' through an immutable value");
+            }
+            expect_expr(*as.value, base_ty.args[*idx], as.value->offset, "assignment");
+            return base_ty.args[*idx];
+        }
         const StructInfo* st = struct_of(base_ty);
         if (!st) {
             if (base_ty != Type::error()) {
@@ -1269,6 +1451,19 @@ Type TypeChecker::check_list_lit(HirListLit& lit, std::size_t offset) {
             return Type::array(elem, lit.elems.size());
         }
         return Type::list(elem);
+    }
+
+Type TypeChecker::check_tuple_lit(HirTupleLit& lit, std::size_t offset) {
+        if (lit.elems.size() < 2) {
+            error(offset, "tuple literal needs at least two elements");
+            return Type::error();
+        }
+        std::vector<Type> args;
+        args.reserve(lit.elems.size());
+        for (auto& elem : lit.elems) {
+            args.push_back(check_expr(*elem));
+        }
+        return Type::tuple(std::move(args));
     }
 
 Type TypeChecker::check_dict_lit(HirDictLit& lit, std::size_t offset) {
@@ -1557,6 +1752,13 @@ void TypeChecker::expect_expr(HirExpr& expr, Type expected, std::size_t offset, 
                              : expr.ty;
         if (coerce_collection(expr, expected)) {
             return;
+        }
+        if (got.kind == TypeKind::Unknown) {
+            if (auto* var = std::get_if<HirVar>(&expr.kind)) {
+                if (bind_fn_value(*var, expr, &expected)) {
+                    return;
+                }
+            }
         }
         if (got == expected || got == Type::error() || expected == Type::error() ||
             got.kind == TypeKind::Never) {

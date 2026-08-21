@@ -34,6 +34,14 @@ Type lower_type(const TypeExpr& te) {
             return Type::array(lower_type(te.args.front()), te.array_len);
         case TypeExpr::Kind::Dict:
             return Type::dict(lower_type(te.args.front()), lower_type(te.args.back()));
+        case TypeExpr::Kind::Tuple: {
+            std::vector<Type> elems;
+            elems.reserve(te.args.size());
+            for (const auto& arg : te.args) {
+                elems.push_back(lower_type(arg));
+            }
+            return Type::tuple(std::move(elems));
+        }
         case TypeExpr::Kind::Fn: {
             if (te.args.empty()) {
                 return Type::error();
@@ -520,6 +528,13 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                     lit.elems.push_back(lower_expr(src, std::move(elem), diags));
                 }
                 out->kind = std::move(lit);
+            } else if constexpr (std::is_same_v<K, ExprTuple>) {
+                HirTupleLit lit;
+                lit.elems.reserve(kind.elems.size());
+                for (auto& elem : kind.elems) {
+                    lit.elems.push_back(lower_expr(src, std::move(elem), diags));
+                }
+                out->kind = std::move(lit);
             } else if constexpr (std::is_same_v<K, ExprDictLit>) {
                 HirDictLit lit;
                 lit.entries.reserve(kind.entries.size());
@@ -617,7 +632,7 @@ HirFn lower_fn(const Source& src, FnDecl& fn, DiagnosticEngine& diags, std::stri
     hfn.return_ty = parse_return_ty(fn);
     hfn.type_params.reserve(fn.type_params.size());
     for (auto& tp : fn.type_params) {
-        hfn.type_params.push_back(HirTypeParam{std::move(tp.name), std::move(tp.bound)});
+        hfn.type_params.push_back(HirTypeParam{std::move(tp.name), std::move(tp.bound), tp.pack});
     }
     hfn.params.reserve(fn.params.size());
 
@@ -644,7 +659,7 @@ HirStruct lower_struct(const Source& src, StructDecl& st, DiagnosticEngine& diag
     out.offset = st.offset;
     out.type_params.reserve(st.type_params.size());
     for (auto& tp : st.type_params) {
-        out.type_params.push_back(HirTypeParam{std::move(tp.name), std::move(tp.bound)});
+        out.type_params.push_back(HirTypeParam{std::move(tp.name), std::move(tp.bound), tp.pack});
     }
     out.fields.reserve(st.fields.size());
 
@@ -666,7 +681,7 @@ HirImpl lower_impl(const Source& src, ImplDecl& impl, DiagnosticEngine& diags) {
     out.offset = impl.offset;
     out.type_params.reserve(impl.type_params.size());
     for (auto& tp : impl.type_params) {
-        out.type_params.push_back(HirTypeParam{std::move(tp.name), std::move(tp.bound)});
+        out.type_params.push_back(HirTypeParam{std::move(tp.name), std::move(tp.bound), tp.pack});
     }
     out.methods.reserve(impl.methods.size());
 

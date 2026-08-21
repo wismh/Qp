@@ -177,7 +177,7 @@ TEST(Typeck, ForPairOnListIsError) {
         }
     )");
     EXPECT_FALSE(compiled.result.ok);
-    EXPECT_NE(first_error(compiled.diags).find("binds one variable"), std::string::npos);
+    EXPECT_NE(first_error(compiled.diags).find("2-tuple element"), std::string::npos);
 }
 
 TEST(Typeck, OperatorImplAllowsPlus) {
@@ -872,4 +872,213 @@ TEST(Typeck, ExternCOverloadIsError) {
     )");
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("cannot overload extern \"C\""), std::string::npos);
+}
+
+TEST(Typeck, TupleLiteralAndIndex) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn f() -> i32 {
+            let p: (i32, i32) = (2, 3);
+            p.0 + p.1
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, TupleArityMismatchIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn f() -> i32 {
+            let p: (i32, i32) = (1, 2, 3);
+            p.0
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("expected '(i32, i32)'"), std::string::npos);
+}
+
+TEST(Typeck, ForUnpacksTupleList) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn sum(xs: [(i32, i32)]) -> i32 {
+            let mut s = 0;
+            for (a, b) in xs {
+                s = s + a + b;
+            }
+            s
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, CustomIteratorFor) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Counter { mut n: i32 }
+        impl Counter {
+            fn next(mut self) -> i32? {
+                if self.n <= 0 { return null; }
+                self.n = self.n - 1;
+                self.n
+            }
+        }
+        fn sum() -> i32 {
+            let c = Counter { n: 3 };
+            let mut s = 0;
+            for x in c {
+                s = s + x;
+            }
+            s
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, CustomIteratorUnpack) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Query<A, B> { mut i: i32, n: i32, a: [A], b: [B] }
+        impl Query<A, B> {
+            fn next(mut self) -> (A, B)? {
+                if self.i >= self.n { return null; }
+                let item = (self.a[self.i], self.b[self.i]);
+                self.i = self.i + 1;
+                item
+            }
+        }
+        fn sum() -> i32 {
+            let q = Query { i: 0, n: 1, a: [2], b: [3] };
+            let mut s = 0;
+            for (t, b) in q {
+                s = s + t + b;
+            }
+            s
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, StructWithoutNextIsNotIterable) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { x: i32 }
+        fn f(p: Point) -> i32 {
+            for x in p { }
+            0
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("iterator"), std::string::npos);
+}
+
+TEST(Typeck, NamedFnAsValue) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn inc(x: i32) -> i32 { x + 1 }
+        fn apply(f: fn(i32) -> i32, x: i32) -> i32 { f(x) }
+        fn run() -> i32 { apply(inc, 4) }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, NamedFnLetBinding) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn inc(x: i32) -> i32 { x + 1 }
+        fn run() -> i32 {
+            let f = inc;
+            f(4)
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, GenericFnValueNeedsExpectedType) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn id<T>(x: T) -> T { x }
+        fn run() -> i32 {
+            let f = id;
+            f(1)
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("cannot infer"), std::string::npos);
+}
+
+TEST(Typeck, GenericFnValueFromAnnotation) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn id<T>(x: T) -> T { x }
+        fn run() -> i32 {
+            let f: fn(i32) -> i32 = id;
+            f(1)
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, OverloadedFnValueNeedsAnnotation) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn abs(x: i32) -> i32 { x }
+        fn abs(x: f32) -> f32 { x }
+        fn run() -> i32 {
+            let f = abs;
+            f(1)
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("cannot infer"), std::string::npos);
+}
+
+TEST(Typeck, MethodWithSelfIsNotAValue) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Point { x: i32 }
+        impl Point {
+            fn mag(self) -> i32 { self.x }
+        }
+        fn run() -> i32 {
+            let f = Point::mag;
+            0
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("cannot use method"), std::string::npos);
+}
+
+TEST(Typeck, TypeParamPackFn) {
+    auto compiled = qpc::test::compile_string(R"(
+        trait Marker {}
+        struct A {}
+        struct B {}
+        impl Marker for A {}
+        impl Marker for B {}
+        fn count<...T: Marker>() -> i32 { 2 }
+        fn run() -> i32 { count<A, B>() }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, TypeParamPackStruct) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Bundle<...T> { n: i32 }
+        impl Bundle<...T> {
+            fn size(self) -> i32 { self.n }
+        }
+        fn run() -> i32 {
+            let b = Bundle<i32, i32> { n: 3 };
+            b.size()
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, TypeParamPackBoundIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        trait Marker {}
+        struct A {}
+        fn count<...T: Marker>() -> i32 { 0 }
+        fn run() -> i32 { count<A>() }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("does not implement"), std::string::npos);
+}
+
+TEST(Typeck, TypeParamPackNeedsExplicitArgs) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn count<...T>() -> i32 { 0 }
+        fn run() -> i32 { count() }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("type-parameter pack"), std::string::npos);
 }

@@ -417,3 +417,37 @@ TEST(Parser, StringInterpolationDesugarsToConcat) {
     ASSERT_TRUE(parsed.ast.functions[0].body.tail);
     EXPECT_TRUE(std::holds_alternative<qpc::ExprBinary>(parsed.ast.functions[0].body.tail->kind));
 }
+
+TEST(Parser, TupleTypeAndLiteral) {
+    auto parsed = qpc::test::parse_string(R"(
+        fn f(p: (i32, string)) -> i32 {
+            let q = (1, 2, 3);
+            p.0 + q.1
+        }
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.functions.size(), 1u);
+    EXPECT_EQ(parsed.ast.functions[0].params[0].ty.kind, qpc::TypeExpr::Kind::Tuple);
+    ASSERT_EQ(parsed.ast.functions[0].params[0].ty.args.size(), 2u);
+    ASSERT_EQ(parsed.ast.functions[0].body.stmts.size(), 1u);
+    const auto* let = std::get_if<qpc::StmtLet>(&parsed.ast.functions[0].body.stmts[0]->kind);
+    ASSERT_NE(let, nullptr);
+    EXPECT_TRUE(std::holds_alternative<qpc::ExprTuple>(let->init->kind));
+}
+
+TEST(Parser, TypeParamPack) {
+    auto parsed = qpc::test::parse_string("fn count<...T: Marker>() -> i32 { 0 }");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.functions.size(), 1u);
+    ASSERT_EQ(parsed.ast.functions[0].type_params.size(), 1u);
+    EXPECT_TRUE(parsed.ast.functions[0].type_params[0].pack);
+    EXPECT_EQ(parsed.ast.functions[0].type_params[0].name, "T");
+    ASSERT_TRUE(parsed.ast.functions[0].type_params[0].bound);
+    EXPECT_EQ(*parsed.ast.functions[0].type_params[0].bound, "Marker");
+}
+
+TEST(Parser, TypeParamPackMustBeLast) {
+    auto parsed = qpc::test::parse_string("fn f<...T, U>() -> i32 { 0 }");
+    EXPECT_TRUE(parsed.diags.has_errors());
+    EXPECT_NE(parsed.diags.all().front().message.find("last"), std::string::npos);
+}

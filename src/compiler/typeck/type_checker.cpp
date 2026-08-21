@@ -163,12 +163,15 @@ bool TypeChecker::try_score_overload(const std::vector<HirTypeParam>& type_param
             return false;
         }
         if (!type_args.empty()) {
-            if (type_args.size() != type_params.size()) {
+            if (!type_arg_count_ok(type_params, type_args.size())) {
                 return false;
             }
-            for (std::size_t i = 0; i < type_params.size(); ++i) {
+            const std::size_t prefix = pack_prefix(type_params);
+            for (std::size_t i = 0; i < prefix; ++i) {
                 mapping[type_params[i].name] = type_args[i];
             }
+        } else if (last_is_pack(type_params)) {
+            return false;
         } else if (!type_params.empty()) {
             for (std::size_t i = 0; i < params.size(); ++i) {
                 if (!unify_type(params[i], args[i]->ty, type_params, mapping)) {
@@ -182,6 +185,9 @@ bool TypeChecker::try_score_overload(const std::vector<HirTypeParam>& type_param
                 }
             }
             for (const auto& tp : type_params) {
+                if (tp.pack) {
+                    continue;
+                }
                 auto it = mapping.find(tp.name);
                 if (it == mapping.end() || it->second.kind == TypeKind::Unknown ||
                     it->second.kind == TypeKind::Error) {
@@ -222,6 +228,9 @@ const FnSig* TypeChecker::resolve_fn_overload(const std::vector<FnSig>& candidat
             if (c.type_args.empty() && !sig.type_params.empty()) {
                 c.type_args.reserve(sig.type_params.size());
                 for (const auto& tp : sig.type_params) {
+                    if (tp.pack) {
+                        continue;
+                    }
                     c.type_args.push_back(c.mapping.at(tp.name));
                 }
             }
@@ -289,6 +298,9 @@ const MethodSig* TypeChecker::resolve_method_overload(const std::vector<MethodSi
             if (c.type_args.empty() && !sig.type_params.empty()) {
                 c.type_args.reserve(sig.type_params.size());
                 for (const auto& tp : sig.type_params) {
+                    if (tp.pack) {
+                        continue;
+                    }
                     c.type_args.push_back(c.mapping.at(tp.name));
                 }
             }

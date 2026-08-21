@@ -446,6 +446,11 @@ struct Lexer {
             return;
         }
         if (ahead() == '.' && ahead(1) == '.') {
+            if (ahead(2) == '.') {
+                push(TokenKind::DotDotDot, i, i + 3);
+                i += 3;
+                return;
+            }
             push(TokenKind::DotDot, i, i + 2);
             i += 2;
             return;

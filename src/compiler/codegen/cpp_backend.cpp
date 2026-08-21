@@ -261,7 +261,7 @@ void emit_template_head(std::ostringstream& out, const std::vector<HirTypeParam>
         if (i != 0) {
             out << ", ";
         }
-        out << "typename " << tps[i].name;
+        out << (tps[i].pack ? "typename... " : "typename ") << tps[i].name;
     }
     out << ">\n";
 }
@@ -456,7 +456,22 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
             } else if constexpr (std::is_same_v<K, HirLitNull>) {
                 out << "nullptr";
             } else if constexpr (std::is_same_v<K, HirVar>) {
-                out << kind.name;
+                if (kind.fn_value && expr.ty.kind == TypeKind::Fn) {
+                    std::string ptr = expr.ty.args.empty() ? "void" : cpp_type_name(expr.ty.args.back());
+                    ptr += "(*)(";
+                    for (std::size_t i = 0; i + 1 < expr.ty.args.size(); ++i) {
+                        if (i != 0) {
+                            ptr += ", ";
+                        }
+                        ptr += cpp_type_name(expr.ty.args[i]);
+                    }
+                    ptr += ')';
+                    out << cpp_type_name(expr.ty) << "{static_cast<" << ptr << ">(" << kind.name;
+                    emit_type_args(out, kind.type_args);
+                    out << ")}";
+                } else {
+                    out << kind.name;
+                }
             } else if constexpr (std::is_same_v<K, HirBinary>) {
                 out << '(';
                 emit_expr(out, *kind.lhs);
@@ -486,7 +501,11 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 emit_expr(out, *kind.value);
                 out << ')';
             } else if constexpr (std::is_same_v<K, HirFieldAccess>) {
-                if (kind.null_safe) {
+                if (kind.base->ty.kind == TypeKind::Tuple) {
+                    out << "std::get<" << kind.name << ">(";
+                    emit_expr(out, *kind.base);
+                    out << ')';
+                } else if (kind.null_safe) {
                     const std::string tmp = "__qn" + std::to_string(++g_if_tmp);
                     out << "([&]() { " << cpp_type_name(kind.base->ty) << ' ' << tmp << " = ";
                     emit_expr(out, *kind.base);
@@ -586,8 +605,14 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 }
             } else if constexpr (std::is_same_v<K, HirFieldAssign>) {
                 out << '(';
-                emit_receiver(out, *kind.base);
-                out << '.' << kind.field << " = ";
+                if (kind.base->ty.kind == TypeKind::Tuple) {
+                    out << "std::get<" << kind.field << ">(";
+                    emit_expr(out, *kind.base);
+                    out << ") = ";
+                } else {
+                    emit_receiver(out, *kind.base);
+                    out << '.' << kind.field << " = ";
+                }
                 emit_expr(out, *kind.value);
                 out << ')';
             } else if constexpr (std::is_same_v<K, HirIndexAssign>) {
@@ -599,6 +624,10 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                 emit_expr(out, *kind.value);
                 out << ')';
             } else if constexpr (std::is_same_v<K, HirListLit>) {
+                out << cpp_type_name(expr.ty) << '{';
+                emit_comma_list(out, kind.elems);
+                out << '}';
+            } else if constexpr (std::is_same_v<K, HirTupleLit>) {
                 out << cpp_type_name(expr.ty) << '{';
                 emit_comma_list(out, kind.elems);
                 out << '}';
@@ -816,6 +845,10 @@ void emit_try_setup(std::ostringstream& out, const HirExpr& expr) {
                 for (const auto& elem : kind.elems) {
                     emit_try_setup(out, *elem);
                 }
+            } else if constexpr (std::is_same_v<K, HirTupleLit>) {
+                for (const auto& elem : kind.elems) {
+                    emit_try_setup(out, *elem);
+                }
             } else if constexpr (std::is_same_v<K, HirDictLit>) {
                 for (const auto& entry : kind.entries) {
                     emit_try_setup(out, *entry.first);
@@ -892,7 +925,21 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
                 }
                 out << "    }\n";
             } else if constexpr (std::is_same_v<K, HirFor>) {
-                if (const auto* range = std::get_if<HirRange>(&kind.iter->kind)) {
+                if (kind.by_next) {
+                    const std::string it = "__qit" + std::to_string(++g_if_tmp);
+                    const std::string nxt = "__qnxt" + std::to_string(g_if_tmp);
+                    out << "    {\n    auto " << it << " = ";
+                    emit_expr(out, *kind.iter);
+                    out << ";\n    for (;;) {\n";
+                    out << "        auto " << nxt << " = " << it << ".next();\n";
+                    out << "        if (" << nxt << " == nullptr) {\n            break;\n        }\n";
+                    if (!kind.second.empty()) {
+                        out << "        const auto& [" << kind.name << ", " << kind.second << "] = *" << nxt
+                            << ";\n";
+                    } else {
+                        out << "        const auto& " << kind.name << " = *" << nxt << ";\n";
+                    }
+                } else if (const auto* range = std::get_if<HirRange>(&kind.iter->kind)) {
                     out << "    for (" << cpp_type_name(kind.iter->ty) << ' ' << kind.name << " = ";
                     emit_expr(out, *range->start);
                     out << "; " << kind.name << " < ";
@@ -916,6 +963,9 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
                     out << ";\n";
                 }
                 out << "    }\n";
+                if (kind.by_next) {
+                    out << "    }\n";
+                }
             } else if constexpr (std::is_same_v<K, HirBreak>) {
                 out << "    break;\n";
             } else if constexpr (std::is_same_v<K, HirContinue>) {
@@ -1334,6 +1384,7 @@ std::string emit_header(const HirModule& mod) {
     header << "#include <map>\n";
     header << "#include <new>\n";
     header << "#include <string>\n";
+    header << "#include <tuple>\n";
     header << "#include <type_traits>\n";
     header << "#include <utility>\n";
     header << "#include <variant>\n";

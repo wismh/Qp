@@ -20,6 +20,7 @@
 #include "compiler/hir/hir_index_assign.hpp"
 #include "compiler/hir/hir_match.hpp"
 #include "compiler/hir/hir_list_lit.hpp"
+#include "compiler/hir/hir_tuple_lit.hpp"
 #include "compiler/hir/hir_dict_lit.hpp"
 #include "compiler/hir/hir_if.hpp"
 #include "compiler/hir/hir_range.hpp"
@@ -44,8 +45,8 @@ struct HirExpr {
     std::size_t offset = 0;
     std::variant<HirLitInt, HirLitFloat, HirLitBool, HirLitChar, HirLitString, HirLitNull, HirVar, HirBinary,
                  HirUnary, HirCall, HirAssign, HirFieldAccess, HirIndex, HirStructLit, HirEnumLit,
-                 HirMethodCall, HirFieldAssign, HirIndexAssign, HirMatch, HirListLit, HirDictLit,
-                 HirIf, HirRange, HirClosure, HirCast, HirUnwrap, HirNew, HirCoalesce, HirTry>
+                 HirMethodCall, HirFieldAssign, HirIndexAssign, HirMatch, HirListLit, HirTupleLit,
+                 HirDictLit, HirIf, HirRange, HirClosure, HirCast, HirUnwrap, HirNew, HirCoalesce, HirTry>
         kind;
 };
 

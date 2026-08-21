@@ -317,7 +317,9 @@ let map: {string: i32} = {"hp": 10};
 | `[T; N]` | `qplus::Array<T, N>` (`std::array`) |
 | `{K: V}` | `qplus::Dict<K,V>` (`std::map`) |
 | `#{T}` | `qplus::Set<T>` |
-| `(A, B)` | `std::tuple` or a struct |
+| `(A, B)` | `std::tuple<A, B>` |
+
+`(A)` in a type is grouping, not a 1-tuple. `(A, B)` and longer are tuples. Access fields with `.0`, `.1`, …. `for (a, b) in xs` unpacks a 2-tuple element of a list or array.
 
 ### 5.6 Generics and `trait`
 
@@ -359,7 +361,7 @@ impl Pair<T> {
 
 A generic `struct` is monomorphized (`template <typename T> struct Pair`). Write `Pair<i32>` in types. A literal `Pair { a: 1, b: 2 }` infers `T` from the fields; `Pair<i32> { a: 1, b: 2 }` is explicit.
 
-A method may take a callback `fn(...)`. Extra type parameters on the method (`zip<U>`) are inferred from the arguments, including from the callback's `fn` type. There are no C++-style packs; several type parameters is the v0 form of "variadic".
+A method may take a callback `fn(...)`. Extra type parameters on the method (`zip<U>`) are inferred from the arguments, including from the callback's `fn` type. A type-parameter pack `<...T: Bound>` is the C++-style pack (not C varargs): it must be last. `fn count<...T: Component>()` and `struct Query<...T>` take zero or more type arguments in place of `T`. Each argument must satisfy `Bound` when it is present.
 
 Monomorphization in C++ (templates) and in the LLVM JIT (a copy of the function per type set). Dynamic dispatch: `dyn Trait` is a fat pointer `(data*, vtable*)`. A value of a type that `impl`s the trait coerces to `dyn Trait` at an expected type (arguments, returns, `let` annotations). v0 only dispatches `self` methods, not `mut self`. The payload is copied onto the Q+ heap so the fat pointer stays valid after the call.
 
@@ -462,6 +464,8 @@ while y > 0 { y -= 1; }
 for i in 0..10 { ... }
 for item in xs { ... }
 for (k, v) in stats { ... }
+for (a, b) in pairs { ... }  // pairs: [(i32, i32)]
+for (t, b) in query { ... }  // query.next() -> (T, B)?
 
 loop {
     if done { break; }
@@ -475,7 +479,7 @@ match n {
 }
 ```
 
-A `mut x: T` parameter is locally mutable. `mut self` — see §5.3. `for (k, v) in dict` binds the key and value; both are immutable. Tuples and `.enumerate()` are not in v0.
+A `mut x: T` parameter is locally mutable. `mut self` — see §5.3. `for (k, v) in dict` binds the key and value; both are immutable. `for (a, b) in xs` unpacks a 2-tuple element the same way. A type with `fn next(mut self) -> T?` is an iterator: `for` copies the value and calls `next` until `null`. If `T` is a 2-tuple, unpack with `for (a, b) in query`. `.enumerate()` is not in v0.
 
 ---
 
@@ -486,6 +490,8 @@ pub fn min(a: i32, b: i32) -> i32 {
     if a < b { a } else { b }
 }
 ```
+
+A named `fn` is a first-class value of type `fn(T) -> R` (same as a closure). `let f = inc` and `apply(inc, 4)` wrap the function as `qplus::Fn`. Overloads need an expected `fn` type or they are ambiguous. A generic `fn` needs type arguments from that expected type (`let f: fn(i32) -> i32 = id`). `Type::assoc` (no `self`) is the same; a method with `self` is not a value — wrap it in a closure.
 
 Functions and `impl` methods may be **overloaded**: several declarations may share a name if their parameter type lists differ (arity or types). The return type alone does not distinguish overloads.
 
@@ -652,6 +658,8 @@ JIT in debug: panic shows the Q+ stack through LLVM debug info.
 | `[T]` | `qplus::List<T>` |
 | `[T; N]` | `qplus::Array<T, N>` |
 | `{K: V}` | `qplus::Dict<K, V>` |
+| `(A, B)` | `std::tuple<A, B>` |
+| `for x in it` (`next() -> T?`) | copy, then `next()` until `null` |
 | `fn(T) -> R` / `|x: T| ...` | `qplus::Fn<R(T)>` (`std::function`) |
 | `enum E { A, B }` | `enum class E` |
 | `variant E { A, B { x } }` | `std::variant` tagged union |
@@ -661,6 +669,7 @@ JIT in debug: panic shows the Q+ stack through LLVM debug info.
 | `trait T` + `impl` | concept / template |
 | `dyn Trait` | fat pointer `dyn_Trait { data*, vtable* }` |
 | `fn foo<T: Add>` | `template<typename T> requires ...` |
+| `fn foo<...T: Bound>` | `template<typename... T>` |
 | `match` | `switch` + union accessors |
 | `null` | `nullptr` |
 | `panic` | `qplus::panic(...)` |

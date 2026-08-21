@@ -83,9 +83,9 @@ bool TypeChecker::resolve_type(Type& ty, std::size_t offset) {
             const bool ok_val = resolve_type(ty.args[1], offset);
             return ok_key && ok_val;
         }
-        if (ty.kind == TypeKind::Fn) {
+        if (ty.kind == TypeKind::Fn || ty.kind == TypeKind::Tuple) {
             if (ty.args.empty()) {
-                error(offset, "invalid fn type");
+                error(offset, ty.kind == TypeKind::Fn ? "invalid fn type" : "invalid tuple type");
                 ty = Type::error();
                 return false;
             }
@@ -128,8 +128,10 @@ bool TypeChecker::resolve_type(Type& ty, std::size_t offset) {
                 }
                 return true;
             }
-            if (ty.args.size() != tps.size()) {
-                error(offset, "generic struct '" + ty.name + "' expects " + std::to_string(tps.size()) +
+            if (!type_arg_count_ok(tps, ty.args.size())) {
+                error(offset, "generic struct '" + ty.name + "' expects " +
+                                  (last_is_pack(tps) ? "at least " + std::to_string(pack_prefix(tps))
+                                                     : std::to_string(tps.size())) +
                                   " type argument(s), got " + std::to_string(ty.args.size()));
                 ty = Type::error();
                 return false;
@@ -615,6 +617,10 @@ void TypeChecker::collect_methods_of(HirModule& m, const std::string& prefix) {
                         if (impl.type_params[i].name != st_tps[i].name) {
                             error(impl.offset, "type parameter '" + impl.type_params[i].name +
                                                   "' does not match '" + st_tps[i].name + "'");
+                        }
+                        if (impl.type_params[i].pack != st_tps[i].pack) {
+                            error(impl.offset, "type-parameter pack '" + st_tps[i].name +
+                                                  "' must match the struct");
                         }
                     }
                 }

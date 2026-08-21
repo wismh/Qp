@@ -709,3 +709,75 @@ math = { path = "../lib/math" }
     ASSERT_TRUE(qpc::compile_file(app / "main.qp", root / "out", diags))
         << (diags.all().empty() ? "compile failed" : diags.all().front().message);
 }
+
+TEST(E2E, CompileTupleExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_tuple";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const auto input = std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "tuple.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "tuple.h";
+    const auto source = out_dir / "tuple.cpp";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    ASSERT_TRUE(std::filesystem::exists(source));
+
+    std::ifstream header_in(header);
+    const std::string header_text((std::istreambuf_iterator<char>(header_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("std::tuple<std::int32_t, std::int32_t>"), std::string::npos);
+    EXPECT_NE(header_text.find("#include <tuple>"), std::string::npos);
+}
+
+TEST(E2E, CompileQueryExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_query";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const auto input = std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "query.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto source = out_dir / "query.cpp";
+    ASSERT_TRUE(std::filesystem::exists(source));
+    std::ifstream source_in(source);
+    const std::string source_text((std::istreambuf_iterator<char>(source_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(source_text.find(".next()"), std::string::npos);
+}
+
+TEST(E2E, CompileFnValueExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_fn_value";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const auto input = std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "fn_value.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto source = out_dir / "fn_value.cpp";
+    ASSERT_TRUE(std::filesystem::exists(source));
+    std::ifstream source_in(source);
+    const std::string source_text((std::istreambuf_iterator<char>(source_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(source_text.find("static_cast<"), std::string::npos);
+}
+
+TEST(E2E, CompilePackExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_pack";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const auto input = std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "pack.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "pack.h";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    std::ifstream header_in(header);
+    const std::string header_text((std::istreambuf_iterator<char>(header_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("typename... T"), std::string::npos);
+}

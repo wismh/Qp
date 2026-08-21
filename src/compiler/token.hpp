@@ -73,6 +73,7 @@ enum class TokenKind {
     Pipe,
     Bang,
     DotDot,
+    DotDotDot,
     Question,
     QuestionDot,
     QuestionQuestion,
@@ -248,6 +249,8 @@ inline const char* token_kind_name(TokenKind kind) {
             return "'!'";
         case TokenKind::DotDot:
             return "'..'";
+        case TokenKind::DotDotDot:
+            return "'...'";
         case TokenKind::Question:
             return "'?'";
         case TokenKind::QuestionDot:

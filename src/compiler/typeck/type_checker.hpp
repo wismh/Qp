@@ -94,6 +94,9 @@ private:
     std::unordered_map<std::string, Type> struct_subst(const StructInfo& st, const Type& ty) const;
 
 
+    bool iterator_item(const Type& iter_ty, std::size_t offset, Type& item);
+
+
     const StructInfo* struct_of(const Type& ty) const;
 
 
@@ -185,6 +188,9 @@ private:
 
 
     Type check_var(HirVar& var, HirExpr& expr);
+
+
+    bool bind_fn_value(HirVar& var, HirExpr& expr, const Type* expected);
 
 
     Type subst_type(Type t, const std::unordered_map<std::string, Type>& mapping) const;
@@ -320,6 +326,9 @@ private:
 
 
     Type check_list_lit(HirListLit& lit, std::size_t offset);
+
+
+    Type check_tuple_lit(HirTupleLit& lit, std::size_t offset);
 
 
     Type check_dict_lit(HirDictLit& lit, std::size_t offset);

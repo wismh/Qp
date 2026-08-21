@@ -522,3 +522,66 @@ TEST(Codegen, FunctionOverloads) {
     ASSERT_NE(first, std::string::npos);
     ASSERT_NE(second, std::string::npos);
 }
+
+TEST(Codegen, TupleStdGetAndUnpack) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn first(p: (i32, i32)) -> i32 { p.0 }
+        pub fn sum(xs: [(i32, i32)]) -> i32 {
+            let mut s = 0;
+            for (a, b) in xs {
+                s = s + a + b;
+            }
+            s
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("#include <tuple>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("std::tuple<std::int32_t, std::int32_t>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("std::get<0>("), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("for (const auto& [a, b] : "), std::string::npos);
+}
+
+TEST(Codegen, CustomIteratorNextLoop) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Counter { mut n: i32 }
+        impl Counter {
+            fn next(mut self) -> i32? {
+                if self.n <= 0 { return null; }
+                self.n = self.n - 1;
+                self.n
+            }
+        }
+        pub fn sum() -> i32 {
+            let c = Counter { n: 2 };
+            let mut s = 0;
+            for x in c {
+                s = s + x;
+            }
+            s
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find(".next()"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("== nullptr"), std::string::npos);
+}
+
+TEST(Codegen, NamedFnValueCast) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn inc(x: i32) -> i32 { x + 1 }
+        pub fn apply(f: fn(i32) -> i32, x: i32) -> i32 { f(x) }
+        pub fn run() -> i32 { apply(inc, 4) }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("static_cast<"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("inc"), std::string::npos);
+}
+
+TEST(Codegen, TypeParamPackTemplate) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn count<...T>() -> i32 { 0 }
+        pub fn run() -> i32 { count<i32, i32>() }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("typename... T"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("count<std::int32_t, std::int32_t>"), std::string::npos);
+}

@@ -747,3 +747,87 @@ add_executable(overload_host
 target_include_directories(overload_host PRIVATE ${OVERLOAD_GEN_DIR})
 
 add_test(NAME overload_host COMMAND overload_host)
+
+set(TUPLE_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_tuple)
+set(TUPLE_GEN_H ${TUPLE_GEN_DIR}/tuple.h)
+set(TUPLE_GEN_CPP ${TUPLE_GEN_DIR}/tuple.cpp)
+
+add_custom_command(
+    OUTPUT ${TUPLE_GEN_H} ${TUPLE_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${TUPLE_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/tuple.qp -o ${TUPLE_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/tuple.qp
+    COMMENT "qpc compile examples/tuple.qp"
+    VERBATIM
+)
+
+add_executable(tuple_host
+    examples/tuple_host/main.cpp
+    ${TUPLE_GEN_CPP}
+)
+target_include_directories(tuple_host PRIVATE ${TUPLE_GEN_DIR})
+
+add_test(NAME tuple_host COMMAND tuple_host)
+
+set(QUERY_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_query)
+set(QUERY_GEN_H ${QUERY_GEN_DIR}/query.h)
+set(QUERY_GEN_CPP ${QUERY_GEN_DIR}/query.cpp)
+
+add_custom_command(
+    OUTPUT ${QUERY_GEN_H} ${QUERY_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${QUERY_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/query.qp -o ${QUERY_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/query.qp
+    COMMENT "qpc compile examples/query.qp"
+    VERBATIM
+)
+
+add_executable(query_host
+    examples/query_host/main.cpp
+    ${QUERY_GEN_CPP}
+)
+target_include_directories(query_host PRIVATE ${QUERY_GEN_DIR})
+
+add_test(NAME query_host COMMAND query_host)
+
+set(FN_VALUE_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_fn_value)
+set(FN_VALUE_GEN_H ${FN_VALUE_GEN_DIR}/fn_value.h)
+set(FN_VALUE_GEN_CPP ${FN_VALUE_GEN_DIR}/fn_value.cpp)
+
+add_custom_command(
+    OUTPUT ${FN_VALUE_GEN_H} ${FN_VALUE_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${FN_VALUE_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/fn_value.qp -o ${FN_VALUE_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/fn_value.qp
+    COMMENT "qpc compile examples/fn_value.qp"
+    VERBATIM
+)
+
+add_executable(fn_value_host
+    examples/fn_value_host/main.cpp
+    ${FN_VALUE_GEN_CPP}
+)
+target_include_directories(fn_value_host PRIVATE ${FN_VALUE_GEN_DIR})
+
+add_test(NAME fn_value_host COMMAND fn_value_host)
+
+set(PACK_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_pack)
+set(PACK_GEN_H ${PACK_GEN_DIR}/pack.h)
+set(PACK_GEN_CPP ${PACK_GEN_DIR}/pack.cpp)
+
+add_custom_command(
+    OUTPUT ${PACK_GEN_H} ${PACK_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${PACK_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/pack.qp -o ${PACK_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/pack.qp
+    COMMENT "qpc compile examples/pack.qp"
+    VERBATIM
+)
+
+add_executable(pack_host
+    examples/pack_host/main.cpp
+    ${PACK_GEN_CPP}
+)
+target_include_directories(pack_host PRIVATE ${PACK_GEN_DIR})
+
+add_test(NAME pack_host COMMAND pack_host)
