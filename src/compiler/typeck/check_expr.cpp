@@ -129,6 +129,9 @@ Type TypeChecker::check_path_var(HirVar& var, HirExpr& expr) {
             }
             return b->ty;
         }
+        if (bind_fn_value(var, expr, nullptr)) {
+            return expr.ty;
+        }
         error(expr.offset, "unknown identifier '" + var.name + "'");
         return Type::error();
     }
@@ -140,8 +143,137 @@ Type TypeChecker::check_var(HirVar& var, HirExpr& expr) {
         if (auto* b = lookup_binding(var.name)) {
             return b->ty;
         }
+        if (bind_fn_value(var, expr, nullptr)) {
+            return expr.ty;
+        }
         error(expr.offset, "unknown identifier '" + var.name + "'");
         return Type::error();
+    }
+
+bool TypeChecker::bind_fn_value(HirVar& var, HirExpr& expr, const Type* expected) {
+        struct Cand {
+            std::vector<HirTypeParam> type_params;
+            std::vector<Type> params;
+            Type ret;
+        };
+        std::vector<Cand> cands;
+        bool saw_self_method = false;
+        if (name_has_path(var.name)) {
+            const auto pos = var.name.rfind("::");
+            if (pos == std::string::npos || pos == 0 || pos + 2 >= var.name.size()) {
+                return false;
+            }
+            const std::string head = var.name.substr(0, pos);
+            const std::string tail = var.name.substr(pos + 2);
+            if (tail.find("::") != std::string::npos) {
+                return false;
+            }
+            auto type_it = methods_.find(lookup_named(head));
+            if (type_it == methods_.end()) {
+                type_it = methods_.find(head);
+            }
+            if (type_it == methods_.end()) {
+                return false;
+            }
+            auto method_it = type_it->second.find(tail);
+            if (method_it == type_it->second.end()) {
+                return false;
+            }
+            for (const auto& sig : method_it->second) {
+                if (sig.self_kind != SelfKind::None) {
+                    saw_self_method = true;
+                    continue;
+                }
+                cands.push_back(Cand{sig.type_params, sig.params, sig.ret});
+            }
+            if (cands.empty()) {
+                if (saw_self_method) {
+                    error(expr.offset, "cannot use method '" + var.name +
+                                           "' as a value; wrap it in a closure");
+                    expr.ty = Type::error();
+                    return true;
+                }
+                return false;
+            }
+        } else {
+            auto it = sigs_.find(var.name);
+            if (it == sigs_.end()) {
+                return false;
+            }
+            for (const auto& sig : it->second) {
+                cands.push_back(Cand{sig.type_params, sig.params, sig.ret});
+            }
+        }
+
+        auto matches = [&](const Cand& cand, std::vector<Type>& targs) -> bool {
+            if (expected == nullptr || expected->kind != TypeKind::Fn || expected->args.empty()) {
+                return cand.type_params.empty();
+            }
+            if (cand.params.size() + 1 != expected->args.size()) {
+                return false;
+            }
+            if (cand.type_params.empty()) {
+                targs.clear();
+                return Type::fn(cand.params, cand.ret) == *expected;
+            }
+            std::unordered_map<std::string, Type> mapping;
+            for (std::size_t i = 0; i < cand.params.size(); ++i) {
+                if (!unify_type(cand.params[i], expected->args[i], cand.type_params, mapping)) {
+                    return false;
+                }
+            }
+            if (!unify_type(cand.ret, expected->args.back(), cand.type_params, mapping)) {
+                return false;
+            }
+            targs.clear();
+            targs.reserve(cand.type_params.size());
+            for (const auto& tp : cand.type_params) {
+                auto mit = mapping.find(tp.name);
+                if (mit == mapping.end() || mit->second.kind == TypeKind::Unknown ||
+                    mit->second.kind == TypeKind::Error) {
+                    return false;
+                }
+                targs.push_back(mit->second);
+            }
+            return true;
+        };
+
+        std::vector<std::pair<Cand, std::vector<Type>>> fits;
+        for (const auto& cand : cands) {
+            std::vector<Type> targs;
+            if (matches(cand, targs)) {
+                fits.emplace_back(cand, std::move(targs));
+            }
+        }
+        if (expected == nullptr) {
+            if (fits.size() == 1) {
+                var.fn_value = true;
+                var.type_args = std::move(fits[0].second);
+                expr.ty = Type::fn(fits[0].first.params, fits[0].first.ret);
+                return true;
+            }
+            if (!cands.empty()) {
+                var.fn_value = true;
+                expr.ty = Type::unknown();
+                return true;
+            }
+            return false;
+        }
+        if (fits.size() == 1) {
+            var.fn_value = true;
+            var.type_args = std::move(fits[0].second);
+            expr.ty = *expected;
+            return true;
+        }
+        if (fits.size() > 1) {
+            error(expr.offset, "ambiguous function value '" + var.name + "'");
+            expr.ty = Type::error();
+            return true;
+        }
+        if (!cands.empty()) {
+            return false;
+        }
+        return false;
     }
 
 Type TypeChecker::subst_type(Type t, const std::unordered_map<std::string, Type>& mapping) const {
@@ -1597,6 +1729,13 @@ void TypeChecker::expect_expr(HirExpr& expr, Type expected, std::size_t offset, 
                              : expr.ty;
         if (coerce_collection(expr, expected)) {
             return;
+        }
+        if (got.kind == TypeKind::Unknown) {
+            if (auto* var = std::get_if<HirVar>(&expr.kind)) {
+                if (bind_fn_value(*var, expr, &expected)) {
+                    return;
+                }
+            }
         }
         if (got == expected || got == Type::error() || expected == Type::error() ||
             got.kind == TypeKind::Never) {

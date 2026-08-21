@@ -190,6 +190,9 @@ private:
     Type check_var(HirVar& var, HirExpr& expr);
 
 
+    bool bind_fn_value(HirVar& var, HirExpr& expr, const Type* expected);
+
+
     Type subst_type(Type t, const std::unordered_map<std::string, Type>& mapping) const;
 
 

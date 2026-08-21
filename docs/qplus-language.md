@@ -491,6 +491,8 @@ pub fn min(a: i32, b: i32) -> i32 {
 }
 ```
 
+A named `fn` is a first-class value of type `fn(T) -> R` (same as a closure). `let f = inc` and `apply(inc, 4)` wrap the function as `qplus::Fn`. Overloads need an expected `fn` type or they are ambiguous. A generic `fn` needs type arguments from that expected type (`let f: fn(i32) -> i32 = id`). `Type::assoc` (no `self`) is the same; a method with `self` is not a value — wrap it in a closure.
+
 Functions and `impl` methods may be **overloaded**: several declarations may share a name if their parameter type lists differ (arity or types). The return type alone does not distinguish overloads.
 
 ```qp
