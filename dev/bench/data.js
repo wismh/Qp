@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787303107567,
+  "lastUpdate": 1787313011247,
   "repoUrl": "https://github.com/wismh/Qp",
   "entries": {
     "qplus_bench": [
@@ -174,6 +174,180 @@ window.BENCHMARK_DATA = {
             "value": 136365.99804876492,
             "unit": "ns/iter",
             "extra": "iterations: 1025\ncpu: 136364.86243902403 ns\nthreads: 1"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "68060501+wismh@users.noreply.github.com",
+            "name": "Zhenya",
+            "username": "wismh"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "32d9cc06e91a195388a9935943fec2689d0e34e2",
+          "message": "merge: branch dev into main\n\nmerge: branch dev into main",
+          "timestamp": "2026-08-21T14:49:00+03:00",
+          "tree_id": "7305e48a8140a10a0f5d4962c41ba9ad92d034d9",
+          "url": "https://github.com/wismh/Qp/commit/32d9cc06e91a195388a9935943fec2689d0e34e2"
+        },
+        "date": 1787313010343,
+        "tool": "googlecpp",
+        "benches": [
+          {
+            "name": "BM_Lex/0/real_time",
+            "value": 120.87550439932723,
+            "unit": "ns/iter",
+            "extra": "iterations: 1152113\ncpu: 120.86521461002526 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Lex/64/real_time",
+            "value": 5249.49671793784,
+            "unit": "ns/iter",
+            "extra": "iterations: 20414\ncpu: 5249.42593318311 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Lex/256/real_time",
+            "value": 21795.110267924247,
+            "unit": "ns/iter",
+            "extra": "iterations: 6457\ncpu: 21788.375716276907 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Parse/0/real_time",
+            "value": 702.0752234544344,
+            "unit": "ns/iter",
+            "extra": "iterations: 201719\ncpu: 700.4722956191538 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Parse/64/real_time",
+            "value": 39099.12858719572,
+            "unit": "ns/iter",
+            "extra": "iterations: 3624\ncpu: 39098.634105960264 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Parse/256/real_time",
+            "value": 154208.00888323455,
+            "unit": "ns/iter",
+            "extra": "iterations: 788\ncpu: 154180.83502538057 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Lower/0/real_time",
+            "value": 1264.1336010286218,
+            "unit": "ns/iter",
+            "extra": "iterations: 110830\ncpu: 1276.2712622937738 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Lower/64/real_time",
+            "value": 27510.368824746918,
+            "unit": "ns/iter",
+            "extra": "iterations: 5081\ncpu: 27456.948435346767 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Lower/256/real_time",
+            "value": 126053.28636394379,
+            "unit": "ns/iter",
+            "extra": "iterations: 1100\ncpu: 125924.55363636775 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Typeck/0/real_time",
+            "value": 1781.4545802673815,
+            "unit": "ns/iter",
+            "extra": "iterations: 78369\ncpu: 1797.9312483249641 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Typeck/64/real_time",
+            "value": 34398.773570889156,
+            "unit": "ns/iter",
+            "extra": "iterations: 4041\ncpu: 34334.64662212354 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Typeck/256/real_time",
+            "value": 144276.06382989034,
+            "unit": "ns/iter",
+            "extra": "iterations: 987\ncpu: 144223.3779128734 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Codegen/0/real_time",
+            "value": 2660.8100831363745,
+            "unit": "ns/iter",
+            "extra": "iterations: 52444\ncpu: 2660.0178476088786 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Codegen/64/real_time",
+            "value": 27560.487083411845,
+            "unit": "ns/iter",
+            "extra": "iterations: 5071\ncpu: 27534.571484914148 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Codegen/256/real_time",
+            "value": 105360.86946565441,
+            "unit": "ns/iter",
+            "extra": "iterations: 1310\ncpu: 105340.73893129773 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Compile/0/real_time",
+            "value": 19115.342061741758,
+            "unit": "ns/iter",
+            "extra": "iterations: 7256\ncpu: 19111.79465270122 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Compile/64/real_time",
+            "value": 144907.4726522121,
+            "unit": "ns/iter",
+            "extra": "iterations: 969\ncpu: 144893.11351909142 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Compile/256/real_time",
+            "value": 527104.5999999903,
+            "unit": "ns/iter",
+            "extra": "iterations: 260\ncpu: 527000.8192307675 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Rich_Lex/real_time",
+            "value": 1080.6043184339526,
+            "unit": "ns/iter",
+            "extra": "iterations: 133428\ncpu: 1080.4771112510116 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Rich_Parse/real_time",
+            "value": 6471.982090795344,
+            "unit": "ns/iter",
+            "extra": "iterations: 21609\ncpu: 6469.006895275117 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Rich_Lower/real_time",
+            "value": 5448.435653340457,
+            "unit": "ns/iter",
+            "extra": "iterations: 25417\ncpu: 5449.043828932504 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Rich_Typeck/real_time",
+            "value": 7519.179282196929,
+            "unit": "ns/iter",
+            "extra": "iterations: 18641\ncpu: 7520.008261358613 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Rich_Codegen/real_time",
+            "value": 5317.743473232033,
+            "unit": "ns/iter",
+            "extra": "iterations: 24208\ncpu: 5316.254089557186 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_Rich_Compile/real_time",
+            "value": 42627.250380286416,
+            "unit": "ns/iter",
+            "extra": "iterations: 3287\ncpu: 42622.24216610894 ns\nthreads: 1"
+          },
+          {
+            "name": "BM_CompileExampleFile/real_time",
+            "value": 102506.95597016378,
+            "unit": "ns/iter",
+            "extra": "iterations: 1340\ncpu: 102505.48656716451 ns\nthreads: 1"
           }
         ]
       }
