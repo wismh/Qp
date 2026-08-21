@@ -22,6 +22,8 @@ That writes `app.h` and `app.cpp` under `gen/`. From C++, call `qplus::add(1, 2)
 
 Names: `snake_case` for functions and variables, `PascalCase` for types. Comments: `//` and `/* */`.
 
+Syntax highlighting for `.qp`: [`editors/`](../editors/) (VS Code / Cursor extension and CLion TextMate bundle).
+
 ---
 
 ## Functions and variables
