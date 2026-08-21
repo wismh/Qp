@@ -747,3 +747,24 @@ add_executable(overload_host
 target_include_directories(overload_host PRIVATE ${OVERLOAD_GEN_DIR})
 
 add_test(NAME overload_host COMMAND overload_host)
+
+set(TUPLE_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_tuple)
+set(TUPLE_GEN_H ${TUPLE_GEN_DIR}/tuple.h)
+set(TUPLE_GEN_CPP ${TUPLE_GEN_DIR}/tuple.cpp)
+
+add_custom_command(
+    OUTPUT ${TUPLE_GEN_H} ${TUPLE_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${TUPLE_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/tuple.qp -o ${TUPLE_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/tuple.qp
+    COMMENT "qpc compile examples/tuple.qp"
+    VERBATIM
+)
+
+add_executable(tuple_host
+    examples/tuple_host/main.cpp
+    ${TUPLE_GEN_CPP}
+)
+target_include_directories(tuple_host PRIVATE ${TUPLE_GEN_DIR})
+
+add_test(NAME tuple_host COMMAND tuple_host)

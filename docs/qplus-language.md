@@ -317,7 +317,9 @@ let map: {string: i32} = {"hp": 10};
 | `[T; N]` | `qplus::Array<T, N>` (`std::array`) |
 | `{K: V}` | `qplus::Dict<K,V>` (`std::map`) |
 | `#{T}` | `qplus::Set<T>` |
-| `(A, B)` | `std::tuple` or a struct |
+| `(A, B)` | `std::tuple<A, B>` |
+
+`(A)` in a type is grouping, not a 1-tuple. `(A, B)` and longer are tuples. Access fields with `.0`, `.1`, …. `for (a, b) in xs` unpacks a 2-tuple element of a list or array.
 
 ### 5.6 Generics and `trait`
 
@@ -462,6 +464,7 @@ while y > 0 { y -= 1; }
 for i in 0..10 { ... }
 for item in xs { ... }
 for (k, v) in stats { ... }
+for (a, b) in pairs { ... }  // pairs: [(i32, i32)]
 
 loop {
     if done { break; }
@@ -475,7 +478,7 @@ match n {
 }
 ```
 
-A `mut x: T` parameter is locally mutable. `mut self` — see §5.3. `for (k, v) in dict` binds the key and value; both are immutable. Tuples and `.enumerate()` are not in v0.
+A `mut x: T` parameter is locally mutable. `mut self` — see §5.3. `for (k, v) in dict` binds the key and value; both are immutable. `for (a, b) in xs` unpacks a 2-tuple element the same way. `.enumerate()` is not in v0.
 
 ---
 
@@ -652,6 +655,7 @@ JIT in debug: panic shows the Q+ stack through LLVM debug info.
 | `[T]` | `qplus::List<T>` |
 | `[T; N]` | `qplus::Array<T, N>` |
 | `{K: V}` | `qplus::Dict<K, V>` |
+| `(A, B)` | `std::tuple<A, B>` |
 | `fn(T) -> R` / `|x: T| ...` | `qplus::Fn<R(T)>` (`std::function`) |
 | `enum E { A, B }` | `enum class E` |
 | `variant E { A, B { x } }` | `std::variant` tagged union |

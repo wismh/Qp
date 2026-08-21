@@ -322,6 +322,9 @@ private:
     Type check_list_lit(HirListLit& lit, std::size_t offset);
 
 
+    Type check_tuple_lit(HirTupleLit& lit, std::size_t offset);
+
+
     Type check_dict_lit(HirDictLit& lit, std::size_t offset);
 
 

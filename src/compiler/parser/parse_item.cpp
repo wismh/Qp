@@ -899,10 +899,39 @@ std::optional<TypeExpr> Parser::parse_bare_type() {
         }
 
         if (consume(TokenKind::LParen)) {
-            if (!expect(TokenKind::RParen, "')' after '(' in type")) {
+            if (consume(TokenKind::RParen)) {
+                return TypeExpr::unit();
+            }
+            auto first = parse_type();
+            if (!first) {
                 return std::nullopt;
             }
-            return TypeExpr::unit();
+            if (consume(TokenKind::RParen)) {
+                return first;
+            }
+            if (!expect(TokenKind::Comma, "',' in tuple type")) {
+                return std::nullopt;
+            }
+            ty.kind = TypeExpr::Kind::Tuple;
+            ty.args.push_back(std::move(*first));
+            while (!at(TokenKind::RParen) && !at(TokenKind::Eof)) {
+                auto next = parse_type();
+                if (!next) {
+                    return std::nullopt;
+                }
+                ty.args.push_back(std::move(*next));
+                if (!consume(TokenKind::Comma)) {
+                    break;
+                }
+            }
+            if (!expect(TokenKind::RParen, "')' in tuple type")) {
+                return std::nullopt;
+            }
+            if (ty.args.size() < 2) {
+                error(peek(), "tuple type needs at least two elements");
+                return std::nullopt;
+            }
+            return ty;
         }
 
         if (consume(TokenKind::LBracket)) {
@@ -976,6 +1005,12 @@ std::optional<TypeExpr> Parser::parse_bare_type() {
 std::optional<ExprPtr> Parser::parse_field(ExprPtr base, bool null_safe) {
         const std::size_t off = peek().offset;
         advance();
+
+        if (at(TokenKind::Int)) {
+            std::string name(peek_text());
+            advance();
+            return make_expr(off, ExprField{std::move(base), std::move(name), null_safe});
+        }
 
         auto name = take_ident("field name");
         if (!name) {

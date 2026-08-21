@@ -34,6 +34,14 @@ Type lower_type(const TypeExpr& te) {
             return Type::array(lower_type(te.args.front()), te.array_len);
         case TypeExpr::Kind::Dict:
             return Type::dict(lower_type(te.args.front()), lower_type(te.args.back()));
+        case TypeExpr::Kind::Tuple: {
+            std::vector<Type> elems;
+            elems.reserve(te.args.size());
+            for (const auto& arg : te.args) {
+                elems.push_back(lower_type(arg));
+            }
+            return Type::tuple(std::move(elems));
+        }
         case TypeExpr::Kind::Fn: {
             if (te.args.empty()) {
                 return Type::error();
@@ -515,6 +523,13 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
                 out->kind = std::move(match);
             } else if constexpr (std::is_same_v<K, ExprListLit>) {
                 HirListLit lit;
+                lit.elems.reserve(kind.elems.size());
+                for (auto& elem : kind.elems) {
+                    lit.elems.push_back(lower_expr(src, std::move(elem), diags));
+                }
+                out->kind = std::move(lit);
+            } else if constexpr (std::is_same_v<K, ExprTuple>) {
+                HirTupleLit lit;
                 lit.elems.reserve(kind.elems.size());
                 for (auto& elem : kind.elems) {
                     lit.elems.push_back(lower_expr(src, std::move(elem), diags));

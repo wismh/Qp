@@ -97,9 +97,18 @@ void TypeChecker::check_stmt(HirStmt& stmt) {
                         elem = iter_ty;
                     } else if (iter_ty.kind == TypeKind::List || iter_ty.kind == TypeKind::Array) {
                         if (pair) {
-                            error(stmt.offset, "for-loop over a list or array binds one variable");
+                            const Type& item = iter_ty.elem();
+                            if (item.kind != TypeKind::Tuple || item.args.size() != 2) {
+                                error(stmt.offset,
+                                      "for-loop unpack requires a 2-tuple element, found '" +
+                                          type_name(item) + "'");
+                            } else {
+                                elem = item.args[0];
+                                value = item.args[1];
+                            }
+                        } else {
+                            elem = iter_ty.elem();
                         }
-                        elem = iter_ty.elem();
                     } else if (iter_ty.kind == TypeKind::Dict) {
                         if (!pair) {
                             error(stmt.offset, "for-loop over a dict requires '(key, value)'");

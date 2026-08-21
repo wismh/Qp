@@ -666,15 +666,39 @@ std::optional<ExprPtr> Parser::parse_primary(bool allow_struct) {
             return make_expr(off, ExprPath{std::move(path)});
         }
 
-        if (consume(TokenKind::LParen)) {
-            auto inner = parse_expr();
-            if (!inner) {
+        if (at(TokenKind::LParen)) {
+            const std::size_t off = peek().offset;
+            advance();
+            auto first = parse_expr();
+            if (!first) {
                 return std::nullopt;
             }
-            if (!expect(TokenKind::RParen, "')'")) {
+            if (consume(TokenKind::RParen)) {
+                return first;
+            }
+            if (!expect(TokenKind::Comma, "',' in tuple")) {
                 return std::nullopt;
             }
-            return inner;
+            ExprTuple lit;
+            lit.elems.push_back(std::move(*first));
+            while (!at(TokenKind::RParen) && !at(TokenKind::Eof)) {
+                auto next = parse_expr();
+                if (!next) {
+                    return std::nullopt;
+                }
+                lit.elems.push_back(std::move(*next));
+                if (!consume(TokenKind::Comma)) {
+                    break;
+                }
+            }
+            if (!expect(TokenKind::RParen, "')' after tuple")) {
+                return std::nullopt;
+            }
+            if (lit.elems.size() < 2) {
+                error(peek(), "tuple literal needs at least two elements");
+                return std::nullopt;
+            }
+            return make_expr(off, std::move(lit));
         }
 
         if (at(TokenKind::LBracket)) {

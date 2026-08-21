@@ -522,3 +522,21 @@ TEST(Codegen, FunctionOverloads) {
     ASSERT_NE(first, std::string::npos);
     ASSERT_NE(second, std::string::npos);
 }
+
+TEST(Codegen, TupleStdGetAndUnpack) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn first(p: (i32, i32)) -> i32 { p.0 }
+        pub fn sum(xs: [(i32, i32)]) -> i32 {
+            let mut s = 0;
+            for (a, b) in xs {
+                s = s + a + b;
+            }
+            s
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("#include <tuple>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("std::tuple<std::int32_t, std::int32_t>"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("std::get<0>("), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("for (const auto& [a, b] : "), std::string::npos);
+}
