@@ -119,6 +119,11 @@ inline bool is_math_builtin(std::string_view name) {
     return is_unary_math(name) || is_binary_math(name);
 }
 
+inline bool is_reflect_builtin(std::string_view name) {
+    return name == "type_id" || name == "type_name" || name == "field_count" || name == "field_name" ||
+           name == "field_type_name" || name == "fn_name";
+}
+
 inline bool is_op_trait(std::string_view name) {
     return name == "Add" || name == "Sub" || name == "Mul" || name == "Div" || name == "Rem" ||
            name == "Neg";

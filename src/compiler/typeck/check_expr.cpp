@@ -979,6 +979,95 @@ Type TypeChecker::check_to_string_builtin(HirCall& call, std::size_t offset) {
         return Type::string();
     }
 
+Type TypeChecker::check_reflect_builtin(HirCall& call, std::size_t offset) {
+        if (!is_reflect_builtin(call.callee)) {
+            return Type::unknown();
+        }
+        for (auto& t : call.type_args) {
+            resolve_type(t, offset);
+            if (t.kind == TypeKind::Named && generic_params_.contains(t.name)) {
+                error(offset, "'" + call.callee + "' needs a concrete type");
+                return Type::error();
+            }
+        }
+        for (auto& arg : call.args) {
+            check_expr(*arg);
+        }
+
+        const bool fields = call.callee == "field_count" || call.callee == "field_name" ||
+                            call.callee == "field_type_name";
+        if (call.callee == "fn_name") {
+            if (!call.type_args.empty()) {
+                error(offset, "'fn_name' cannot take type arguments");
+                return Type::error();
+            }
+            if (call.args.size() != 1) {
+                error(offset, "function 'fn_name' expects 1 argument(s), got " +
+                                  std::to_string(call.args.size()));
+                return Type::error();
+            }
+            auto* var = std::get_if<HirVar>(&call.args[0]->kind);
+            if (!var || (!var->fn_value && !sigs_.contains(var->name))) {
+                error(call.args[0]->offset, "'fn_name' needs a named function");
+                return Type::error();
+            }
+            if (!var->fn_value) {
+                bind_fn_value(*var, *call.args[0], nullptr);
+            }
+            return Type::string();
+        }
+
+        if (call.type_args.size() != 1) {
+            error(offset, "'" + call.callee + "' expects 1 type argument, got " +
+                              std::to_string(call.type_args.size()));
+            return Type::error();
+        }
+        const Type& target = call.type_args[0];
+        if (call.callee == "type_id") {
+            if (!call.args.empty()) {
+                error(offset, "function 'type_id' expects 0 argument(s), got " +
+                                  std::to_string(call.args.size()));
+                return Type::error();
+            }
+            return Type::u64();
+        }
+        if (call.callee == "type_name") {
+            if (!call.args.empty()) {
+                error(offset, "function 'type_name' expects 0 argument(s), got " +
+                                  std::to_string(call.args.size()));
+                return Type::error();
+            }
+            return Type::string();
+        }
+        if (fields) {
+            const StructInfo* st = target.kind == TypeKind::Named ? struct_of(target) : nullptr;
+            if (!st) {
+                error(offset, "'" + call.callee + "' needs a struct type, found '" + type_name(target) + "'");
+                return Type::error();
+            }
+            if (st->opaque) {
+                error(offset, "cannot reflect fields of opaque type '" + type_name(target) + "'");
+                return Type::error();
+            }
+            if (call.callee == "field_count") {
+                if (!call.args.empty()) {
+                    error(offset, "function 'field_count' expects 0 argument(s), got " +
+                                      std::to_string(call.args.size()));
+                    return Type::error();
+                }
+                return Type::i32();
+            }
+            if (call.args.size() != 1) {
+                error(offset, "function '" + call.callee + "' expects 1 argument(s), got " +
+                                  std::to_string(call.args.size()));
+                return Type::error();
+            }
+            expect_expr(*call.args[0], Type::i32(), call.args[0]->offset, "argument");
+            return Type::string();
+        }
+        return Type::error();
+    }
+
 Type TypeChecker::check_call(HirCall& call, HirExpr& expr) {
         const std::size_t offset = expr.offset;
         if (call.callee_expr) {
@@ -1017,6 +1106,10 @@ Type TypeChecker::check_call(HirCall& call, HirExpr& expr) {
             const Type math = check_math_builtin(call, offset);
             if (math.kind != TypeKind::Unknown) {
                 return math;
+            }
+            const Type reflect = check_reflect_builtin(call, offset);
+            if (reflect.kind != TypeKind::Unknown) {
+                return reflect;
             }
             if (name_has_path(call.callee)) {
                 const auto pos = call.callee.rfind("::");

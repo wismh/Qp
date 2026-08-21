@@ -301,6 +301,9 @@ private:
     Type check_to_string_builtin(HirCall& call, std::size_t offset);
 
 
+    Type check_reflect_builtin(HirCall& call, std::size_t offset);
+
+
     Type check_call(HirCall& call, HirExpr& expr);
 
 

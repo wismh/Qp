@@ -142,6 +142,17 @@ fn label(n: i32) -> string {
 
 `to_string` accepts integers, floats, `bool`, `char`, `string`, and C-style `enum`. It is always in scope; a user `fn` of the same name wins.
 
+`type_name<T>()`, `type_id<T>()`, `field_count<T>()`, `field_name<T>(i)`, `field_type_name<T>(i)`, and `fn_name(f)` are the same kind of builtin: names and field types of structs, plus the name of a named `fn` value. `T` must be concrete.
+
+```qp
+struct Health { hp: i32, max: i32 }
+fn ping() -> i32 { 1 }
+
+fn ok() -> bool {
+    type_name<Health>() == "Health" && fn_name(ping) == "ping"
+}
+```
+
 Interpolation embeds expressions with `${...}`:
 
 ```qp
