@@ -361,7 +361,7 @@ impl Pair<T> {
 
 A generic `struct` is monomorphized (`template <typename T> struct Pair`). Write `Pair<i32>` in types. A literal `Pair { a: 1, b: 2 }` infers `T` from the fields; `Pair<i32> { a: 1, b: 2 }` is explicit.
 
-A method may take a callback `fn(...)`. Extra type parameters on the method (`zip<U>`) are inferred from the arguments, including from the callback's `fn` type. A type-parameter pack `<...T: Bound>` is the C++-style pack (not C varargs): it must be last. `fn count<...T: Component>()` and `struct Query<...T>` take zero or more type arguments in place of `T`. Each argument must satisfy `Bound` when it is present.
+A method may take a callback `fn(...)`. Extra type parameters on the method (`zip<U>`) are inferred from the arguments, including from the callback's `fn` type. A type-parameter pack `<...T: Bound>` is the C++-style pack (not C varargs): it must be last. `fn count<...T: Component>()` and `struct Query<...T>` take zero or more type arguments in place of `T`. Each argument must satisfy `Bound` when it is present. Write `T...` to expand the pack into a parameter list: `fn(i32, Cs...)`, `fn apply<...Cs>(f: fn(Cs...) -> i32, ...xs: Cs)`, and `(Cs...)` as a tuple type. Expand a value pack with `xs...`.
 
 Monomorphization in C++ (templates) and in the LLVM JIT (a copy of the function per type set). Dynamic dispatch: `dyn Trait` is a fat pointer `(data*, vtable*)`. A value of a type that `impl`s the trait coerces to `dyn Trait` at an expected type (arguments, returns, `let` annotations). v0 only dispatches `self` methods, not `mut self`. The payload is copied onto the Q+ heap so the fat pointer stays valid after the call.
 
@@ -444,6 +444,28 @@ fn label(n: i32) -> string {
 
 `bool` becomes `"true"` / `"false"`. `string` is returned unchanged. Interpolation (`"hp = ${hp}"`) uses `to_string` on each `${...}` expression.
 
+### 5.10 TypeId and reflection
+
+Always in scope; a user `fn` of the same name shadows them. They need a concrete type (not a generic parameter).
+
+| Call | Result |
+|---|---|
+| `type_name<T>()` | `string` name of `T` (`"Health"`, `"i32"`, `"fn(i32) -> i32"`) |
+| `type_id<T>()` | stable `u64` for `T` (same name ⇒ same id) |
+| `field_count<T>()` | `i32` field count of a `struct` |
+| `field_name<T>(i)` | `string` name of field `i` (0-based; panics if out of range) |
+| `field_type_name<T>(i)` | `string` type name of field `i` |
+| `fn_name(f)` | `string` name of a named `fn` value, not a closure |
+
+```qp
+struct Health { hp: i32, max: i32 }
+fn ping() -> i32 { 1 }
+
+fn inspect() -> i32 {
+    if type_name<Health>() == "Health" { 1 } else { 0 }
+}
+```
+
 ---
 
 ## 6. Variables and control flow
@@ -466,6 +488,8 @@ for item in xs { ... }
 for (k, v) in stats { ... }
 for (a, b) in pairs { ... }  // pairs: [(i32, i32)]
 for (t, b) in query { ... }  // query.next() -> (T, B)?
+for mut x in xs { x = x + 1; }
+for (mut a, mut b) in pairs { a = a + 1; }
 
 loop {
     if done { break; }
@@ -479,7 +503,7 @@ match n {
 }
 ```
 
-A `mut x: T` parameter is locally mutable. `mut self` — see §5.3. `for (k, v) in dict` binds the key and value; both are immutable. `for (a, b) in xs` unpacks a 2-tuple element the same way. A type with `fn next(mut self) -> T?` is an iterator: `for` copies the value and calls `next` until `null`. If `T` is a 2-tuple, unpack with `for (a, b) in query`. `.enumerate()` is not in v0.
+A `mut x: T` parameter is an exclusive view into the argument (`T&` in C++), like `mut self`. The call must pass a mutable place. A parameter without `mut` is a local copy (still assignable inside the function). `for (k, v) in dict` binds the key and value; both are immutable. `for mut x in xs` and `for (mut a, mut b) in pairs` bind references into the collection or iterator storage so assignments update the world. Dict keys cannot be `mut`. A type with `fn next(mut self) -> T?` is an iterator: `for x in it` copies; `for mut x in it` binds `T&` to `*next()` and does not copy the iterator. If `T` is a 2-tuple, unpack with `for (a, b) in query` or `for (mut a, mut b) in query`. `.enumerate()` is not in v0.
 
 ---
 
@@ -660,6 +684,8 @@ JIT in debug: panic shows the Q+ stack through LLVM debug info.
 | `{K: V}` | `qplus::Dict<K, V>` |
 | `(A, B)` | `std::tuple<A, B>` |
 | `for x in it` (`next() -> T?`) | copy, then `next()` until `null` |
+| `for mut x in it` | `auto&&` iterator, `T&` to `*next()` |
+| `mut x: T` parameter | `T&` |
 | `fn(T) -> R` / `|x: T| ...` | `qplus::Fn<R(T)>` (`std::function`) |
 | `enum E { A, B }` | `enum class E` |
 | `variant E { A, B { x } }` | `std::variant` tagged union |

@@ -776,6 +776,11 @@ std::optional<std::vector<Param>> Parser::parse_params(FnDecl& fn, bool in_impl)
             }
             params.push_back(std::move(*p));
 
+            if (params.size() > 1 && params[params.size() - 2].pack) {
+                error(peek(), "parameter pack must be last");
+                return std::nullopt;
+            }
+
             if (consume(TokenKind::Comma)) {
                 if (at(TokenKind::RParen)) {
                     break;
@@ -794,6 +799,8 @@ std::optional<std::vector<Param>> Parser::parse_params(FnDecl& fn, bool in_impl)
 std::optional<Param> Parser::parse_param() {
         Param p;
         p.offset = peek().offset;
+        p.pack = consume(TokenKind::DotDotDot);
+        p.mut = consume(TokenKind::KwMut);
 
         auto name = take_ident("parameter name");
         if (!name) {
@@ -912,6 +919,11 @@ std::optional<TypeExpr> Parser::parse_bare_type() {
                 return std::nullopt;
             }
             if (consume(TokenKind::RParen)) {
+                if (first->pack_expand) {
+                    ty.kind = TypeExpr::Kind::Tuple;
+                    ty.args.push_back(std::move(*first));
+                    return ty;
+                }
                 return first;
             }
             if (!expect(TokenKind::Comma, "',' in tuple type")) {
@@ -1003,6 +1015,9 @@ std::optional<TypeExpr> Parser::parse_bare_type() {
         ty.name = std::move(full);
         if (auto targs = try_type_args()) {
             ty.args = std::move(*targs);
+        }
+        if (consume(TokenKind::DotDotDot)) {
+            ty.pack_expand = true;
         }
         return ty;
     }

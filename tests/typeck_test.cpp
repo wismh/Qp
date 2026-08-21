@@ -800,6 +800,27 @@ TEST(Typeck, ToStringArityIsError) {
     EXPECT_NE(first_error(compiled.diags).find("expects 1"), std::string::npos);
 }
 
+TEST(Typeck, TypeIdAndFieldReflect) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Health { hp: i32, max: i32 }
+        fn ping() -> i32 { 1 }
+        fn run() -> i32 {
+            if type_name<Health>() == "Health" { 1 } else { 0 }
+        }
+        fn id() -> u64 { type_id<i32>() }
+        fn n() -> i32 { field_count<Health>() }
+        fn f() -> string { field_name<Health>(0) }
+        fn g() -> string { fn_name(ping) }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, FieldReflectNeedsStruct) {
+    auto compiled = qpc::test::compile_string("fn f() -> i32 { field_count<i32>() }");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("struct type"), std::string::npos);
+}
+
 TEST(Typeck, StringInterpolation) {
     auto compiled = qpc::test::compile_string(R"(
         fn status(hp: i32) -> string { "hp = ${hp}" }
@@ -1081,4 +1102,66 @@ TEST(Typeck, TypeParamPackNeedsExplicitArgs) {
     )");
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("type-parameter pack"), std::string::npos);
+}
+
+TEST(Typeck, PackExpandApply) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn apply<...Cs>(f: fn(Cs...) -> i32, ...xs: Cs) -> i32 { f(xs...) }
+        fn add(a: i32, b: i32) -> i32 { a + b }
+        fn run() -> i32 { apply<i32, i32>(add, 1, 2) }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, PackExpandArityMismatch) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn apply<...Cs>(f: fn(Cs...) -> i32, ...xs: Cs) -> i32 { f(xs...) }
+        fn add(a: i32, b: i32) -> i32 { a + b }
+        fn run() -> i32 { apply<i32, i32>(add, 1) }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+}
+
+TEST(Typeck, MutForListOk) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn run() -> i32 {
+            let mut xs = [1, 2];
+            for mut x in xs { x = x + 1; }
+            xs[0]
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, MutForNeedsMutPlace) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn run() -> i32 {
+            let xs = [1, 2];
+            for mut x in xs { x = x + 1; }
+            0
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("mutable place"), std::string::npos);
+}
+
+TEST(Typeck, MutParamNeedsPlace) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn bump(mut n: i32) { n = n + 1; }
+        fn run() -> i32 { bump(1); 0 }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("mutable place"), std::string::npos);
+}
+
+TEST(Typeck, MutDictKeyIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn run() -> i32 {
+            let mut m = {1: 2};
+            for (mut k, v) in m { k = k; }
+            0
+        }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("dict keys"), std::string::npos);
 }

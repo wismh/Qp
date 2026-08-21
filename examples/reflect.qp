@@ -1,0 +1,31 @@
+pub struct Health {
+    hp: i32,
+    max: i32,
+}
+
+pub fn ping() -> i32 {
+    7
+}
+
+pub fn run() -> i32 {
+    let mut n = 0;
+    if type_name<Health>() == "Health" {
+        n = n + 1;
+    }
+    if field_count<Health>() == 2 {
+        n = n + 1;
+    }
+    if field_name<Health>(0) == "hp" {
+        n = n + 1;
+    }
+    if field_type_name<Health>(1) == "i32" {
+        n = n + 1;
+    }
+    if fn_name(ping) == "ping" {
+        n = n + 1;
+    }
+    if type_id<Health>() != type_id<i32>() {
+        n = n + 1;
+    }
+    n
+}

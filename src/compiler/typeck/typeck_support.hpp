@@ -15,11 +15,13 @@ namespace qpc::detail {
 struct Binding {
     Type ty;
     bool mut = false;
+    bool pack = false;
 };
 
 struct FnSig {
     std::vector<HirTypeParam> type_params;
     std::vector<Type> params;
+    std::vector<char> param_mut;
     Type ret = Type::unit();
     std::size_t offset = 0;
     bool c_abi = false;
@@ -29,6 +31,7 @@ struct MethodSig {
     SelfKind self_kind = SelfKind::None;
     std::vector<HirTypeParam> type_params;
     std::vector<Type> params;
+    std::vector<char> param_mut;
     Type ret = Type::unit();
     std::size_t offset = 0;
 };
@@ -114,6 +117,11 @@ inline bool is_binary_math(std::string_view name) {
 
 inline bool is_math_builtin(std::string_view name) {
     return is_unary_math(name) || is_binary_math(name);
+}
+
+inline bool is_reflect_builtin(std::string_view name) {
+    return name == "type_id" || name == "type_name" || name == "field_count" || name == "field_name" ||
+           name == "field_type_name" || name == "fn_name";
 }
 
 inline bool is_op_trait(std::string_view name) {

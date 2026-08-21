@@ -831,3 +831,66 @@ add_executable(pack_host
 target_include_directories(pack_host PRIVATE ${PACK_GEN_DIR})
 
 add_test(NAME pack_host COMMAND pack_host)
+
+set(MUT_ITER_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_mut_iter)
+set(MUT_ITER_GEN_H ${MUT_ITER_GEN_DIR}/mut_iter.h)
+set(MUT_ITER_GEN_CPP ${MUT_ITER_GEN_DIR}/mut_iter.cpp)
+
+add_custom_command(
+    OUTPUT ${MUT_ITER_GEN_H} ${MUT_ITER_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${MUT_ITER_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/mut_iter.qp -o ${MUT_ITER_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/mut_iter.qp
+    COMMENT "qpc compile examples/mut_iter.qp"
+    VERBATIM
+)
+
+add_executable(mut_iter_host
+    examples/mut_iter_host/main.cpp
+    ${MUT_ITER_GEN_CPP}
+)
+target_include_directories(mut_iter_host PRIVATE ${MUT_ITER_GEN_DIR})
+
+add_test(NAME mut_iter_host COMMAND mut_iter_host)
+
+set(EXPAND_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_expand)
+set(EXPAND_GEN_H ${EXPAND_GEN_DIR}/expand.h)
+set(EXPAND_GEN_CPP ${EXPAND_GEN_DIR}/expand.cpp)
+
+add_custom_command(
+    OUTPUT ${EXPAND_GEN_H} ${EXPAND_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${EXPAND_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/expand.qp -o ${EXPAND_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/expand.qp
+    COMMENT "qpc compile examples/expand.qp"
+    VERBATIM
+)
+
+add_executable(expand_host
+    examples/expand_host/main.cpp
+    ${EXPAND_GEN_CPP}
+)
+target_include_directories(expand_host PRIVATE ${EXPAND_GEN_DIR})
+
+add_test(NAME expand_host COMMAND expand_host)
+
+set(REFLECT_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_reflect)
+set(REFLECT_GEN_H ${REFLECT_GEN_DIR}/reflect.h)
+set(REFLECT_GEN_CPP ${REFLECT_GEN_DIR}/reflect.cpp)
+
+add_custom_command(
+    OUTPUT ${REFLECT_GEN_H} ${REFLECT_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${REFLECT_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/reflect.qp -o ${REFLECT_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/reflect.qp
+    COMMENT "qpc compile examples/reflect.qp"
+    VERBATIM
+)
+
+add_executable(reflect_host
+    examples/reflect_host/main.cpp
+    ${REFLECT_GEN_CPP}
+)
+target_include_directories(reflect_host PRIVATE ${REFLECT_GEN_DIR})
+
+add_test(NAME reflect_host COMMAND reflect_host)

@@ -196,6 +196,9 @@ private:
     Type subst_type(Type t, const std::unordered_map<std::string, Type>& mapping) const;
 
 
+    Type expand_packs(Type t, const std::vector<HirTypeParam>& tps, const std::vector<Type>& type_args) const;
+
+
     static bool is_generic_param(const std::vector<HirTypeParam>& tps, const std::string& name);
 
 
@@ -296,6 +299,9 @@ private:
 
 
     Type check_to_string_builtin(HirCall& call, std::size_t offset);
+
+
+    Type check_reflect_builtin(HirCall& call, std::size_t offset);
 
 
     Type check_call(HirCall& call, HirExpr& expr);

@@ -226,6 +226,91 @@ bool is_generic_struct(const HirModule& mod, const std::string& name) {
     return false;
 }
 
+bool is_reflect_builtin(std::string_view name) {
+    return name == "type_id" || name == "type_name" || name == "field_count" || name == "field_name" ||
+           name == "field_type_name" || name == "fn_name";
+}
+
+const HirStruct* find_struct(const HirModule& mod, const std::string& name) {
+    for (const auto& st : mod.structs) {
+        if (st.name == name) {
+            return &st;
+        }
+    }
+    for (const auto& child : mod.mods) {
+        if (const HirStruct* st = find_struct(child, name)) {
+            return st;
+        }
+    }
+    return nullptr;
+}
+
+std::string struct_leaf(const std::string& name) {
+    const auto pos = name.rfind("::");
+    return pos == std::string::npos ? name : name.substr(pos + 2);
+}
+
+Type subst_reflect_field(const HirStruct& st, const Type& inst, Type field_ty) {
+    if (field_ty.kind == TypeKind::Named) {
+        for (std::size_t i = 0; i < st.type_params.size() && i < inst.args.size(); ++i) {
+            if (st.type_params[i].name == field_ty.name) {
+                return inst.args[i];
+            }
+        }
+    }
+    return field_ty;
+}
+
+std::uint64_t reflect_type_id(const Type& ty) {
+    const std::string s = type_name(ty);
+    std::uint64_t h = 14695981039346656037ull;
+    for (unsigned char c : s) {
+        h ^= c;
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
+void emit_reflect_call(std::ostringstream& out, const HirCall& call) {
+    if (call.callee == "fn_name") {
+        const auto* var = std::get_if<HirVar>(&call.args[0]->kind);
+        out << "String(\"" << cpp_escape(var ? var->name : "") << "\")";
+        return;
+    }
+    const Type& target = call.type_args.front();
+    if (call.callee == "type_name") {
+        out << "String(\"" << cpp_escape(type_name(target)) << "\")";
+        return;
+    }
+    if (call.callee == "type_id") {
+        out << reflect_type_id(target) << "ull";
+        return;
+    }
+    const HirStruct* st = g_mod ? find_struct(*g_mod, struct_leaf(target.name)) : nullptr;
+    if (st == nullptr && g_mod) {
+        st = find_struct(*g_mod, target.name);
+    }
+    if (call.callee == "field_count") {
+        out << (st ? static_cast<long long>(st->fields.size()) : 0);
+        return;
+    }
+    out << "([&](std::int32_t __qi) { switch (__qi) {";
+    if (st) {
+        for (std::size_t i = 0; i < st->fields.size(); ++i) {
+            out << " case " << i << ": return String(\"";
+            if (call.callee == "field_name") {
+                out << cpp_escape(st->fields[i].name);
+            } else {
+                out << cpp_escape(type_name(subst_reflect_field(*st, target, st->fields[i].ty)));
+            }
+            out << "\");";
+        }
+    }
+    out << " default: std::abort(); } })(";
+    emit_expr(out, *call.args[0]);
+    out << ')';
+}
+
 std::string join_path(const std::vector<std::string>& path) {
     std::string out;
     for (std::size_t i = 0; i < path.size(); ++i) {
@@ -304,7 +389,15 @@ void emit_params(std::ostringstream& out, const std::vector<HirParam>& params) {
         if (i != 0) {
             out << ", ";
         }
-        out << cpp_type_name(params[i].ty) << ' ' << params[i].name;
+        out << cpp_type_name(params[i].ty);
+        if (params[i].pack) {
+            if (!params[i].ty.pack_expand) {
+                out << "...";
+            }
+        } else if (params[i].mut) {
+            out << '&';
+        }
+        out << ' ' << params[i].name;
     }
 }
 
@@ -469,6 +562,12 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                     out << cpp_type_name(expr.ty) << "{static_cast<" << ptr << ">(" << kind.name;
                     emit_type_args(out, kind.type_args);
                     out << ")}";
+                } else if (kind.pack_expand) {
+                    if (expr.ty.kind == TypeKind::Tuple) {
+                        out << "std::make_tuple(" << kind.name << "...)";
+                    } else {
+                        out << kind.name << "...";
+                    }
                 } else {
                     out << kind.name;
                 }
@@ -487,15 +586,23 @@ void emit_expr(std::ostringstream& out, const HirExpr& expr) {
                     out << '(';
                     emit_expr(out, *kind.callee_expr);
                     out << ')';
+                    out << '(';
+                    emit_comma_list(out, kind.args);
+                    out << ')';
+                } else if (is_reflect_builtin(kind.callee)) {
+                    emit_reflect_call(out, kind);
                 } else if (is_math_builtin(kind.callee)) {
                     out << math_cpp_name(kind.callee);
+                    out << '(';
+                    emit_comma_list(out, kind.args);
+                    out << ')';
                 } else {
                     out << kind.callee;
                     emit_type_args(out, kind.type_args);
+                    out << '(';
+                    emit_comma_list(out, kind.args);
+                    out << ')';
                 }
-                out << '(';
-                emit_comma_list(out, kind.args);
-                out << ')';
             } else if constexpr (std::is_same_v<K, HirAssign>) {
                 out << '(' << kind.name << " = ";
                 emit_expr(out, *kind.value);
@@ -925,19 +1032,21 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
                 }
                 out << "    }\n";
             } else if constexpr (std::is_same_v<K, HirFor>) {
+                const bool mut_bind = kind.mut_name || kind.mut_second;
+                const char* ref = mut_bind ? "auto& " : "const auto& ";
                 if (kind.by_next) {
                     const std::string it = "__qit" + std::to_string(++g_if_tmp);
                     const std::string nxt = "__qnxt" + std::to_string(g_if_tmp);
-                    out << "    {\n    auto " << it << " = ";
+                    out << "    {\n    auto" << (mut_bind ? "&& " : " ") << it << " = ";
                     emit_expr(out, *kind.iter);
                     out << ";\n    for (;;) {\n";
                     out << "        auto " << nxt << " = " << it << ".next();\n";
                     out << "        if (" << nxt << " == nullptr) {\n            break;\n        }\n";
                     if (!kind.second.empty()) {
-                        out << "        const auto& [" << kind.name << ", " << kind.second << "] = *" << nxt
+                        out << "        " << ref << "[" << kind.name << ", " << kind.second << "] = *" << nxt
                             << ";\n";
                     } else {
-                        out << "        const auto& " << kind.name << " = *" << nxt << ";\n";
+                        out << "        " << ref << kind.name << " = *" << nxt << ";\n";
                     }
                 } else if (const auto* range = std::get_if<HirRange>(&kind.iter->kind)) {
                     out << "    for (" << cpp_type_name(kind.iter->ty) << ' ' << kind.name << " = ";
@@ -946,11 +1055,11 @@ void emit_stmt(std::ostringstream& out, const HirStmt& stmt) {
                     emit_expr(out, *range->end);
                     out << "; ++" << kind.name << ") {\n";
                 } else if (!kind.second.empty()) {
-                    out << "    for (const auto& [" << kind.name << ", " << kind.second << "] : ";
+                    out << "    for (" << ref << "[" << kind.name << ", " << kind.second << "] : ";
                     emit_expr(out, *kind.iter);
                     out << ") {\n";
                 } else {
-                    out << "    for (const auto& " << kind.name << " : ";
+                    out << "    for (" << ref << kind.name << " : ";
                     emit_expr(out, *kind.iter);
                     out << ") {\n";
                 }

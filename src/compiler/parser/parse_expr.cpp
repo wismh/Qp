@@ -144,6 +144,16 @@ std::optional<ExprPtr> Parser::parse_postfix(bool allow_struct) {
                 expr = make_expr(off, ExprTry{std::move(*expr)});
                 continue;
             }
+            if (at(TokenKind::DotDotDot)) {
+                auto* ident = std::get_if<ExprIdent>(&(*expr)->kind);
+                if (!ident) {
+                    error(peek(), "pack expansion needs a parameter pack");
+                    return std::nullopt;
+                }
+                ident->pack_expand = true;
+                advance();
+                continue;
+            }
             break;
         }
         return expr;
@@ -355,6 +365,7 @@ std::optional<ExprPtr> Parser::parse_closure(bool by_ref) {
                 while (true) {
                     ClosureParam p;
                     p.offset = peek().offset;
+                    p.mut = consume(TokenKind::KwMut);
                     auto name = take_ident("closure parameter");
                     if (!name) {
                         return std::nullopt;

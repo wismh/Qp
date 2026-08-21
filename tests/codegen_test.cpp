@@ -503,6 +503,23 @@ TEST(Codegen, ToStringBuiltin) {
     EXPECT_NE(compiled.result.output.source.find("to_string("), std::string::npos);
 }
 
+TEST(Codegen, TypeIdAndReflect) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Health { hp: i32, max: i32 }
+        pub fn ping() -> i32 { 1 }
+        pub fn run() -> string {
+            type_name<Health>() + field_name<Health>(0) + fn_name(ping)
+        }
+        pub fn n() -> i32 { field_count<Health>() }
+        pub fn id() -> u64 { type_id<Health>() }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("String(\"Health\")"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("String(\"hp\")"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("String(\"ping\")"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("ull"), std::string::npos);
+}
+
 TEST(Codegen, StringInterpolation) {
     auto compiled = qpc::test::compile_string("pub fn status(hp: i32) -> string { \"hp = ${hp}\" }");
     ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
@@ -584,4 +601,58 @@ TEST(Codegen, TypeParamPackTemplate) {
     ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
     EXPECT_NE(compiled.result.output.header.find("typename... T"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("count<std::int32_t, std::int32_t>"), std::string::npos);
+}
+
+TEST(Codegen, PackExpandFnAndTuple) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn apply<...Cs>(f: fn(Cs...) -> i32, ...xs: Cs) -> i32 { f(xs...) }
+        pub fn as_tuple<...Cs>(...xs: Cs) -> (Cs...) { xs... }
+        pub fn add(a: i32, b: i32) -> i32 { a + b }
+        pub fn run() -> i32 {
+            let t = as_tuple<i32, i32>(3, 4);
+            apply<i32, i32>(add, 1, 2) + t.0
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("Cs..."), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("f(xs...)"), std::string::npos);
+    EXPECT_NE(compiled.result.output.header.find("std::make_tuple(xs...)"), std::string::npos);
+}
+
+TEST(Codegen, MutForAndMutParamRef) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn bump(mut n: i32) { n = n + 1; }
+        pub fn run() -> i32 {
+            let mut xs = [1, 2];
+            for mut x in xs { x = x + 1; }
+            let mut pairs = [(1, 2)];
+            for (mut a, mut b) in pairs { a = a + 1; }
+            xs[0]
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("std::int32_t& n"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("for (auto& x : "), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("for (auto& [a, b] : "), std::string::npos);
+}
+
+TEST(Codegen, MutIteratorNoCopy) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Counter { mut n: i32 }
+        impl Counter {
+            fn next(mut self) -> i32? {
+                if self.n <= 0 { return null; }
+                self.n = self.n - 1;
+                self.n
+            }
+        }
+        pub fn run() -> i32 {
+            let mut c = Counter { n: 2 };
+            for mut x in c { x = x; }
+            0
+        }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.source.find("auto&& "), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("auto& x = *"), std::string::npos);
 }

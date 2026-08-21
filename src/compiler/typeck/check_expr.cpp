@@ -141,6 +141,10 @@ Type TypeChecker::check_var(HirVar& var, HirExpr& expr) {
             return check_path_var(var, expr);
         }
         if (auto* b = lookup_binding(var.name)) {
+            if (var.pack_expand && !b->pack) {
+                error(expr.offset, "pack expansion needs a parameter pack '" + var.name + "'");
+                return Type::error();
+            }
             return b->ty;
         }
         if (bind_fn_value(var, expr, nullptr)) {
@@ -277,6 +281,9 @@ bool TypeChecker::bind_fn_value(HirVar& var, HirExpr& expr, const Type* expected
     }
 
 Type TypeChecker::subst_type(Type t, const std::unordered_map<std::string, Type>& mapping) const {
+        if (t.pack_expand) {
+            return t;
+        }
         if (t.kind == TypeKind::Named) {
             if (auto it = mapping.find(t.name); it != mapping.end()) {
                 return it->second;
@@ -287,6 +294,50 @@ Type TypeChecker::subst_type(Type t, const std::unordered_map<std::string, Type>
             arg = subst_type(std::move(arg), mapping);
         }
         return t;
+    }
+
+Type TypeChecker::expand_packs(Type t, const std::vector<HirTypeParam>& tps,
+                               const std::vector<Type>& type_args) const {
+        std::unordered_map<std::string, Type> mapping;
+        const std::size_t prefix = pack_prefix(tps);
+        for (std::size_t i = 0; i < prefix && i < type_args.size(); ++i) {
+            mapping[tps[i].name] = type_args[i];
+        }
+        const std::vector<Type> slice =
+            (last_is_pack(tps) && type_args.size() >= prefix)
+                ? std::vector<Type>(type_args.begin() + prefix, type_args.end())
+                : std::vector<Type>{};
+
+        auto expand_list = [&](std::vector<Type> args, bool fn) {
+            std::vector<Type> out;
+            const std::size_t n = args.size();
+            const std::size_t value_n = fn && n > 0 ? n - 1 : n;
+            for (std::size_t i = 0; i < value_n; ++i) {
+                if (args[i].pack_expand && last_is_pack(tps) && args[i].name == tps.back().name) {
+                    out.insert(out.end(), slice.begin(), slice.end());
+                } else {
+                    out.push_back(subst_type(args[i], mapping));
+                }
+            }
+            if (fn && n > 0) {
+                out.push_back(expand_packs(args.back(), tps, type_args));
+            }
+            return out;
+        };
+
+        if (t.kind == TypeKind::Fn) {
+            auto args = expand_list(t.args, true);
+            if (args.empty()) {
+                return t;
+            }
+            Type ret = std::move(args.back());
+            args.pop_back();
+            return Type::fn(std::move(args), std::move(ret));
+        }
+        if (t.kind == TypeKind::Tuple) {
+            return Type::tuple(expand_list(t.args, false));
+        }
+        return subst_type(std::move(t), mapping);
     }
 
 bool TypeChecker::unify_type(const Type& pattern, const Type& actual, const std::vector<HirTypeParam>& tps,
@@ -928,6 +979,95 @@ Type TypeChecker::check_to_string_builtin(HirCall& call, std::size_t offset) {
         return Type::string();
     }
 
+Type TypeChecker::check_reflect_builtin(HirCall& call, std::size_t offset) {
+        if (!is_reflect_builtin(call.callee)) {
+            return Type::unknown();
+        }
+        for (auto& t : call.type_args) {
+            resolve_type(t, offset);
+            if (t.kind == TypeKind::Named && generic_params_.contains(t.name)) {
+                error(offset, "'" + call.callee + "' needs a concrete type");
+                return Type::error();
+            }
+        }
+        for (auto& arg : call.args) {
+            check_expr(*arg);
+        }
+
+        const bool fields = call.callee == "field_count" || call.callee == "field_name" ||
+                            call.callee == "field_type_name";
+        if (call.callee == "fn_name") {
+            if (!call.type_args.empty()) {
+                error(offset, "'fn_name' cannot take type arguments");
+                return Type::error();
+            }
+            if (call.args.size() != 1) {
+                error(offset, "function 'fn_name' expects 1 argument(s), got " +
+                                  std::to_string(call.args.size()));
+                return Type::error();
+            }
+            auto* var = std::get_if<HirVar>(&call.args[0]->kind);
+            if (!var || (!var->fn_value && !sigs_.contains(var->name))) {
+                error(call.args[0]->offset, "'fn_name' needs a named function");
+                return Type::error();
+            }
+            if (!var->fn_value) {
+                bind_fn_value(*var, *call.args[0], nullptr);
+            }
+            return Type::string();
+        }
+
+        if (call.type_args.size() != 1) {
+            error(offset, "'" + call.callee + "' expects 1 type argument, got " +
+                              std::to_string(call.type_args.size()));
+            return Type::error();
+        }
+        const Type& target = call.type_args[0];
+        if (call.callee == "type_id") {
+            if (!call.args.empty()) {
+                error(offset, "function 'type_id' expects 0 argument(s), got " +
+                                  std::to_string(call.args.size()));
+                return Type::error();
+            }
+            return Type::u64();
+        }
+        if (call.callee == "type_name") {
+            if (!call.args.empty()) {
+                error(offset, "function 'type_name' expects 0 argument(s), got " +
+                                  std::to_string(call.args.size()));
+                return Type::error();
+            }
+            return Type::string();
+        }
+        if (fields) {
+            const StructInfo* st = target.kind == TypeKind::Named ? struct_of(target) : nullptr;
+            if (!st) {
+                error(offset, "'" + call.callee + "' needs a struct type, found '" + type_name(target) + "'");
+                return Type::error();
+            }
+            if (st->opaque) {
+                error(offset, "cannot reflect fields of opaque type '" + type_name(target) + "'");
+                return Type::error();
+            }
+            if (call.callee == "field_count") {
+                if (!call.args.empty()) {
+                    error(offset, "function 'field_count' expects 0 argument(s), got " +
+                                      std::to_string(call.args.size()));
+                    return Type::error();
+                }
+                return Type::i32();
+            }
+            if (call.args.size() != 1) {
+                error(offset, "function '" + call.callee + "' expects 1 argument(s), got " +
+                                  std::to_string(call.args.size()));
+                return Type::error();
+            }
+            expect_expr(*call.args[0], Type::i32(), call.args[0]->offset, "argument");
+            return Type::string();
+        }
+        return Type::error();
+    }
+
 Type TypeChecker::check_call(HirCall& call, HirExpr& expr) {
         const std::size_t offset = expr.offset;
         if (call.callee_expr) {
@@ -967,6 +1107,10 @@ Type TypeChecker::check_call(HirCall& call, HirExpr& expr) {
             if (math.kind != TypeKind::Unknown) {
                 return math;
             }
+            const Type reflect = check_reflect_builtin(call, offset);
+            if (reflect.kind != TypeKind::Unknown) {
+                return reflect;
+            }
             if (name_has_path(call.callee)) {
                 const auto pos = call.callee.rfind("::");
                 HirEnumLit lit;
@@ -997,13 +1141,28 @@ Type TypeChecker::check_call(HirCall& call, HirExpr& expr) {
         if (!chosen) {
             return Type::error();
         }
-        for (std::size_t i = 0; i < call.args.size(); ++i) {
-            expect_expr(*call.args[i], subst_type(chosen->params[i], mapping), call.args[i]->offset, "argument");
+        const bool last_value_pack = !chosen->params.empty() && chosen->params.back().pack_expand &&
+                                     chosen->params.back().kind == TypeKind::Named;
+        const std::size_t nfixed = last_value_pack ? chosen->params.size() - 1 : chosen->params.size();
+        for (std::size_t i = 0; i < nfixed && i < call.args.size(); ++i) {
+            expect_expr(*call.args[i],
+                        subst_type(expand_packs(chosen->params[i], chosen->type_params, call.type_args), mapping),
+                        call.args[i]->offset, "argument");
+            if (i < chosen->param_mut.size() && chosen->param_mut[i] && !is_mut_place(*call.args[i])) {
+                error(call.args[i]->offset, "mut argument must be a mutable place");
+            }
+        }
+        if (last_value_pack) {
+            const std::size_t prefix = pack_prefix(chosen->type_params);
+            for (std::size_t j = 0; nfixed + j < call.args.size(); ++j) {
+                expect_expr(*call.args[nfixed + j], call.type_args[prefix + j], call.args[nfixed + j]->offset,
+                            "argument");
+            }
         }
         if (!chosen->type_params.empty()) {
             check_type_arg_bounds(chosen->type_params, call.type_args, offset);
         }
-        return subst_type(chosen->ret, mapping);
+        return subst_type(expand_packs(chosen->ret, chosen->type_params, call.type_args), mapping);
     }
 
 Type TypeChecker::check_assign(HirAssign& as, std::size_t offset) {
@@ -1353,13 +1512,28 @@ Type TypeChecker::check_method_call(HirMethodCall& call, std::size_t offset) {
         if (!chosen) {
             return Type::error();
         }
-        for (std::size_t i = 0; i < call.args.size(); ++i) {
-            expect_expr(*call.args[i], subst_type(chosen->params[i], mapping), call.args[i]->offset, "argument");
+        const bool last_value_pack = !chosen->params.empty() && chosen->params.back().pack_expand &&
+                                     chosen->params.back().kind == TypeKind::Named;
+        const std::size_t nfixed = last_value_pack ? chosen->params.size() - 1 : chosen->params.size();
+        for (std::size_t i = 0; i < nfixed && i < call.args.size(); ++i) {
+            expect_expr(*call.args[i],
+                        subst_type(expand_packs(chosen->params[i], chosen->type_params, call.type_args), mapping),
+                        call.args[i]->offset, "argument");
+            if (i < chosen->param_mut.size() && chosen->param_mut[i] && !is_mut_place(*call.args[i])) {
+                error(call.args[i]->offset, "mut argument must be a mutable place");
+            }
+        }
+        if (last_value_pack) {
+            const std::size_t prefix = pack_prefix(chosen->type_params);
+            for (std::size_t j = 0; nfixed + j < call.args.size(); ++j) {
+                expect_expr(*call.args[nfixed + j], call.type_args[prefix + j], call.args[nfixed + j]->offset,
+                            "argument");
+            }
         }
         if (!chosen->type_params.empty()) {
             check_type_arg_bounds(chosen->type_params, call.type_args, offset);
         }
-        Type ret = subst_type(chosen->ret, mapping);
+        Type ret = subst_type(expand_packs(chosen->ret, chosen->type_params, call.type_args), mapping);
         if (call.null_safe) {
             call.wrap_ret = ret.kind != TypeKind::Nullable;
             return as_nullable(std::move(ret));
@@ -1762,6 +1936,11 @@ void TypeChecker::expect_expr(HirExpr& expr, Type expected, std::size_t offset, 
         }
         if (got == expected || got == Type::error() || expected == Type::error() ||
             got.kind == TypeKind::Never) {
+            return;
+        }
+        if (got.pack_expand && expected.kind == TypeKind::Tuple && expected.args.size() == 1 &&
+            expected.args[0].pack_expand && expected.args[0].name == got.name) {
+            expr.ty = expected;
             return;
         }
         if (expected.kind == TypeKind::Nullable && got == expected.elem()) {

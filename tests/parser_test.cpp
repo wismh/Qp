@@ -139,6 +139,27 @@ TEST(Parser, ForDictBindings) {
     EXPECT_EQ(loop->second, "v");
 }
 
+TEST(Parser, MutForBindings) {
+    auto parsed = qpc::test::parse_string(R"(
+        fn bump(mut xs: [i32]) {
+            for mut x in xs { x = x + 1; }
+            for (mut a, mut b) in xs { a = a; }
+        }
+        fn f(mut n: i32) { n = n + 1; }
+    )");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.functions.size(), 2u);
+    EXPECT_TRUE(parsed.ast.functions[1].params[0].mut);
+    const auto* loop = std::get_if<qpc::StmtFor>(&parsed.ast.functions[0].body.stmts[0]->kind);
+    ASSERT_NE(loop, nullptr);
+    EXPECT_TRUE(loop->mut_name);
+    EXPECT_FALSE(loop->mut_second);
+    const auto* pair = std::get_if<qpc::StmtFor>(&parsed.ast.functions[0].body.stmts[1]->kind);
+    ASSERT_NE(pair, nullptr);
+    EXPECT_TRUE(pair->mut_name);
+    EXPECT_TRUE(pair->mut_second);
+}
+
 TEST(Parser, EnumWithFieldsIsError) {
     auto parsed = qpc::test::parse_string("enum Shape { Circle { r: f32 } }");
     EXPECT_TRUE(parsed.diags.has_errors());
@@ -450,4 +471,17 @@ TEST(Parser, TypeParamPackMustBeLast) {
     auto parsed = qpc::test::parse_string("fn f<...T, U>() -> i32 { 0 }");
     EXPECT_TRUE(parsed.diags.has_errors());
     EXPECT_NE(parsed.diags.all().front().message.find("last"), std::string::npos);
+}
+
+TEST(Parser, PackExpandFnTypeAndValuePack) {
+    auto parsed = qpc::test::parse_string(
+        "fn apply<...Cs>(f: fn(Cs...) -> i32, ...xs: Cs) -> (Cs...) { xs... }");
+    ASSERT_FALSE(parsed.diags.has_errors()) << parsed.diags.all().front().message;
+    ASSERT_EQ(parsed.ast.functions.size(), 1u);
+    ASSERT_EQ(parsed.ast.functions[0].params.size(), 2u);
+    EXPECT_FALSE(parsed.ast.functions[0].params[0].pack);
+    EXPECT_TRUE(parsed.ast.functions[0].params[0].ty.args.front().pack_expand);
+    EXPECT_TRUE(parsed.ast.functions[0].params[1].pack);
+    ASSERT_TRUE(parsed.ast.functions[0].return_ty);
+    EXPECT_TRUE(parsed.ast.functions[0].return_ty->args.front().pack_expand);
 }

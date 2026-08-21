@@ -142,6 +142,17 @@ fn label(n: i32) -> string {
 
 `to_string` accepts integers, floats, `bool`, `char`, `string`, and C-style `enum`. It is always in scope; a user `fn` of the same name wins.
 
+`type_name<T>()`, `type_id<T>()`, `field_count<T>()`, `field_name<T>(i)`, `field_type_name<T>(i)`, and `fn_name(f)` are the same kind of builtin: names and field types of structs, plus the name of a named `fn` value. `T` must be concrete.
+
+```qp
+struct Health { hp: i32, max: i32 }
+fn ping() -> i32 { 1 }
+
+fn ok() -> bool {
+    type_name<Health>() == "Health" && fn_name(ping) == "ping"
+}
+```
+
 Interpolation embeds expressions with `${...}`:
 
 ```qp
@@ -209,7 +220,7 @@ fn sum_map(m: {i32: i32}) -> i32 {
 }
 ```
 
-`0..5` is a half-open range: `0, 1, 2, 3, 4`. Loops may use `break` and `continue`. `for (k, v) in dict` walks a dictionary. `for (a, b) in pairs` unpacks each 2-tuple from a list. A type with `fn next(mut self) -> T?` is iterable: `for x in it` (or `for (a, b) in query` when `T` is a 2-tuple).
+`0..5` is a half-open range: `0, 1, 2, 3, 4`. Loops may use `break` and `continue`. `for (k, v) in dict` walks a dictionary. `for (a, b) in pairs` unpacks each 2-tuple from a list. `for mut x in xs` and `for (mut a, mut b) in pairs` write back into the list or iterator. A `mut x: T` parameter is `T&` (the caller must pass a mutable place). A type with `fn next(mut self) -> T?` is iterable: `for x in it` (or `for (a, b) in query` when `T` is a 2-tuple).
 
 ---
 
@@ -390,7 +401,7 @@ fn sum_each(p: Pair<i32>) -> i32 {
 }
 ```
 
-A method may take a `fn(...)` callback. Extra type parameters (`zip<U>`) are inferred from the arguments, including the callback. A pack `<...T: Bound>` stands for zero or more type arguments (C++ `typename... T`, not C varargs). Write it last: `fn count<...T: Component>()` or `struct Query<...T>`.
+A method may take a `fn(...)` callback. Extra type parameters (`zip<U>`) are inferred from the arguments, including the callback. A pack `<...T: Bound>` stands for zero or more type arguments (C++ `typename... T`, not C varargs). Write it last: `fn count<...T: Component>()` or `struct Query<...T>`. Expand it in types with `Cs...`: `fn(Cs...) -> i32`, `...xs: Cs`, `(Cs...)`, and `f(xs...)`.
 
 A `trait` is a bound on a type, not a class hierarchy.
 
