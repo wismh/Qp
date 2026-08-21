@@ -313,50 +313,64 @@ bool TypeChecker::unify_type(const Type& pattern, const Type& actual, const std:
 
 void TypeChecker::check_type_arg_bounds(const std::vector<HirTypeParam>& tps, const std::vector<Type>& args,
  std::size_t offset) {
-        const std::size_t n = std::min(args.size(), tps.size());
-        for (std::size_t i = 0; i < n; ++i) {
-            if (!tps[i].bound) {
-                continue;
+        auto check_one = [&](const Type& arg, const std::optional<std::string>& bound) {
+            if (!bound) {
+                return;
             }
-            const std::string& bound = *tps[i].bound;
+            const std::string& b = *bound;
             bool ok = false;
-            if (args[i].kind == TypeKind::Named) {
-                const auto type_key = lookup_named(args[i].name);
+            if (arg.kind == TypeKind::Named) {
+                const auto type_key = lookup_named(arg.name);
                 if (auto it = trait_impls_.find(type_key); it != trait_impls_.end()) {
-                    ok = it->second.contains(bound);
+                    ok = it->second.contains(b);
                 }
                 if (!ok) {
-                    if (auto it = trait_impls_.find(args[i].name); it != trait_impls_.end()) {
-                        ok = it->second.contains(bound);
+                    if (auto it = trait_impls_.find(arg.name); it != trait_impls_.end()) {
+                        ok = it->second.contains(b);
                     }
                 }
                 if (!ok) {
                     if (auto it = op_impls_.find(type_key); it != op_impls_.end()) {
-                        ok = it->second.contains(bound);
+                        ok = it->second.contains(b);
                     }
                 }
                 if (!ok) {
-                    if (auto it = op_impls_.find(args[i].name); it != op_impls_.end()) {
-                        ok = it->second.contains(bound);
+                    if (auto it = op_impls_.find(arg.name); it != op_impls_.end()) {
+                        ok = it->second.contains(b);
                     }
                 }
             }
             if (!ok) {
-                error(offset, "type '" + type_name(args[i]) + "' does not implement '" + bound + "'");
+                error(offset, "type '" + type_name(arg) + "' does not implement '" + b + "'");
+            }
+        };
+        const std::size_t prefix = pack_prefix(tps);
+        for (std::size_t i = 0; i < prefix && i < args.size(); ++i) {
+            check_one(args[i], tps[i].bound);
+        }
+        if (last_is_pack(tps)) {
+            for (std::size_t i = prefix; i < args.size(); ++i) {
+                check_one(args[i], tps.back().bound);
             }
         }
     }
 
 void TypeChecker::bind_type_args(const std::vector<HirTypeParam>& tps, std::vector<Type>& args, std::size_t offset,
  std::unordered_map<std::string, Type>& mapping) {
-        if (args.size() != tps.size()) {
-            error(offset, "expects " + std::to_string(tps.size()) + " type argument(s), got " +
-                              std::to_string(args.size()));
+        if (!type_arg_count_ok(tps, args.size())) {
+            error(offset, "expects " +
+                              (last_is_pack(tps) ? "at least " + std::to_string(pack_prefix(tps))
+                                                 : std::to_string(tps.size())) +
+                              " type argument(s), got " + std::to_string(args.size()));
         }
-        const std::size_t n = std::min(args.size(), tps.size());
+        const std::size_t prefix = pack_prefix(tps);
+        const std::size_t n = std::min(args.size(), prefix);
         for (std::size_t i = 0; i < n; ++i) {
             resolve_type(args[i], offset);
             mapping[tps[i].name] = args[i];
+        }
+        for (std::size_t i = n; i < args.size(); ++i) {
+            resolve_type(args[i], offset);
         }
         check_type_arg_bounds(tps, args, offset);
     }
@@ -380,6 +394,10 @@ void TypeChecker::infer_type_args(const std::vector<HirTypeParam>& tps, std::vec
         type_args.clear();
         type_args.reserve(tps.size());
         for (const auto& tp : tps) {
+            if (tp.pack) {
+                error(offset, "cannot infer type-parameter pack '" + tp.name + "', write type arguments");
+                continue;
+            }
             auto it = mapping.find(tp.name);
             if (it == mapping.end() || it->second.kind == TypeKind::Unknown ||
                 it->second.kind == TypeKind::Error) {
@@ -1161,6 +1179,11 @@ Type TypeChecker::check_struct_lit(HirStructLit& lit, std::size_t offset) {
                 }
                 lit.type_args.reserve(st.type_params.size());
                 for (const auto& tp : st.type_params) {
+                    if (tp.pack) {
+                        error(offset, "cannot infer type-parameter pack '" + tp.name +
+                                          "', write type arguments");
+                        continue;
+                    }
                     auto mit = mapping.find(tp.name);
                     if (mit == mapping.end() || mit->second.kind == TypeKind::Unknown ||
                         mit->second.kind == TypeKind::Error) {

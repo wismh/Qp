@@ -810,3 +810,24 @@ add_executable(fn_value_host
 target_include_directories(fn_value_host PRIVATE ${FN_VALUE_GEN_DIR})
 
 add_test(NAME fn_value_host COMMAND fn_value_host)
+
+set(PACK_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/gen_pack)
+set(PACK_GEN_H ${PACK_GEN_DIR}/pack.h)
+set(PACK_GEN_CPP ${PACK_GEN_DIR}/pack.cpp)
+
+add_custom_command(
+    OUTPUT ${PACK_GEN_H} ${PACK_GEN_CPP}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${PACK_GEN_DIR}
+    COMMAND $<TARGET_FILE:qpc> compile ${CMAKE_SOURCE_DIR}/examples/pack.qp -o ${PACK_GEN_DIR}
+    DEPENDS qpc ${CMAKE_SOURCE_DIR}/examples/pack.qp
+    COMMENT "qpc compile examples/pack.qp"
+    VERBATIM
+)
+
+add_executable(pack_host
+    examples/pack_host/main.cpp
+    ${PACK_GEN_CPP}
+)
+target_include_directories(pack_host PRIVATE ${PACK_GEN_DIR})
+
+add_test(NAME pack_host COMMAND pack_host)

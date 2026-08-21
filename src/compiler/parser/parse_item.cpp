@@ -612,6 +612,7 @@ std::optional<std::vector<TypeParam>> Parser::parse_type_params() {
         while (true) {
             TypeParam p;
             p.offset = peek().offset;
+            p.pack = consume(TokenKind::DotDotDot);
             auto name = take_ident("type parameter");
             if (!name) {
                 return std::nullopt;
@@ -626,6 +627,10 @@ std::optional<std::vector<TypeParam>> Parser::parse_type_params() {
             }
             params.push_back(std::move(p));
             if (consume(TokenKind::Comma)) {
+                if (params.back().pack) {
+                    error(peek(), "type-parameter pack must be last");
+                    return std::nullopt;
+                }
                 continue;
             }
             break;

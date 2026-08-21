@@ -1,0 +1,26 @@
+trait Marker {}
+
+struct A {}
+struct B {}
+
+impl Marker for A {}
+impl Marker for B {}
+
+pub fn pick<...T>(x: i32) -> i32 {
+    x
+}
+
+pub struct Bundle<...T> {
+    n: i32,
+}
+
+impl Bundle<...T> {
+    pub fn size(self) -> i32 {
+        self.n
+    }
+}
+
+pub fn run() -> i32 {
+    let b = Bundle<i32, string> { n: 2 };
+    pick<A, B>(9) + b.size()
+}

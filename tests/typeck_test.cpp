@@ -1035,3 +1035,50 @@ TEST(Typeck, MethodWithSelfIsNotAValue) {
     EXPECT_FALSE(compiled.result.ok);
     EXPECT_NE(first_error(compiled.diags).find("cannot use method"), std::string::npos);
 }
+
+TEST(Typeck, TypeParamPackFn) {
+    auto compiled = qpc::test::compile_string(R"(
+        trait Marker {}
+        struct A {}
+        struct B {}
+        impl Marker for A {}
+        impl Marker for B {}
+        fn count<...T: Marker>() -> i32 { 2 }
+        fn run() -> i32 { count<A, B>() }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, TypeParamPackStruct) {
+    auto compiled = qpc::test::compile_string(R"(
+        struct Bundle<...T> { n: i32 }
+        impl Bundle<...T> {
+            fn size(self) -> i32 { self.n }
+        }
+        fn run() -> i32 {
+            let b = Bundle<i32, i32> { n: 3 };
+            b.size()
+        }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, TypeParamPackBoundIsError) {
+    auto compiled = qpc::test::compile_string(R"(
+        trait Marker {}
+        struct A {}
+        fn count<...T: Marker>() -> i32 { 0 }
+        fn run() -> i32 { count<A>() }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("does not implement"), std::string::npos);
+}
+
+TEST(Typeck, TypeParamPackNeedsExplicitArgs) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn count<...T>() -> i32 { 0 }
+        fn run() -> i32 { count() }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+    EXPECT_NE(first_error(compiled.diags).find("type-parameter pack"), std::string::npos);
+}

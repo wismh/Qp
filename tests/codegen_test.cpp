@@ -575,3 +575,13 @@ TEST(Codegen, NamedFnValueCast) {
     EXPECT_NE(compiled.result.output.source.find("static_cast<"), std::string::npos);
     EXPECT_NE(compiled.result.output.source.find("inc"), std::string::npos);
 }
+
+TEST(Codegen, TypeParamPackTemplate) {
+    auto compiled = qpc::test::compile_string(R"(
+        pub fn count<...T>() -> i32 { 0 }
+        pub fn run() -> i32 { count<i32, i32>() }
+    )");
+    ASSERT_TRUE(compiled.result.ok) << compiled.diags.all().front().message;
+    EXPECT_NE(compiled.result.output.header.find("typename... T"), std::string::npos);
+    EXPECT_NE(compiled.result.output.source.find("count<std::int32_t, std::int32_t>"), std::string::npos);
+}
