@@ -390,7 +390,7 @@ fn sum_each(p: Pair<i32>) -> i32 {
 }
 ```
 
-A method may take a `fn(...)` callback. Extra type parameters (`zip<U>`) are inferred from the arguments, including the callback. A pack `<...T: Bound>` stands for zero or more type arguments (C++ `typename... T`, not C varargs). Write it last: `fn count<...T: Component>()` or `struct Query<...T>`.
+A method may take a `fn(...)` callback. Extra type parameters (`zip<U>`) are inferred from the arguments, including the callback. A pack `<...T: Bound>` stands for zero or more type arguments (C++ `typename... T`, not C varargs). Write it last: `fn count<...T: Component>()` or `struct Query<...T>`. Expand it in types with `Cs...`: `fn(Cs...) -> i32`, `...xs: Cs`, `(Cs...)`, and `f(xs...)`.
 
 A `trait` is a bound on a type, not a class hierarchy.
 

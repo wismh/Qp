@@ -1083,6 +1083,24 @@ TEST(Typeck, TypeParamPackNeedsExplicitArgs) {
     EXPECT_NE(first_error(compiled.diags).find("type-parameter pack"), std::string::npos);
 }
 
+TEST(Typeck, PackExpandApply) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn apply<...Cs>(f: fn(Cs...) -> i32, ...xs: Cs) -> i32 { f(xs...) }
+        fn add(a: i32, b: i32) -> i32 { a + b }
+        fn run() -> i32 { apply<i32, i32>(add, 1, 2) }
+    )");
+    EXPECT_TRUE(compiled.result.ok) << first_error(compiled.diags);
+}
+
+TEST(Typeck, PackExpandArityMismatch) {
+    auto compiled = qpc::test::compile_string(R"(
+        fn apply<...Cs>(f: fn(Cs...) -> i32, ...xs: Cs) -> i32 { f(xs...) }
+        fn add(a: i32, b: i32) -> i32 { a + b }
+        fn run() -> i32 { apply<i32, i32>(add, 1) }
+    )");
+    EXPECT_FALSE(compiled.result.ok);
+}
+
 TEST(Typeck, MutForListOk) {
     auto compiled = qpc::test::compile_string(R"(
         fn run() -> i32 {

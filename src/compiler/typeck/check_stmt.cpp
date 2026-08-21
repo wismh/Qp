@@ -47,7 +47,7 @@ void TypeChecker::check_fn(HirFn& fn) {
         }
 
         for (const auto& p : fn.params) {
-            declare(p.name, Binding{p.ty, true}, p.offset);
+            declare(p.name, Binding{p.ty, true, p.pack}, p.offset);
         }
 
         for (auto& stmt : fn.body.stmts) {

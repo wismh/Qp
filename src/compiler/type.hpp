@@ -42,6 +42,7 @@ struct Type {
     std::string name;
     std::size_t size = 0;
     std::vector<Type> args;
+    bool pack_expand = false;
 
     static Type unknown() { return {}; }
     static Type error() { return {TypeKind::Error, {}}; }
@@ -113,7 +114,8 @@ struct Type {
     const Type& value() const { return args.back(); }
 
     friend bool operator==(const Type& a, const Type& b) {
-        return a.kind == b.kind && a.name == b.name && a.size == b.size && a.args == b.args;
+        return a.kind == b.kind && a.name == b.name && a.size == b.size && a.args == b.args &&
+               a.pack_expand == b.pack_expand;
     }
 
     friend bool operator!=(const Type& a, const Type& b) { return !(a == b); }
@@ -216,6 +218,9 @@ inline std::string type_name(const Type& ty) {
         case TypeKind::F64:
             return "f64";
         case TypeKind::Named: {
+            if (ty.pack_expand) {
+                return ty.name + "...";
+            }
             if (ty.args.empty()) {
                 return ty.name;
             }
@@ -299,6 +304,9 @@ inline std::string cpp_type_name(const Type& ty) {
         case TypeKind::F64:
             return "double";
         case TypeKind::Named: {
+            if (ty.pack_expand) {
+                return ty.name + "...";
+            }
             if (ty.args.empty()) {
                 return ty.name;
             }

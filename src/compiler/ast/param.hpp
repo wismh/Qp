@@ -10,6 +10,7 @@ struct Param {
     std::string name;
     TypeExpr ty;
     bool mut = false;
+    bool pack = false;
     std::size_t offset = 0;
 };
 

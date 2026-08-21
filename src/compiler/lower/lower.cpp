@@ -21,6 +21,7 @@ Type lower_type(const TypeExpr& te) {
         case TypeExpr::Kind::Named: {
             Type ty = type_from_name(te.name);
             if (ty.kind == TypeKind::Named) {
+                ty.pack_expand = te.pack_expand;
                 ty.args.reserve(te.args.size());
                 for (const auto& arg : te.args) {
                     ty.args.push_back(lower_type(arg));
@@ -404,7 +405,10 @@ HirExprPtr lower_expr(const Source& src, ExprPtr expr, DiagnosticEngine& diags) 
             } else if constexpr (std::is_same_v<K, LitNull>) {
                 out->kind = HirLitNull{};
             } else if constexpr (std::is_same_v<K, ExprIdent>) {
-                out->kind = HirVar{std::move(kind.name)};
+                HirVar var;
+                var.name = std::move(kind.name);
+                var.pack_expand = kind.pack_expand;
+                out->kind = std::move(var);
             } else if constexpr (std::is_same_v<K, ExprPath>) {
                 std::string name;
                 for (std::size_t i = 0; i < kind.segments.size(); ++i) {
@@ -644,7 +648,11 @@ HirFn lower_fn(const Source& src, FnDecl& fn, DiagnosticEngine& diags, std::stri
         hp.name = std::move(p.name);
         hp.offset = p.offset;
         hp.mut = p.mut;
+        hp.pack = p.pack;
         hp.ty = lower_type(p.ty);
+        if (hp.pack) {
+            hp.ty.pack_expand = true;
+        }
         hfn.params.push_back(std::move(hp));
     }
 

@@ -10,6 +10,7 @@ struct HirVar {
     std::string name;
     std::vector<Type> type_args;
     bool fn_value = false;
+    bool pack_expand = false;
 };
 
 }  // namespace qpc

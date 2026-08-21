@@ -798,3 +798,20 @@ TEST(E2E, CompileMutIterExampleToFiles) {
                                   std::istreambuf_iterator<char>());
     EXPECT_NE(header_text.find("std::int32_t& n"), std::string::npos);
 }
+
+TEST(E2E, CompileExpandExampleToFiles) {
+    const auto out_dir = std::filesystem::temp_directory_path() / "qplus_e2e_expand";
+    std::filesystem::remove_all(out_dir);
+
+    qpc::DiagnosticEngine diags;
+    const auto input = std::filesystem::path(QPLUS_SOURCE_DIR) / "examples" / "expand.qp";
+    ASSERT_TRUE(qpc::compile_file(input, out_dir, diags))
+        << (diags.all().empty() ? "compile failed" : diags.all().front().message);
+
+    const auto header = out_dir / "expand.h";
+    ASSERT_TRUE(std::filesystem::exists(header));
+    std::ifstream header_in(header);
+    const std::string header_text((std::istreambuf_iterator<char>(header_in)),
+                                  std::istreambuf_iterator<char>());
+    EXPECT_NE(header_text.find("Cs..."), std::string::npos);
+}
